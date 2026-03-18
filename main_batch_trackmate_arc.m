@@ -15,8 +15,8 @@ clear; clc;
 
 %% ---------------- USER SETTINGS ----------------
 % Toggle run mode by commenting one line
-runMode = "local";
-% runMode = "arc";
+% runMode = "local";
+runMode = "arc";
 
 isArc = strcmpi(runMode, "arc");
 visMode = ["on", "off"];
@@ -25,7 +25,7 @@ set(0,'DefaultFigureVisible', visMode(1 + isArc));
 % Local quick-test limit (tracks/events parsed per XML)
 % - Use 100 (or any number) for fast local testing
 % - Use Inf to parse all tracks
-localEventLimit = 200;
+localEventLimit = Inf;
 maxTracksChoices = [localEventLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
 
@@ -34,7 +34,7 @@ useMatCache = true;
 forceReparse = false;
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 2";
+resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results1";
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
@@ -125,42 +125,42 @@ cases = struct([]);
 cases(1).name      = "5um";
 cases(1).Re        = 95000;
 cases(1).kDh       = 5; % <-- set your k/D_h
-cases(1).xmlFile   = "E:\March Re 90,000 inception data\Processed images\Smooth variation 2\smoothvar2_48lit.xml"; % <-- set XML path
+cases(1).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/smoothvar2_48lit.xml"; % <-- set XML path
 cases(1).pixelSize = 0.00375009375;  % mm/px
 cases(1).dt        = 1/102247;
 
 cases(2).name      = "12um";
 cases(2).Re        = 95000;
 cases(2).kDh       = 12;
-cases(2).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S100\P10S100_48lit.xml";
+cases(2).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S100_48lit.xml";
 cases(2).pixelSize = 0.00375009375;
 cases(2).dt        = 1/102247;
 
 cases(3).name      = "20um";
 cases(3).Re        = 95000;
 cases(3).kDh       = 20;
-cases(3).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S70\P10S70_48lit.xml";
+cases(3).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S70_48lit.xml";
 cases(3).pixelSize = 0.00375009375;
 cases(3).dt        = 1/102247;
 
 cases(4).name      = "30um";
 cases(4).Re        = 95000;
 cases(4).kDh       = 30;
-cases(4).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S50\P10S50_48lit.xml";
+cases(4).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S50_48lit.xml";
 cases(4).pixelSize = 0.00375009375;
 cases(4).dt        = 1/102247;
 
 cases(5).name      = "53um";
 cases(5).Re        = 95000;
 cases(5).kDh       = 53;
-cases(5).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S30\P10S30_48lit.xml";
+cases(5).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S30_48lit.xml";
 cases(5).pixelSize = 0.00375009375;
 cases(5).dt        = 1/102247;
 
 cases(6).name      = "80um";
 cases(6).Re        = 95000;
 cases(6).kDh       = 80;
-cases(6).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S20\P10S20_48lit.xml";
+cases(6).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S20_48lit.xml";
 cases(6).pixelSize = 0.00375009375;
 cases(6).dt        = 1/102247;
 
