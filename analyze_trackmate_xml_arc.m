@@ -505,6 +505,13 @@ try
     doc = db.parse(java.io.File(xmlFile));
     return;
 catch ME2
+    if is_probable_java_heap_oom(ME1) || is_probable_java_heap_oom(ME2)
+        error(['Java heap out-of-memory while parsing XML: %s\n', ...
+            'File size: %.3f MB\n', ...
+            'Increase MATLAB JVM heap on ARC (for example JAVA_HEAP_GB=12 or 16 in ttrackmate_falcon.sh).'], ...
+            xmlFile, fInfo.bytes / 1024 / 1024);
+    end
+
     headPreview = safe_text_head(xmlFile, 6);
     msg1 = exception_chain_to_text(ME1);
     msg2 = exception_chain_to_text(ME2);
@@ -529,7 +536,6 @@ if fid < 0
     return;
 end
 
-c = onCleanup(@() fclose(fid));
 lines = strings(0,1);
 for i = 1:maxLines
     ln = fgetl(fid);
@@ -537,6 +543,11 @@ for i = 1:maxLines
         break;
     end
     lines(end+1,1) = string(ln); %#ok<AGROW>
+end
+try
+    fclose(fid);
+catch
+    % Ignore close failures while reporting parser errors.
 end
 
 if isempty(lines)
@@ -553,11 +564,18 @@ if isempty(ME)
 end
 
 parts = strings(0,1);
-parts(end+1,1) = string(ME.message); %#ok<AGROW>
+parts(end+1,1) = string(safe_exception_message(ME)); %#ok<AGROW>
 
-for ci = 1:numel(ME.cause)
-    c = ME.cause{ci};
-    parts(end+1,1) = sprintf("Cause %d: %s", ci, string(c.message)); %#ok<AGROW>
+causes = {};
+try
+    causes = ME.cause;
+catch
+    causes = {};
+end
+
+for ci = 1:numel(causes)
+    c = causes{ci};
+    parts(end+1,1) = sprintf("Cause %d: %s", ci, string(safe_exception_message(c))); %#ok<AGROW>
 end
 
 stackTop = "";
@@ -568,6 +586,61 @@ end
 
 msg = strjoin(parts, newline) + stackTop;
 msg = char(msg);
+end
+
+function tf = is_probable_java_heap_oom(ME)
+tf = false;
+if isempty(ME)
+    return;
+end
+
+blob = "";
+try
+    blob = lower(string(ME.identifier) + " " + string(safe_exception_message(ME)));
+catch
+    blob = "";
+end
+if contains(blob, "outofmemoryerror") || contains(blob, "java heap space")
+    tf = true;
+    return;
+end
+
+causes = {};
+try
+    causes = ME.cause;
+catch
+    causes = {};
+end
+for i = 1:numel(causes)
+    cblob = "";
+    try
+        cblob = lower(string(causes{i}.identifier) + " " + string(safe_exception_message(causes{i})));
+    catch
+        cblob = "";
+    end
+    if contains(cblob, "outofmemoryerror") || contains(cblob, "java heap space")
+        tf = true;
+        return;
+    end
+end
+end
+
+function msg = safe_exception_message(ME)
+msg = "<message unavailable>";
+if isempty(ME)
+    return;
+end
+try
+    raw = ME.message;
+    if isstring(raw)
+        raw = char(raw);
+    end
+    if ischar(raw) && ~isempty(raw)
+        msg = raw;
+    end
+catch
+    msg = "<message unavailable>";
+end
 end
 
 function v = getAttrNum(node, attrName)
