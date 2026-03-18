@@ -14,6 +14,8 @@ arguments
     opts.makePlots (1,1) logical = false
 end
 
+xmlFile = sanitize_xml_path(xmlFile);
+
 if ~isfile(xmlFile)
     error("XML file not found: %s", xmlFile);
 end
@@ -22,12 +24,7 @@ if opts.verbose
     fprintf("Reading XML: %s\n", xmlFile);
 end
 
-% xmlread needs Java; should work on ARC headless as long as MATLAB has JVM.
-try
-    doc = xmlread(xmlFile);
-catch ME
-    error("xmlread failed for %s\n%s", xmlFile, getReport(ME,'extended'));
-end
+doc = read_trackmate_xml_document(xmlFile);
 
 %% -------------------------
 %  Parse Tracks + Edges
@@ -462,6 +459,115 @@ end
 if ~isempty(trackIds)
     trackIds = unique(trackIds, 'stable');
 end
+end
+
+function xmlPath = sanitize_xml_path(xmlPath)
+xmlPath = char(string(xmlPath));
+
+% Normalize hidden control chars often introduced in batch/cluster path assembly.
+xmlPath = strrep(xmlPath, sprintf('\r'), ' ');
+xmlPath = strrep(xmlPath, sprintf('\n'), ' ');
+xmlPath = strtrim(xmlPath);
+end
+
+function doc = read_trackmate_xml_document(xmlFile)
+% Preflight readability before touching Java XML parsers.
+fInfo = dir(xmlFile);
+if isempty(fInfo)
+    error('XML file metadata unavailable: %s', xmlFile);
+end
+
+[fid, fopenMsg] = fopen(xmlFile, 'r');
+if fid < 0
+    error('Cannot open XML for reading: %s\nfopen: %s', xmlFile, fopenMsg);
+end
+fclose(fid);
+
+% Primary parser (MATLAB helper).
+ME1 = [];
+try
+    doc = xmlread(xmlFile);
+    return;
+catch ME1
+    % Fall through to Java parser fallback.
+end
+
+% Fallback parser (direct Java DOM builder).
+try
+    dbf = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+    dbf.setNamespaceAware(true);
+    try
+        dbf.setFeature('http://apache.org/xml/features/nonvalidating/load-external-dtd', false);
+    catch
+        % Feature may be unavailable in some JVM/parser builds.
+    end
+    db = dbf.newDocumentBuilder();
+    doc = db.parse(java.io.File(xmlFile));
+    return;
+catch ME2
+    headPreview = safe_text_head(xmlFile, 6);
+    msg1 = exception_chain_to_text(ME1);
+    msg2 = exception_chain_to_text(ME2);
+    error(['xmlread failed for %s\n', ...
+        'Primary parser:\n%s\n', ...
+        'Fallback parser:\n%s\n', ...
+        'File size: %.3f MB\n', ...
+        'File head preview:\n%s'], ...
+        xmlFile, msg1, msg2, fInfo.bytes / 1024 / 1024, headPreview);
+end
+end
+
+function txt = safe_text_head(filePath, maxLines)
+txt = "<unavailable>";
+if nargin < 2 || ~isfinite(maxLines) || maxLines < 1
+    maxLines = 6;
+end
+
+[fid, msg] = fopen(filePath, 'r');
+if fid < 0
+    txt = sprintf('<fopen failed: %s>', msg);
+    return;
+end
+
+c = onCleanup(@() fclose(fid));
+lines = strings(0,1);
+for i = 1:maxLines
+    ln = fgetl(fid);
+    if ~ischar(ln)
+        break;
+    end
+    lines(end+1,1) = string(ln); %#ok<AGROW>
+end
+
+if isempty(lines)
+    txt = "<empty file or non-text prefix>";
+else
+    txt = char(strjoin(lines, newline));
+end
+end
+
+function msg = exception_chain_to_text(ME)
+if isempty(ME)
+    msg = "<no exception>";
+    return;
+end
+
+parts = strings(0,1);
+parts(end+1,1) = string(ME.message); %#ok<AGROW>
+
+for ci = 1:numel(ME.cause)
+    c = ME.cause{ci};
+    parts(end+1,1) = sprintf("Cause %d: %s", ci, string(c.message)); %#ok<AGROW>
+end
+
+stackTop = "";
+if ~isempty(ME.stack)
+    s = ME.stack(1);
+    stackTop = sprintf(" (at %s:%d)", string(s.name), s.line);
+end
+
+msg = strjoin(parts, newline) + stackTop;
+msg = char(msg);
 end
 
 function v = getAttrNum(node, attrName)
