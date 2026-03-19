@@ -1,6 +1,6 @@
 %% main_batch_trackmate_arc.m
 % Batch TrackMate XML analysis (ARC + local)
-% - Computes Injection (upstream right->left) and Activation/Growth (AREA jump >= factor)
+% - Computes framewise Injection (left-moving availability) and Activation/Growth events
 % - Supports one or multiple Reynolds-number sets for the same roughness ladder
 % - Plots A/I vs k/D_h, inception (2x growth) locations, Tau vs k/D_h,
 %   and upstream moving microbubble size distributions
@@ -93,11 +93,6 @@ activationOpts.postMaxFactor = 1.5;
 activationOpts.enableBurstFallback = true;
 activationOpts.burstJumpFactor = 2.2;
 activationOpts.burstPostFactor = 1.4;
-
-% Legacy scalar knobs kept for diagnostic GIF helper signatures.
-minNetDx_phys = flowOpts.minNetDxCounterflow_mm;
-minTrackSpots = qcOpts.minTrackSpots;
-areaJumpFactor = activationOpts.areaJumpFactor;
 
 % Density plot bin size (physical units)
 binSize_phys = 0.02;    % adjust based on your mm/px and field size (e.g., 0.02 mm)
@@ -253,21 +248,20 @@ for i = 1:numel(cases)
     % Compute injection/activation metrics + locations
     metrics = trackmate_case_metrics(out, qcOpts, flowOpts, activationOpts);
     g = metrics.gateStats;
-    fprintf(['Gate summary: total=%d, injected=%d, activated=%d, ', ...
+    fprintf(['Strict gate summary: total=%d, injected=%d, activated=%d, ', ...
         'reject(short=%d nonfinite=%d nonmonoT=%d topo=%d flow=%d origin=%d noAct=%d wall=%d)\n'], ...
         g.nTracksTotal, g.nInjected, g.nActivated, ...
         g.nRejectedTooShort, g.nRejectedNonFinite, g.nRejectedNonMonotonicTime, ...
         g.nRejectedTopology, g.nRejectedFlow, g.nRejectedOrigin, ...
         g.nRejectedNoActivation, g.nRejectedWallBand);
 
-    nValidTracks = max(0, g.nTracksTotal - ...
-        g.nRejectedTooShort - g.nRejectedNonFinite - g.nRejectedNonMonotonicTime - g.nRejectedTopology);
-    nRecirculationTracks = g.nInjected;
-    recirculationFrac_total = nRecirculationTracks / max(g.nTracksTotal, 1);
-    activationFrac_valid = metrics.nActivated / max(nValidTracks, 1);
+    nValidTracks = metrics.nBasicValidTracks;
+    nRecirculationTracks = metrics.nLeftMovingTracks;
+    recirculationFrac_total = nRecirculationTracks / max(metrics.nTracksTotal, 1);
+    activationFrac_valid = metrics.nActivatedLeftMovingTracks / max(nValidTracks, 1);
 
     [inj_x_mean_mm, inj_x_std_mm, ~, ~, nInjectionPoints] = xy_stats(metrics.injInception_xy);
-    [act_x_mean_mm, act_x_std_mm, act_y_mean_mm, act_y_std_mm, nInceptionPoints] = xy_stats(metrics.inception2x_xy);
+    [act_x_mean_mm, act_x_std_mm, act_y_mean_mm, act_y_std_mm, nInceptionPoints] = xy_stats(metrics.activationEvent_xy);
     [tau_mean_val, tau_std_val, tau_median, tau_p90, nTauVals] = vector_stats(metrics.tau_values);
     [upstream_eqd_mean, upstream_eqd_std, upstream_eqd_median, upstream_eqd_p90, nUpstreamSizeSamples] = ...
         vector_stats(metrics.upstreamSize_eqd);
@@ -275,15 +269,25 @@ for i = 1:numel(cases)
     % Store per-case summary
     row = table( ...
         string(cases(i).name), cases(i).Re, cases(i).kDh, ...
-        metrics.nTracksTotal, nValidTracks, nRecirculationTracks, metrics.nInjected, metrics.nActivated, ...
+        metrics.nTracksTotal, nValidTracks, ...
+        metrics.nLeftMovingTracks, metrics.nActivatedLeftMovingTracks, ...
+        metrics.leftMovingTrackFrameExposure, metrics.activationEventsTotal, ...
+        metrics.meanLeftMovingPerFrame, metrics.peakLeftMovingPerFrame, ...
         recirculationFrac_total, activationFrac_valid, ...
         metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, ...
+        metrics.nInjected_strictLegacy, metrics.nActivated_strictLegacy, ...
+        metrics.A_over_I_strictLegacy, metrics.A_over_I_ci_low_strictLegacy, metrics.A_over_I_ci_high_strictLegacy, ...
         tau_mean_val, tau_median, tau_p90, tau_std_val, nTauVals, ...
         inj_x_mean_mm, inj_x_std_mm, act_x_mean_mm, act_x_std_mm, ...
         act_y_mean_mm, act_y_std_mm, nInjectionPoints, nInceptionPoints, ...
         upstream_eqd_mean, upstream_eqd_median, upstream_eqd_p90, upstream_eqd_std, nUpstreamSizeSamples, ...
-        'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks','nRecirculationTracks','nInjected','nActivated', ...
+        'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks', ...
+        'nLeftMovingTracks','nActivatedLeftMovingTracks', ...
+        'leftMovingTrackFrameExposure','activationEventsTotal', ...
+        'meanLeftMovingPerFrame','peakLeftMovingPerFrame', ...
         'recirculationFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high', ...
+        'nInjected_strictLegacy','nActivated_strictLegacy', ...
+        'A_over_I_strictLegacy','A_over_I_ci_low_strictLegacy','A_over_I_ci_high_strictLegacy', ...
         'tau_mean','tau_median','tau_p90','tau_std','nTau', ...
         'inj_x_mean_mm','inj_x_std_mm','act_x_mean_mm','act_x_std_mm', ...
         'act_y_mean_mm','act_y_std_mm','nInjectionPoints','nInceptionPoints', ...
@@ -318,12 +322,14 @@ for i = 1:numel(cases)
         'originThreshold','xStartMin','xStartMax'});
     gateSummaryRows = [gateSummaryRows; gateRow]; %#ok<AGROW>
 
+    write_framewise_case_csv(resultsDir, cases(i), metrics);
+
     if plotOpts.makeTrackDiagnostics
         plot_verification_tracks_for_case(cases(i), metrics, trackFigOutDir, plotOpts);
     end
 
     if plotOpts.saveDiagnosticGifs
-        save_diagnostic_track_gifs(cases(i), out, gifOutDir, plotOpts, minNetDx_phys, minTrackSpots, areaJumpFactor);
+        save_diagnostic_track_gifs(cases(i), metrics, gifOutDir, plotOpts);
     end
 
     % Close any accidental figures
@@ -443,6 +449,47 @@ if i0 == i1
 else
     frac = idx - i0;
     q = v(i0) + frac * (v(i1) - v(i0));
+end
+end
+
+function write_framewise_case_csv(resultsDir, caseDef, metrics)
+frameAxis = nan(0,1);
+nLeft = nan(0,1);
+nAct = nan(0,1);
+cumExposure = nan(0,1);
+cumAct = nan(0,1);
+if isfield(metrics, 'frame_axis'), frameAxis = metrics.frame_axis(:); end
+if isfield(metrics, 'frame_nLeftMovingVisible'), nLeft = metrics.frame_nLeftMovingVisible(:); end
+if isfield(metrics, 'frame_nActivationEvents'), nAct = metrics.frame_nActivationEvents(:); end
+if isfield(metrics, 'frame_cumExposure'), cumExposure = metrics.frame_cumExposure(:); end
+if isfield(metrics, 'frame_cumActivationEvents'), cumAct = metrics.frame_cumActivationEvents(:); end
+
+n = min([numel(frameAxis), numel(nLeft), numel(nAct), numel(cumExposure), numel(cumAct)]);
+if n < 0 || ~isfinite(n)
+    n = 0;
+end
+
+frameTbl = table( ...
+    frameAxis(1:n), ...
+    nLeft(1:n), ...
+    nAct(1:n), ...
+    cumExposure(1:n), ...
+    cumAct(1:n), ...
+    'VariableNames', {'frame','nLeftMovingVisible','nActivationEvents','cumExposure','cumActivationEvents'});
+
+caseToken = sanitize_case_token(caseDef.name);
+outCsv = fullfile(resultsDir, sprintf('framewise_counts_%s_Re_%g_kDh_%g.csv', caseToken, caseDef.Re, caseDef.kDh));
+write_table_csv_compat(frameTbl, outCsv);
+fprintf("Saved: %s\n", outCsv);
+end
+
+function token = sanitize_case_token(caseName)
+token = char(string(caseName));
+token = regexprep(token, '[^A-Za-z0-9]+', '_');
+token = regexprep(token, '^_+', '');
+token = regexprep(token, '_+$', '');
+if isempty(token)
+    token = 'case';
 end
 end
 

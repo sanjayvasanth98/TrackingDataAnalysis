@@ -4,9 +4,14 @@ if nargin < 4 || ~isfield(plotOpts, 'themes') || isempty(plotOpts.themes)
     plotOpts.themes = "normal";
 end
 
-trackCells = metrics.upstreamTrack_xy;
+trackCells = cell(0,1);
+if isfield(metrics, 'leftMovingTrack_xy') && ~isempty(metrics.leftMovingTrack_xy)
+    trackCells = metrics.leftMovingTrack_xy;
+elseif isfield(metrics, 'upstreamTrack_xy')
+    trackCells = metrics.upstreamTrack_xy;
+end
 if isempty(trackCells)
-    warning('No upstream tracks found for case %s. Skipping diagnostic track plot.', char(caseDef.name));
+    warning('No left-moving tracks found for case %s. Skipping diagnostic track plot.', char(caseDef.name));
     return;
 end
 
@@ -51,10 +56,17 @@ for theme = reshape(plotOpts.themes, 1, [])
         end
     end
 
+    actXY = zeros(0,2);
+    if isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
+        actXY = metrics.activationEvent_xy;
+    elseif isfield(metrics, 'actLocation_xy') && ~isempty(metrics.actLocation_xy)
+        actXY = metrics.actLocation_xy;
+    end
+
     hAct = gobjects(0,1);
-    if ~isempty(metrics.actLocation_xy)
-        yAct = yExtent_mm - metrics.actLocation_xy(:,2);
-        hAct = scatter(ax, metrics.actLocation_xy(:,1), yAct, 36, ...
+    if ~isempty(actXY)
+        yAct = yExtent_mm - actXY(:,2);
+        hAct = scatter(ax, actXY(:,1), yAct, 36, ...
             'Marker', 'o', ...
             'MarkerEdgeColor', 'none', ...
             'MarkerFaceColor', activationColor);
@@ -65,7 +77,17 @@ for theme = reshape(plotOpts.themes, 1, [])
     axis(ax, 'equal');
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
-    title(ax, sprintf('Track diagnostics: %s, Re=%g, k/D_h=%.4g', char(caseDef.name), caseDef.Re, caseDef.kDh));
+    exposureVal = 0;
+    if isfield(metrics, 'leftMovingTrackFrameExposure') && isfinite(metrics.leftMovingTrackFrameExposure)
+        exposureVal = metrics.leftMovingTrackFrameExposure;
+    end
+    actTotal = 0;
+    if isfield(metrics, 'activationEventsTotal') && isfinite(metrics.activationEventsTotal)
+        actTotal = metrics.activationEventsTotal;
+    end
+    title(ax, sprintf(['Track diagnostics: %s, Re=%g, k/D_h=%.4g | ', ...
+        'A/I=%.4g, events=%d, exposure=%d'], ...
+        char(caseDef.name), caseDef.Re, caseDef.kDh, metrics.A_over_I, actTotal, exposureVal));
     grid(ax, 'on');
     box(ax, 'on');
 
@@ -73,11 +95,11 @@ for theme = reshape(plotOpts.themes, 1, [])
     lgdLabels = strings(0,1);
     if ~isempty(hTrack)
         lgdHandles(end+1,1) = hTrack(1); %#ok<AGROW>
-        lgdLabels(end+1,1) = sprintf('Upstream tracks (n=%d)', numel(trackCells)); %#ok<AGROW>
+        lgdLabels(end+1,1) = sprintf('Left-moving tracks (framewise denominator, n=%d)', numel(trackCells)); %#ok<AGROW>
     end
     if ~isempty(hAct)
         lgdHandles(end+1,1) = hAct; %#ok<AGROW>
-        lgdLabels(end+1,1) = sprintf('Activated locations (n=%d)', size(metrics.actLocation_xy, 1)); %#ok<AGROW>
+        lgdLabels(end+1,1) = sprintf('Activation events (framewise numerator, n=%d)', size(actXY, 1)); %#ok<AGROW>
     end
 
     if ~isempty(lgdHandles)

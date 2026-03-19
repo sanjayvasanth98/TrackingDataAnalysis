@@ -1,5 +1,5 @@
 function metrics = trackmate_case_metrics(out, varargin)
-%TRACKMATE_CASE_METRICS  Robust injected/activated metrics for TrackMate trajectories.
+%TRACKMATE_CASE_METRICS  Unified upstream/activation metrics for TrackMate trajectories.
 % New call style:
 %   metrics = trackmate_case_metrics(out, qcOpts, flowOpts, activationOpts)
 %
@@ -17,13 +17,20 @@ end
 
 nTotal = numel(traj);
 
-injInception_xy = zeros(0,2);
-actLocation_xy  = zeros(0,2);
-inception2x_xy  = zeros(0,2);
-upstreamTrack_xy = cell(0,1);
-
-tau_values = nan(0,1);
+% Primary (framewise) set: basic-valid + net left-moving.
+leftMovingInception_xy = zeros(0,2);
+activationEvent_xy = zeros(0,2);
+leftMovingTrack_xy = cell(0,1);
 upstreamSize_eqd = nan(0,1);
+tau_values = nan(0,1);
+activationEventFrames = nan(0,1);
+activationEventTrackIds = nan(0,1);
+leftMovingFrameCells = cell(0,1);
+leftMovingTrackIds = nan(0,1);
+
+% Strict legacy set (kept for audit/comparison).
+strictInjInception_xy = zeros(0,2);
+strictActLocation_xy = zeros(0,2);
 
 gateStats = struct();
 gateStats.nTracksTotal = nTotal;
@@ -41,19 +48,21 @@ gateStats.originThreshold = NaN;
 gateStats.xStartMin = NaN;
 gateStats.xStartMax = NaN;
 
+trackCatalog = repmat(make_catalog_template(), nTotal, 1);
+
 if isempty(traj) || isempty(spots) || ~ismember('ID', spots.Properties.VariableNames)
     metrics = pack_metrics();
     return;
 end
 
-% Map SpotID -> row
+% Map SpotID -> row.
 [spotIdSorted, sortIdx] = sort(spots.ID);
 spotRowById = containers.Map('KeyType', 'double', 'ValueType', 'double');
 for k = 1:numel(spotIdSorted)
     spotRowById(spotIdSorted(k)) = sortIdx(k);
 end
 
-% Map TRACK_ID -> row in tracks table (for topology QC).
+% Map TRACK_ID -> row in tracks table (for strict legacy topology QC).
 trackRowById = containers.Map('KeyType', 'double', 'ValueType', 'double');
 if ~isempty(tracks) && ismember('TRACK_ID', tracks.Properties.VariableNames)
     for k = 1:height(tracks)
@@ -64,9 +73,10 @@ if ~isempty(tracks) && ismember('TRACK_ID', tracks.Properties.VariableNames)
     end
 end
 
+% Precompute strict-origin threshold once.
 xStarts = nan(0,1);
 for k = 1:nTotal
-    xk = traj(k).x_phys(:);
+    xk = get_struct_column(traj(k), 'x_phys');
     if ~isempty(xk) && isfinite(xk(1))
         xStarts(end+1,1) = xk(1); %#ok<AGROW>
     end
@@ -76,24 +86,60 @@ gateStats.originThreshold = originThreshold;
 gateStats.xStartMin = xMinAll;
 gateStats.xStartMax = xMaxAll;
 
+% Build per-track prepared records once (single source of truth).
+prep = repmat(make_prep_template(), nTotal, 1);
 for k = 1:nTotal
-    nTrackSpots = numel(traj(k).spotIds);
-    if nTrackSpots < qcOpts.minTrackSpots
+    prep(k) = build_track_prep(traj(k), spotRowById, spots, qcOpts, activationOpts);
+    trackCatalog(k) = build_track_catalog_entry(prep(k));
+
+    % Primary framewise denominator/numerator set.
+    if ~(prep(k).isBasicValid && prep(k).isLeftMoving)
+        continue;
+    end
+
+    leftMovingTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+    leftMovingTrack_xy{end+1,1} = [prep(k).x, prep(k).y]; %#ok<AGROW>
+    leftMovingInception_xy(end+1,:) = [prep(k).x(1), prep(k).y(1)]; %#ok<AGROW>
+
+    frameUnique = unique(prep(k).frame(isfinite(prep(k).frame)));
+    if isempty(frameUnique)
+        frameUnique = (1:numel(prep(k).x)).';
+    end
+    leftMovingFrameCells{end+1,1} = frameUnique(:); %#ok<AGROW>
+
+    nUse = numel(prep(k).areaVals);
+    if prep(k).hasActivation
+        nUse = prep(k).idxJump;
+    end
+
+    if nUse >= 1
+        areaUse = prep(k).areaVals(1:nUse);
+        eqd = sqrt(4 .* areaUse ./ pi);
+        eqd = eqd(isfinite(eqd) & eqd > 0);
+        if ~isempty(eqd)
+            upstreamSize_eqd = [upstreamSize_eqd; eqd(:)]; %#ok<AGROW>
+        end
+    end
+
+    if prep(k).hasActivation
+        activationEvent_xy(end+1,:) = [prep(k).actX, prep(k).actY]; %#ok<AGROW>
+        activationEventFrames(end+1,1) = prep(k).actFrame; %#ok<AGROW>
+        activationEventTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+        tau_values(end+1,1) = max(prep(k).t(prep(k).actIdx) - prep(k).t(1), 0); %#ok<AGROW>
+    end
+end
+
+% Strict legacy gate accounting (retained as secondary outputs).
+for k = 1:nTotal
+    if prep(k).isShort
         gateStats.nRejectedTooShort = gateStats.nRejectedTooShort + 1;
         continue;
     end
-
-    x = traj(k).x_phys(:);
-    y = traj(k).y_phys(:);
-    t = traj(k).t(:);
-
-    if numel(x) < 2 || numel(y) ~= numel(x) || numel(t) ~= numel(x) || any(~isfinite([x; y; t]))
+    if prep(k).isNonFinite
         gateStats.nRejectedNonFinite = gateStats.nRejectedNonFinite + 1;
         continue;
     end
-
-    dtTrack = diff(t);
-    if isempty(dtTrack) || any(~isfinite(dtTrack)) || any(dtTrack <= 0)
+    if prep(k).isNonMonotonicTime
         gateStats.nRejectedNonMonotonicTime = gateStats.nRejectedNonMonotonicTime + 1;
         continue;
     end
@@ -103,103 +149,334 @@ for k = 1:nTotal
         continue;
     end
 
-    [isCounterflow, ~, ~] = passes_counterflow_gate(x, flowOpts);
+    [isCounterflow, ~, ~] = passes_counterflow_gate(prep(k).x, flowOpts);
     if ~isCounterflow
         gateStats.nRejectedFlow = gateStats.nRejectedFlow + 1;
         continue;
     end
 
     if flowOpts.requireRightOrigin && isfinite(originThreshold)
-        if ~passes_origin_gate(x(1), originThreshold, flowOpts)
+        if ~passes_origin_gate(prep(k).x(1), originThreshold, flowOpts)
             gateStats.nRejectedOrigin = gateStats.nRejectedOrigin + 1;
             continue;
         end
     end
 
     gateStats.nInjected = gateStats.nInjected + 1;
+    strictInjInception_xy(end+1,:) = [prep(k).x(1), prep(k).y(1)]; %#ok<AGROW>
 
-    % Inception location = first spot of this injected track.
-    injInception_xy(end+1,:) = [x(1), y(1)]; %#ok<AGROW>
-    upstreamTrack_xy{end+1,1} = [x, y]; %#ok<AGROW>
-
-    areaVals = nan(numel(traj(k).spotIds),1);
-    for ii = 1:numel(traj(k).spotIds)
-        sid = traj(k).spotIds(ii);
-        if isKey(spotRowById, sid)
-            r = spotRowById(sid);
-            if ismember('AREA', spots.Properties.VariableNames)
-                areaVals(ii) = spots.AREA(r);
-            end
-        end
-    end
-
-    idxJump = find_sustained_growth_activation(areaVals, activationOpts);
-
-    if isempty(idxJump)
+    if ~prep(k).hasActivation
         gateStats.nRejectedNoActivation = gateStats.nRejectedNoActivation + 1;
-        nUse = numel(areaVals);
-    else
-        nUse = idxJump;
-    end
-
-    if nUse >= 1
-        areaUse = areaVals(1:nUse);
-        eqd = sqrt(4 .* areaUse ./ pi);
-        eqd = eqd(isfinite(eqd) & eqd > 0);
-        if ~isempty(eqd)
-            upstreamSize_eqd = [upstreamSize_eqd; eqd(:)]; %#ok<AGROW>
-        end
-    end
-
-    if isempty(idxJump)
         continue;
     end
 
-    actX = x(idxJump+1);
-    actY = y(idxJump+1);
-
-    if qcOpts.wallBandEnabled && ~passes_wall_band(actY, qcOpts.wallBandYLimits_mm)
+    if qcOpts.wallBandEnabled && ~passes_wall_band(prep(k).actY, qcOpts.wallBandYLimits_mm)
         gateStats.nRejectedWallBand = gateStats.nRejectedWallBand + 1;
         continue;
     end
 
     gateStats.nActivated = gateStats.nActivated + 1;
-    actLocation_xy(end+1,:) = [actX, actY]; %#ok<AGROW>
-    inception2x_xy(end+1,:) = [actX, actY]; %#ok<AGROW>
-
-    if numel(t) >= (idxJump + 1) && isfinite(t(idxJump+1)) && isfinite(t(1))
-        tau_values(end+1,1) = max(t(idxJump+1) - t(1), 0); %#ok<AGROW>
-    end
+    strictActLocation_xy(end+1,:) = [prep(k).actX, prep(k).actY]; %#ok<AGROW>
 end
+
+% Framewise counts (primary).
+[frameAxis, frameLeftVisible, frameActEvents, frameCumExposure, frameCumActEvents] = ...
+    build_framewise_counts(leftMovingFrameCells, activationEventFrames);
 
 metrics = pack_metrics();
 
     function outMetrics = pack_metrics()
-        nInjected = gateStats.nInjected;
-        nActivated = gateStats.nActivated;
-        A_over_I = nActivated / max(nInjected, 1);
-        [A_over_I_ci_low, A_over_I_ci_high] = wilson_ci(nActivated, nInjected, 0.95);
+        nLeftMovingTracks = numel(leftMovingTrackIds);
+        finiteActTrackIds = activationEventTrackIds(isfinite(activationEventTrackIds));
+        nActivatedLeftMovingTracks = numel(unique(finiteActTrackIds));
+        if nActivatedLeftMovingTracks == 0
+            nActivatedLeftMovingTracks = size(activationEvent_xy, 1);
+        end
+
+        leftMovingTrackFrameExposure = sum(frameLeftVisible);
+        activationEventsTotal = sum(frameActEvents);
+        A_over_I = activationEventsTotal / max(leftMovingTrackFrameExposure, 1);
+        [A_over_I_ci_low, A_over_I_ci_high] = wilson_ci(activationEventsTotal, leftMovingTrackFrameExposure, 0.95);
+
+        nInjectedStrict = gateStats.nInjected;
+        nActivatedStrict = gateStats.nActivated;
+        A_over_I_strictLegacy = nActivatedStrict / max(nInjectedStrict, 1);
+        [A_over_I_ci_low_strictLegacy, A_over_I_ci_high_strictLegacy] = ...
+            wilson_ci(nActivatedStrict, nInjectedStrict, 0.95);
+
+        if isempty(frameLeftVisible)
+            meanLeftMovingPerFrame = 0;
+            peakLeftMovingPerFrame = 0;
+        else
+            meanLeftMovingPerFrame = mean(frameLeftVisible);
+            peakLeftMovingPerFrame = max(frameLeftVisible);
+        end
+
+        nBasicValidTracks = sum([prep.isBasicValid]);
 
         outMetrics = struct();
-        outMetrics.nTracksTotal     = nTotal;
-        outMetrics.nInjected        = nInjected;
-        outMetrics.nActivated       = nActivated;
-        outMetrics.A_over_I         = A_over_I;
-        outMetrics.A_over_I_ci_low  = A_over_I_ci_low;
+        outMetrics.nTracksTotal = nTotal;
+        outMetrics.nBasicValidTracks = nBasicValidTracks;
+
+        % Primary metrics (framewise-A/I workflow).
+        outMetrics.nLeftMovingTracks = nLeftMovingTracks;
+        outMetrics.nActivatedLeftMovingTracks = nActivatedLeftMovingTracks;
+        outMetrics.leftMovingTrackFrameExposure = leftMovingTrackFrameExposure;
+        outMetrics.activationEventsTotal = activationEventsTotal;
+        outMetrics.meanLeftMovingPerFrame = meanLeftMovingPerFrame;
+        outMetrics.peakLeftMovingPerFrame = peakLeftMovingPerFrame;
+        outMetrics.A_over_I = A_over_I;
+        outMetrics.A_over_I_ci_low = A_over_I_ci_low;
         outMetrics.A_over_I_ci_high = A_over_I_ci_high;
-        outMetrics.injInception_xy  = injInception_xy;
-        outMetrics.actLocation_xy   = actLocation_xy;
-        outMetrics.inception2x_xy   = inception2x_xy;
-        outMetrics.tau_values       = tau_values;
-        outMetrics.tau_mean         = mean(tau_values, 'omitnan');
-        outMetrics.tau_std          = std(tau_values, 0, 'omitnan');
+
+        % Compatibility aliases (primary semantics).
+        outMetrics.nInjected = nLeftMovingTracks;
+        outMetrics.nActivated = nActivatedLeftMovingTracks;
+
+        outMetrics.injInception_xy = leftMovingInception_xy;
+        outMetrics.actLocation_xy = activationEvent_xy;
+        outMetrics.inception2x_xy = activationEvent_xy;
+        outMetrics.upstreamTrack_xy = leftMovingTrack_xy;
+        outMetrics.leftMovingTrack_xy = leftMovingTrack_xy;
+        outMetrics.activationEvent_xy = activationEvent_xy;
+        outMetrics.activationEvent_frame = activationEventFrames;
+        outMetrics.activationEvent_trackId = activationEventTrackIds;
+        outMetrics.tau_values = tau_values;
+        outMetrics.tau_mean = mean(tau_values, 'omitnan');
+        outMetrics.tau_std = std(tau_values, 0, 'omitnan');
         outMetrics.upstreamSize_eqd = upstreamSize_eqd;
-        outMetrics.upstreamTrack_xy = upstreamTrack_xy;
-        outMetrics.gateStats        = gateStats;
-        outMetrics.qcOpts           = qcOpts;
-        outMetrics.flowOpts         = flowOpts;
-        outMetrics.activationOpts   = activationOpts;
+
+        outMetrics.frame_axis = frameAxis;
+        outMetrics.frame_nLeftMovingVisible = frameLeftVisible;
+        outMetrics.frame_nActivationEvents = frameActEvents;
+        outMetrics.frame_cumExposure = frameCumExposure;
+        outMetrics.frame_cumActivationEvents = frameCumActEvents;
+
+        % Secondary strict legacy metrics.
+        outMetrics.nInjected_strictLegacy = nInjectedStrict;
+        outMetrics.nActivated_strictLegacy = nActivatedStrict;
+        outMetrics.A_over_I_strictLegacy = A_over_I_strictLegacy;
+        outMetrics.A_over_I_ci_low_strictLegacy = A_over_I_ci_low_strictLegacy;
+        outMetrics.A_over_I_ci_high_strictLegacy = A_over_I_ci_high_strictLegacy;
+        outMetrics.injInception_xy_strictLegacy = strictInjInception_xy;
+        outMetrics.actLocation_xy_strictLegacy = strictActLocation_xy;
+
+        outMetrics.trackCatalog = trackCatalog;
+        outMetrics.gateStats = gateStats;
+        outMetrics.qcOpts = qcOpts;
+        outMetrics.flowOpts = flowOpts;
+        outMetrics.activationOpts = activationOpts;
     end
+end
+
+function tpl = make_prep_template()
+tpl = struct( ...
+    'TRACK_ID', NaN, ...
+    'spotIds', nan(0,1), ...
+    'nTrackSpots', 0, ...
+    'x', nan(0,1), ...
+    'y', nan(0,1), ...
+    't', nan(0,1), ...
+    'frame', nan(0,1), ...
+    'areaVals', nan(0,1), ...
+    'isShort', false, ...
+    'isNonFinite', false, ...
+    'isNonMonotonicTime', false, ...
+    'isBasicValid', false, ...
+    'isLeftMoving', false, ...
+    'idxJump', NaN, ...
+    'hasActivation', false, ...
+    'actIdx', NaN, ...
+    'actX', NaN, ...
+    'actY', NaN, ...
+    'actFrame', NaN);
+end
+
+function tpl = make_catalog_template()
+tpl = struct( ...
+    'TRACK_ID', NaN, ...
+    'frame', nan(0,1), ...
+    'x', nan(0,1), ...
+    'y', nan(0,1), ...
+    'isBasicValid', false, ...
+    'isLeftMoving', false, ...
+    'isActivated', false, ...
+    'activationFrame', NaN, ...
+    'activationX', NaN, ...
+    'activationY', NaN, ...
+    'activationIndex', NaN);
+end
+
+function prep = build_track_prep(thisTraj, spotRowById, spots, qcOpts, activationOpts)
+prep = make_prep_template();
+
+if isfield(thisTraj, 'TRACK_ID')
+    prep.TRACK_ID = thisTraj.TRACK_ID;
+end
+if isfield(thisTraj, 'spotIds')
+    prep.spotIds = thisTraj.spotIds(:);
+end
+prep.nTrackSpots = numel(prep.spotIds);
+prep.isShort = (prep.nTrackSpots < qcOpts.minTrackSpots);
+
+if isfield(thisTraj, 'x_phys')
+    prep.x = thisTraj.x_phys(:);
+end
+if isfield(thisTraj, 'y_phys')
+    prep.y = thisTraj.y_phys(:);
+end
+if isfield(thisTraj, 't')
+    prep.t = thisTraj.t(:);
+end
+
+n = numel(prep.x);
+rawFrame = nan(0,1);
+if isfield(thisTraj, 'frame')
+    rawFrame = thisTraj.frame(:);
+end
+prep.frame = normalize_frame_values(rawFrame, n);
+
+if n < 2 || numel(prep.y) ~= n || numel(prep.t) ~= n || any(~isfinite([prep.x; prep.y; prep.t]))
+    prep.isNonFinite = true;
+    return;
+end
+
+dtTrack = diff(prep.t);
+if isempty(dtTrack) || any(~isfinite(dtTrack)) || any(dtTrack <= 0)
+    prep.isNonMonotonicTime = true;
+    return;
+end
+
+if prep.isShort
+    return;
+end
+
+prep.isBasicValid = true;
+prep.isLeftMoving = (prep.x(end) < prep.x(1));
+
+prep.areaVals = extract_area_values(prep.spotIds, spotRowById, spots);
+idxJump = find_sustained_growth_activation(prep.areaVals, activationOpts);
+if ~isempty(idxJump)
+    actIdx = idxJump + 1;
+    if actIdx >= 1 && actIdx <= n
+        prep.idxJump = idxJump;
+        prep.hasActivation = true;
+        prep.actIdx = actIdx;
+        prep.actX = prep.x(actIdx);
+        prep.actY = prep.y(actIdx);
+        prep.actFrame = prep.frame(actIdx);
+    end
+end
+end
+
+function catalog = build_track_catalog_entry(prep)
+catalog = make_catalog_template();
+catalog.TRACK_ID = prep.TRACK_ID;
+catalog.frame = prep.frame;
+catalog.x = prep.x;
+catalog.y = prep.y;
+catalog.isBasicValid = prep.isBasicValid;
+catalog.isLeftMoving = prep.isLeftMoving;
+catalog.isActivated = prep.hasActivation;
+catalog.activationFrame = prep.actFrame;
+catalog.activationX = prep.actX;
+catalog.activationY = prep.actY;
+catalog.activationIndex = prep.actIdx;
+end
+
+function areaVals = extract_area_values(spotIds, spotRowById, spots)
+areaVals = nan(numel(spotIds), 1);
+if isempty(spotIds) || ~ismember('AREA', spots.Properties.VariableNames)
+    return;
+end
+
+for ii = 1:numel(spotIds)
+    sid = spotIds(ii);
+    if isKey(spotRowById, sid)
+        row = spotRowById(sid);
+        areaVals(ii) = spots.AREA(row);
+    end
+end
+end
+
+function frameVals = normalize_frame_values(rawFrame, n)
+if nargin < 2 || ~isfinite(n) || n < 0
+    n = numel(rawFrame);
+end
+
+if n == 0
+    frameVals = nan(0,1);
+    return;
+end
+
+if isempty(rawFrame) || numel(rawFrame) ~= n || any(~isfinite(rawFrame(:)))
+    frameVals = (1:n).';
+    return;
+end
+
+frameVals = rawFrame(:);
+r = round(frameVals);
+if max(abs(frameVals - r)) < 1e-9
+    frameVals = r;
+end
+end
+
+function [frameAxis, nLeftVisible, nActEvents, cumExposure, cumActEvents] = ...
+    build_framewise_counts(leftMovingFrameCells, activationFrames)
+
+allFrames = nan(0,1);
+for i = 1:numel(leftMovingFrameCells)
+    f = leftMovingFrameCells{i};
+    if isempty(f)
+        continue;
+    end
+    f = unique(f(isfinite(f)));
+    if ~isempty(f)
+        allFrames = [allFrames; f(:)]; %#ok<AGROW>
+    end
+end
+
+activationFrames = activationFrames(:);
+activationFrames = activationFrames(isfinite(activationFrames));
+
+frameAxis = unique([allFrames; activationFrames]);
+if isempty(frameAxis)
+    nLeftVisible = nan(0,1);
+    nActEvents = nan(0,1);
+    cumExposure = nan(0,1);
+    cumActEvents = nan(0,1);
+    return;
+end
+
+nFrames = numel(frameAxis);
+nLeftVisible = zeros(nFrames,1);
+nActEvents = zeros(nFrames,1);
+
+if ~isempty(allFrames)
+    [~, locLeft] = ismember(allFrames, frameAxis);
+    locLeft = locLeft(locLeft > 0);
+    if ~isempty(locLeft)
+        nLeftVisible = accumarray(locLeft, 1, [nFrames, 1]);
+    end
+end
+
+if ~isempty(activationFrames)
+    [~, locAct] = ismember(activationFrames, frameAxis);
+    locAct = locAct(locAct > 0);
+    if ~isempty(locAct)
+        nActEvents = accumarray(locAct, 1, [nFrames, 1]);
+    end
+end
+
+cumExposure = cumsum(nLeftVisible);
+cumActEvents = cumsum(nActEvents);
+end
+
+function x = get_struct_column(s, fieldName)
+x = nan(0,1);
+if isfield(s, fieldName)
+    x = s.(fieldName)(:);
+end
 end
 
 function pass = passes_topology_gate(thisTraj, trackRowById, tracks, qcOpts)
