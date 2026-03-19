@@ -335,13 +335,13 @@ summaryRows = sortrows(summaryRows, {'Re','kDh'});
 
 % Save summary table
 summaryCsv = fullfile(resultsDir, "Summary_tracks.csv");
-writetable(summaryRows, summaryCsv);
+write_table_csv_compat(summaryRows, summaryCsv);
 fprintf("\nSaved: %s\n", summaryCsv);
 
 if ~isempty(gateSummaryRows)
     gateSummaryRows = sortrows(gateSummaryRows, {'Re','kDh'});
     gateSummaryCsv = fullfile(resultsDir, "track_gate_summary.csv");
-    writetable(gateSummaryRows, gateSummaryCsv);
+    write_table_csv_compat(gateSummaryRows, gateSummaryCsv);
     fprintf("Saved: %s\n", gateSummaryCsv);
 end
 
