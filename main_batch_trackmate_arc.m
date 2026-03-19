@@ -7,7 +7,7 @@
 %
 % Output:
 %   resultsDir/
-%     summary_AI_tau_vs_kDh_Re.csv
+%     Summary_tracks.csv
 %     fit_AI_vs_kDh_by_Re.txt
 %     Figures_PNG_SVG/(normal|poster)/...
 
@@ -260,14 +260,34 @@ for i = 1:numel(cases)
         g.nRejectedTopology, g.nRejectedFlow, g.nRejectedOrigin, ...
         g.nRejectedNoActivation, g.nRejectedWallBand);
 
+    nValidTracks = max(0, g.nTracksTotal - ...
+        g.nRejectedTooShort - g.nRejectedNonFinite - g.nRejectedNonMonotonicTime - g.nRejectedTopology);
+    nRecirculationTracks = g.nInjected;
+    recirculationFrac_total = nRecirculationTracks / max(g.nTracksTotal, 1);
+    activationFrac_valid = metrics.nActivated / max(nValidTracks, 1);
+
+    [inj_x_mean_mm, inj_x_std_mm, ~, ~, nInjectionPoints] = xy_stats(metrics.injInception_xy);
+    [act_x_mean_mm, act_x_std_mm, act_y_mean_mm, act_y_std_mm, nInceptionPoints] = xy_stats(metrics.inception2x_xy);
+    [tau_mean_val, tau_std_val, tau_median, tau_p90, nTauVals] = vector_stats(metrics.tau_values);
+    [upstream_eqd_mean, upstream_eqd_std, upstream_eqd_median, upstream_eqd_p90, nUpstreamSizeSamples] = ...
+        vector_stats(metrics.upstreamSize_eqd);
+
     % Store per-case summary
     row = table( ...
         string(cases(i).name), cases(i).Re, cases(i).kDh, ...
-        metrics.nTracksTotal, metrics.nInjected, metrics.nActivated, ...
+        metrics.nTracksTotal, nValidTracks, nRecirculationTracks, metrics.nInjected, metrics.nActivated, ...
+        recirculationFrac_total, activationFrac_valid, ...
         metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, ...
-        metrics.tau_mean, metrics.tau_std, numel(metrics.tau_values), ...
-        'VariableNames', {'Case','Re','kDh','nTracksTotal','nInjected','nActivated', ...
-        'A_over_I','A_over_I_ci_low','A_over_I_ci_high','tau_mean','tau_std','nTau'});
+        tau_mean_val, tau_median, tau_p90, tau_std_val, nTauVals, ...
+        inj_x_mean_mm, inj_x_std_mm, act_x_mean_mm, act_x_std_mm, ...
+        act_y_mean_mm, act_y_std_mm, nInjectionPoints, nInceptionPoints, ...
+        upstream_eqd_mean, upstream_eqd_median, upstream_eqd_p90, upstream_eqd_std, nUpstreamSizeSamples, ...
+        'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks','nRecirculationTracks','nInjected','nActivated', ...
+        'recirculationFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high', ...
+        'tau_mean','tau_median','tau_p90','tau_std','nTau', ...
+        'inj_x_mean_mm','inj_x_std_mm','act_x_mean_mm','act_x_std_mm', ...
+        'act_y_mean_mm','act_y_std_mm','nInjectionPoints','nInceptionPoints', ...
+        'upstream_eqd_mean','upstream_eqd_median','upstream_eqd_p90','upstream_eqd_std','nUpstreamSizeSamples'});
 
     summaryRows = [summaryRows; row]; %#ok<AGROW>
 
@@ -314,7 +334,7 @@ end
 summaryRows = sortrows(summaryRows, {'Re','kDh'});
 
 % Save summary table
-summaryCsv = fullfile(resultsDir, "summary_AI_tau_vs_kDh_Re.csv");
+summaryCsv = fullfile(resultsDir, "Summary_tracks.csv");
 writetable(summaryRows, summaryCsv);
 fprintf("\nSaved: %s\n", summaryCsv);
 
@@ -348,6 +368,83 @@ if useMatCache && cacheUpdated
 end
 
 fprintf("\nAll done. Results in: %s\n", resultsDir);
+
+function [xMean, xStd, yMean, yStd, nPts] = xy_stats(xy)
+nPts = 0;
+xMean = NaN;
+xStd = NaN;
+yMean = NaN;
+yStd = NaN;
+
+if isempty(xy) || size(xy,2) < 2
+    return;
+end
+
+xy = xy(isfinite(xy(:,1)) & isfinite(xy(:,2)), :);
+nPts = size(xy,1);
+if nPts == 0
+    return;
+end
+
+xVals = xy(:,1);
+yVals = xy(:,2);
+xMean = mean(xVals, 'omitnan');
+xStd = std(xVals, 0, 'omitnan');
+yMean = mean(yVals, 'omitnan');
+yStd = std(yVals, 0, 'omitnan');
+end
+
+function [m, s, md, p90, n] = vector_stats(v)
+n = 0;
+m = NaN;
+s = NaN;
+md = NaN;
+p90 = NaN;
+
+if isempty(v)
+    return;
+end
+
+v = v(:);
+v = v(isfinite(v));
+n = numel(v);
+if n == 0
+    return;
+end
+
+m = mean(v, 'omitnan');
+s = std(v, 0, 'omitnan');
+md = median(v, 'omitnan');
+p90 = percentile_legacy(v, 90);
+end
+
+function q = percentile_legacy(v, p)
+q = NaN;
+if isempty(v) || ~isfinite(p)
+    return;
+end
+
+v = sort(v(:));
+n = numel(v);
+if n == 0
+    return;
+end
+if n == 1
+    q = v(1);
+    return;
+end
+
+p = min(100, max(0, p));
+idx = 1 + (n - 1) * (p / 100);
+i0 = floor(idx);
+i1 = ceil(idx);
+if i0 == i1
+    q = v(i0);
+else
+    frac = idx - i0;
+    q = v(i0) + frac * (v(i1) - v(i0));
+end
+end
 
 function caseKey = build_case_cache_key(caseDef, maxTracks, policyTag)
 if isfile(caseDef.xmlFile)
