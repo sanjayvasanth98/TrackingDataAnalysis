@@ -12,6 +12,8 @@
 %     Figures_PNG_SVG/(normal|poster)/...
 
 clear; clc;
+clear functions;
+rehash;
 
 %% ---------------- USER SETTINGS ----------------
 % Toggle run mode by commenting one line

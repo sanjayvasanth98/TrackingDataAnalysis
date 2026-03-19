@@ -19,7 +19,9 @@ pngPath = [outBase '.png'];
 svgPath = [outBase '.svg'];
 
 [outDir,~,~] = fileparts(outBase);
-if ~exist(outDir,'dir'), mkdir(outDir); end
+if ~isempty(outDir) && ~exist(outDir,'dir')
+    mkdir(outDir);
+end
 
 if opts.savePNG
     % PNG 600 dpi
