@@ -58,7 +58,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             end
 
             xi = linspace(xLimUse(1), xLimUse(2), 300);
-            fhat = ksdensity(x, xi);
+            fhat = estimate_pdf_density(x, xi);
 
             hFill = fill(ax, [xi, fliplr(xi)], [fhat, zeros(size(fhat))], cmap(j,:), ...
                 'FaceAlpha', 0.5, ...
@@ -110,7 +110,7 @@ if isempty(x)
 end
 
 xMin = min(x);
-xHi = prctile(x, 99);
+xHi = percentile_linear(x, 99);
 
 if ~(isfinite(xHi) && xHi > xMin)
     xHi = max(x);
@@ -122,6 +122,105 @@ end
 pad = max(0.05 * (xHi - xMin), 5);
 xLo = max(0, xMin - pad);
 xLim = [xLo, xHi + pad];
+end
+
+function fhat = estimate_pdf_density(x, xi)
+x = x(:);
+x = x(isfinite(x));
+xi = xi(:).';
+n = numel(x);
+
+fhat = zeros(size(xi));
+if n < 2 || isempty(xi)
+    return;
+end
+
+if exist('ksdensity', 'file') == 2
+    try
+        fhat = ksdensity(x, xi);
+        fhat = fhat(:).';
+        return;
+    catch
+        % Fall back to toolbox-free KDE below.
+    end
+end
+
+h = silverman_bandwidth(x);
+if ~(isfinite(h) && h > 0)
+    xSpan = max(xi) - min(xi);
+    if ~(isfinite(xSpan) && xSpan > 0)
+        xSpan = max(x) - min(x);
+    end
+    h = max(xSpan / 50, sqrt(eps));
+end
+
+normConst = 1 / (n * h * sqrt(2*pi));
+blockSize = 5000;
+for s = 1:blockSize:n
+    e = min(s + blockSize - 1, n);
+    xb = x(s:e);
+    u = bsxfun(@minus, xi, xb) / h;
+    fhat = fhat + sum(exp(-0.5 * (u .^ 2)), 1);
+end
+fhat = normConst * fhat;
+end
+
+function h = silverman_bandwidth(x)
+n = numel(x);
+h = NaN;
+if n < 2
+    return;
+end
+
+sx = std(x, 0);
+iqrx = iqr_linear(x);
+scale = min(sx, iqrx / 1.34);
+if ~(isfinite(scale) && scale > 0)
+    scale = max(sx, iqrx / 1.34);
+end
+if ~(isfinite(scale) && scale > 0)
+    return;
+end
+
+h = 0.9 * scale * (n ^ (-1/5));
+end
+
+function q = percentile_linear(x, p)
+q = NaN;
+if isempty(x) || ~isfinite(p)
+    return;
+end
+
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    return;
+end
+
+x = sort(x);
+n = numel(x);
+if n == 1
+    q = x(1);
+    return;
+end
+
+p = min(100, max(0, p));
+idx = 1 + (n - 1) * (p / 100);
+i0 = floor(idx);
+i1 = ceil(idx);
+
+if i0 == i1
+    q = x(i0);
+else
+    frac = idx - i0;
+    q = x(i0) + frac * (x(i1) - x(i0));
+end
+end
+
+function w = iqr_linear(x)
+q75 = percentile_linear(x, 75);
+q25 = percentile_linear(x, 25);
+w = q75 - q25;
 end
 
 function style_legend_for_theme(leg, theme)

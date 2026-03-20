@@ -14,6 +14,8 @@
 clear; clc;
 clear functions;
 rehash;
+bootstrap_user_matlab_path();
+rehash;
 
 %% ---------------- USER SETTINGS ----------------
 % Toggle run mode by commenting one line
@@ -582,5 +584,51 @@ if plotOpts.enablePosterTheme
 end
 if isempty(themes)
     themes = "normal";
+end
+end
+
+function bootstrap_user_matlab_path()
+homeDir = getenv('HOME');
+if isempty(homeDir)
+    homeDir = getenv('USERPROFILE');
+end
+if isempty(homeDir)
+    warning('Could not resolve HOME/USERPROFILE. Skipping user MATLAB path bootstrap.');
+    return;
+end
+
+userPathFile = fullfile(homeDir, 'matlab', 'pathdef.m');
+userCodeRoot = fullfile(homeDir, 'matlab');
+
+if usejava('desktop')
+    if isfile(userPathFile)
+        try
+            run(userPathFile);
+            fprintf('Interactive mode: loaded custom MATLAB path:\n  %s\n', userPathFile);
+        catch ME
+            warning('Interactive mode: failed to run pathdef.m (%s).', ME.message);
+        end
+    else
+        warning('Interactive mode: pathdef.m not found. Using default MATLAB path.');
+    end
+    return;
+end
+
+loadedPathdef = false;
+if isfile(userPathFile)
+    try
+        run(userPathFile);
+        loadedPathdef = true;
+        fprintf('Headless mode: loaded custom MATLAB path:\n  %s\n', userPathFile);
+    catch ME
+        warning('Headless mode: failed to run pathdef.m (%s).', ME.message);
+    end
+end
+
+if isfolder(userCodeRoot)
+    addpath(genpath(userCodeRoot));
+    fprintf('Headless mode: added user MATLAB root:\n  %s\n', userCodeRoot);
+elseif ~loadedPathdef
+    warning('Headless mode: user MATLAB root not found: %s', userCodeRoot);
 end
 end
