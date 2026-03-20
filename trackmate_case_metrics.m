@@ -17,20 +17,37 @@ end
 
 nTotal = numel(traj);
 
-% Primary (framewise) set: basic-valid + net left-moving.
-leftMovingInception_xy = zeros(0,2);
-activationEvent_xy = zeros(0,2);
-leftMovingTrack_xy = cell(0,1);
-upstreamSize_eqd = nan(0,1);
-tau_values = nan(0,1);
-activationEventFrames = nan(0,1);
-activationEventTrackIds = nan(0,1);
-leftMovingFrameCells = cell(0,1);
-leftMovingTrackIds = nan(0,1);
+% Net-left framewise set (retained as legacy outputs).
+netLeftInception_xy = zeros(0,2);
+netLeftActivationEvent_xy = zeros(0,2);
+netLeftTrack_xy = cell(0,1);
+netLeftUpstreamSize_eqd = nan(0,1);
+netLeftTau_values = nan(0,1);
+netLeftActivationEventFrames = nan(0,1);
+netLeftActivationEventTrackIds = nan(0,1);
+netLeftFrameCells = cell(0,1);
+netLeftTrackIds = nan(0,1);
 
-% Strict legacy set (kept for audit/comparison).
+% Strict recirculation set (authoritative primary outputs).
 strictInjInception_xy = zeros(0,2);
 strictActLocation_xy = zeros(0,2);
+strictTrack_xy = cell(0,1);
+strictUpstreamSize_eqd = nan(0,1);
+strictTau_values = nan(0,1);
+strictActivationEventFrames = nan(0,1);
+strictActivationEventTrackIds = nan(0,1);
+strictFrameCells = cell(0,1);
+strictPrimaryTrackIds = nan(0,1);
+strictFrameAxis = nan(0,1);
+strictFrameVisible = nan(0,1);
+strictFrameActEvents = nan(0,1);
+strictFrameCumExposure = nan(0,1);
+strictFrameCumActEvents = nan(0,1);
+netLeftFrameAxis = nan(0,1);
+netLeftFrameVisible = nan(0,1);
+netLeftFrameActEvents = nan(0,1);
+netLeftFrameCumExposure = nan(0,1);
+netLeftFrameCumActEvents = nan(0,1);
 
 gateStats = struct();
 gateStats.nTracksTotal = nTotal;
@@ -92,20 +109,20 @@ for k = 1:nTotal
     prep(k) = build_track_prep(traj(k), spotRowById, spots, qcOpts, activationOpts);
     trackCatalog(k) = build_track_catalog_entry(prep(k));
 
-    % Primary framewise denominator/numerator set.
+    % Net-left framewise set (legacy comparison).
     if ~(prep(k).isBasicValid && prep(k).isLeftMoving)
         continue;
     end
 
-    leftMovingTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
-    leftMovingTrack_xy{end+1,1} = [prep(k).x, prep(k).y]; %#ok<AGROW>
-    leftMovingInception_xy(end+1,:) = [prep(k).x(1), prep(k).y(1)]; %#ok<AGROW>
+    netLeftTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+    netLeftTrack_xy{end+1,1} = [prep(k).x, prep(k).y]; %#ok<AGROW>
+    netLeftInception_xy(end+1,:) = [prep(k).x(1), prep(k).y(1)]; %#ok<AGROW>
 
     frameUnique = unique(prep(k).frame(isfinite(prep(k).frame)));
     if isempty(frameUnique)
         frameUnique = (1:numel(prep(k).x)).';
     end
-    leftMovingFrameCells{end+1,1} = frameUnique(:); %#ok<AGROW>
+    netLeftFrameCells{end+1,1} = frameUnique(:); %#ok<AGROW>
 
     nUse = numel(prep(k).areaVals);
     if prep(k).hasActivation
@@ -117,19 +134,19 @@ for k = 1:nTotal
         eqd = sqrt(4 .* areaUse ./ pi);
         eqd = eqd(isfinite(eqd) & eqd > 0);
         if ~isempty(eqd)
-            upstreamSize_eqd = [upstreamSize_eqd; eqd(:)]; %#ok<AGROW>
+            netLeftUpstreamSize_eqd = [netLeftUpstreamSize_eqd; eqd(:)]; %#ok<AGROW>
         end
     end
 
     if prep(k).hasActivation
-        activationEvent_xy(end+1,:) = [prep(k).actX, prep(k).actY]; %#ok<AGROW>
-        activationEventFrames(end+1,1) = prep(k).actFrame; %#ok<AGROW>
-        activationEventTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
-        tau_values(end+1,1) = max(prep(k).t(prep(k).actIdx) - prep(k).t(1), 0); %#ok<AGROW>
+        netLeftActivationEvent_xy(end+1,:) = [prep(k).actX, prep(k).actY]; %#ok<AGROW>
+        netLeftActivationEventFrames(end+1,1) = prep(k).actFrame; %#ok<AGROW>
+        netLeftActivationEventTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+        netLeftTau_values(end+1,1) = max(prep(k).t(prep(k).actIdx) - prep(k).t(1), 0); %#ok<AGROW>
     end
 end
 
-% Strict legacy gate accounting (retained as secondary outputs).
+% Strict gate accounting + authoritative strict primary set.
 for k = 1:nTotal
     if prep(k).isShort
         gateStats.nRejectedTooShort = gateStats.nRejectedTooShort + 1;
@@ -163,7 +180,30 @@ for k = 1:nTotal
     end
 
     gateStats.nInjected = gateStats.nInjected + 1;
+    trackCatalog(k).isStrictPrimary = true;
+
+    strictPrimaryTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+    strictTrack_xy{end+1,1} = [prep(k).x, prep(k).y]; %#ok<AGROW>
     strictInjInception_xy(end+1,:) = [prep(k).x(1), prep(k).y(1)]; %#ok<AGROW>
+
+    frameUnique = unique(prep(k).frame(isfinite(prep(k).frame)));
+    if isempty(frameUnique)
+        frameUnique = (1:numel(prep(k).x)).';
+    end
+    strictFrameCells{end+1,1} = frameUnique(:); %#ok<AGROW>
+
+    nUse = numel(prep(k).areaVals);
+    if prep(k).hasActivation
+        nUse = prep(k).idxJump;
+    end
+    if nUse >= 1
+        areaUse = prep(k).areaVals(1:nUse);
+        eqd = sqrt(4 .* areaUse ./ pi);
+        eqd = eqd(isfinite(eqd) & eqd > 0);
+        if ~isempty(eqd)
+            strictUpstreamSize_eqd = [strictUpstreamSize_eqd; eqd(:)]; %#ok<AGROW>
+        end
+    end
 
     if ~prep(k).hasActivation
         gateStats.nRejectedNoActivation = gateStats.nRejectedNoActivation + 1;
@@ -176,27 +216,49 @@ for k = 1:nTotal
     end
 
     gateStats.nActivated = gateStats.nActivated + 1;
+    trackCatalog(k).isStrictActivated = true;
+    trackCatalog(k).strictActivationFrame = prep(k).actFrame;
+    trackCatalog(k).strictActivationX = prep(k).actX;
+    trackCatalog(k).strictActivationY = prep(k).actY;
+    trackCatalog(k).strictActivationIndex = prep(k).actIdx;
     strictActLocation_xy(end+1,:) = [prep(k).actX, prep(k).actY]; %#ok<AGROW>
+    strictActivationEventFrames(end+1,1) = prep(k).actFrame; %#ok<AGROW>
+    strictActivationEventTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+    strictTau_values(end+1,1) = max(prep(k).t(prep(k).actIdx) - prep(k).t(1), 0); %#ok<AGROW>
 end
 
-% Framewise counts (primary).
-[frameAxis, frameLeftVisible, frameActEvents, frameCumExposure, frameCumActEvents] = ...
-    build_framewise_counts(leftMovingFrameCells, activationEventFrames);
+% Framewise counts.
+[strictFrameAxis, strictFrameVisible, strictFrameActEvents, strictFrameCumExposure, strictFrameCumActEvents] = ...
+    build_framewise_counts(strictFrameCells, strictActivationEventFrames);
+[netLeftFrameAxis, netLeftFrameVisible, netLeftFrameActEvents, netLeftFrameCumExposure, netLeftFrameCumActEvents] = ...
+    build_framewise_counts(netLeftFrameCells, netLeftActivationEventFrames);
 
 metrics = pack_metrics();
 
     function outMetrics = pack_metrics()
-        nLeftMovingTracks = numel(leftMovingTrackIds);
-        finiteActTrackIds = activationEventTrackIds(isfinite(activationEventTrackIds));
-        nActivatedLeftMovingTracks = numel(unique(finiteActTrackIds));
-        if nActivatedLeftMovingTracks == 0
-            nActivatedLeftMovingTracks = size(activationEvent_xy, 1);
+        nStrictPrimaryTracks = numel(strictPrimaryTrackIds);
+        strictActTrackIdsFinite = strictActivationEventTrackIds(isfinite(strictActivationEventTrackIds));
+        nStrictActivatedTracks = numel(unique(strictActTrackIdsFinite));
+        if nStrictActivatedTracks == 0
+            nStrictActivatedTracks = size(strictActLocation_xy, 1);
         end
 
-        leftMovingTrackFrameExposure = sum(frameLeftVisible);
-        activationEventsTotal = sum(frameActEvents);
-        A_over_I = activationEventsTotal / max(leftMovingTrackFrameExposure, 1);
-        [A_over_I_ci_low, A_over_I_ci_high] = wilson_ci(activationEventsTotal, leftMovingTrackFrameExposure, 0.95);
+        strictTrackFrameExposure = sum(strictFrameVisible);
+        strictActivationEventsTotal = sum(strictFrameActEvents);
+        A_over_I = strictActivationEventsTotal / max(strictTrackFrameExposure, 1);
+        [A_over_I_ci_low, A_over_I_ci_high] = wilson_ci(strictActivationEventsTotal, strictTrackFrameExposure, 0.95);
+
+        nNetLeftTracks = numel(netLeftTrackIds);
+        netLeftActTrackIdsFinite = netLeftActivationEventTrackIds(isfinite(netLeftActivationEventTrackIds));
+        nNetLeftActivatedTracks = numel(unique(netLeftActTrackIdsFinite));
+        if nNetLeftActivatedTracks == 0
+            nNetLeftActivatedTracks = size(netLeftActivationEvent_xy, 1);
+        end
+        netLeftTrackFrameExposure = sum(netLeftFrameVisible);
+        netLeftActivationEventsTotal = sum(netLeftFrameActEvents);
+        A_over_I_netLeftLegacy = netLeftActivationEventsTotal / max(netLeftTrackFrameExposure, 1);
+        [A_over_I_ci_low_netLeftLegacy, A_over_I_ci_high_netLeftLegacy] = ...
+            wilson_ci(netLeftActivationEventsTotal, netLeftTrackFrameExposure, 0.95);
 
         nInjectedStrict = gateStats.nInjected;
         nActivatedStrict = gateStats.nActivated;
@@ -204,12 +266,20 @@ metrics = pack_metrics();
         [A_over_I_ci_low_strictLegacy, A_over_I_ci_high_strictLegacy] = ...
             wilson_ci(nActivatedStrict, nInjectedStrict, 0.95);
 
-        if isempty(frameLeftVisible)
-            meanLeftMovingPerFrame = 0;
-            peakLeftMovingPerFrame = 0;
+        if isempty(strictFrameVisible)
+            strictMeanVisiblePerFrame = 0;
+            strictPeakVisiblePerFrame = 0;
         else
-            meanLeftMovingPerFrame = mean(frameLeftVisible);
-            peakLeftMovingPerFrame = max(frameLeftVisible);
+            strictMeanVisiblePerFrame = mean(strictFrameVisible);
+            strictPeakVisiblePerFrame = max(strictFrameVisible);
+        end
+
+        if isempty(netLeftFrameVisible)
+            netLeftMeanVisiblePerFrame = 0;
+            netLeftPeakVisiblePerFrame = 0;
+        else
+            netLeftMeanVisiblePerFrame = mean(netLeftFrameVisible);
+            netLeftPeakVisiblePerFrame = max(netLeftFrameVisible);
         end
 
         nBasicValidTracks = sum([prep.isBasicValid]);
@@ -218,39 +288,80 @@ metrics = pack_metrics();
         outMetrics.nTracksTotal = nTotal;
         outMetrics.nBasicValidTracks = nBasicValidTracks;
 
-        % Primary metrics (framewise-A/I workflow).
-        outMetrics.nLeftMovingTracks = nLeftMovingTracks;
-        outMetrics.nActivatedLeftMovingTracks = nActivatedLeftMovingTracks;
-        outMetrics.leftMovingTrackFrameExposure = leftMovingTrackFrameExposure;
-        outMetrics.activationEventsTotal = activationEventsTotal;
-        outMetrics.meanLeftMovingPerFrame = meanLeftMovingPerFrame;
-        outMetrics.peakLeftMovingPerFrame = peakLeftMovingPerFrame;
+        % Strict-primary metrics (authoritative framewise workflow).
+        outMetrics.nStrictPrimaryTracks = nStrictPrimaryTracks;
+        outMetrics.nStrictActivatedTracks = nStrictActivatedTracks;
+        outMetrics.strictTrackFrameExposure = strictTrackFrameExposure;
+        outMetrics.strictActivationEventsTotal = strictActivationEventsTotal;
+        outMetrics.strictMeanVisiblePerFrame = strictMeanVisiblePerFrame;
+        outMetrics.strictPeakVisiblePerFrame = strictPeakVisiblePerFrame;
         outMetrics.A_over_I = A_over_I;
         outMetrics.A_over_I_ci_low = A_over_I_ci_low;
         outMetrics.A_over_I_ci_high = A_over_I_ci_high;
 
-        % Compatibility aliases (primary semantics).
-        outMetrics.nInjected = nLeftMovingTracks;
-        outMetrics.nActivated = nActivatedLeftMovingTracks;
+        % Strict-primary authoritative arrays.
+        outMetrics.strictPrimaryTrackIds = strictPrimaryTrackIds;
+        outMetrics.strictActivatedTrackIds = unique(strictActTrackIdsFinite);
+        outMetrics.strictTrack_xy = strictTrack_xy;
+        outMetrics.strictInception_xy = strictInjInception_xy;
+        outMetrics.strictActivationEvent_xy = strictActLocation_xy;
+        outMetrics.strictActivationEvent_frame = strictActivationEventFrames;
+        outMetrics.strictActivationEvent_trackId = strictActivationEventTrackIds;
+        outMetrics.strict_tau_values = strictTau_values;
+        outMetrics.strict_upstreamSize_eqd = strictUpstreamSize_eqd;
+        outMetrics.strict_frame_axis = strictFrameAxis;
+        outMetrics.strict_frame_nVisible = strictFrameVisible;
+        outMetrics.strict_frame_nActivationEvents = strictFrameActEvents;
+        outMetrics.strict_frame_cumExposure = strictFrameCumExposure;
+        outMetrics.strict_frame_cumActivationEvents = strictFrameCumActEvents;
 
-        outMetrics.injInception_xy = leftMovingInception_xy;
-        outMetrics.actLocation_xy = activationEvent_xy;
-        outMetrics.inception2x_xy = activationEvent_xy;
-        outMetrics.upstreamTrack_xy = leftMovingTrack_xy;
-        outMetrics.leftMovingTrack_xy = leftMovingTrack_xy;
-        outMetrics.activationEvent_xy = activationEvent_xy;
-        outMetrics.activationEvent_frame = activationEventFrames;
-        outMetrics.activationEvent_trackId = activationEventTrackIds;
-        outMetrics.tau_values = tau_values;
-        outMetrics.tau_mean = mean(tau_values, 'omitnan');
-        outMetrics.tau_std = std(tau_values, 0, 'omitnan');
-        outMetrics.upstreamSize_eqd = upstreamSize_eqd;
+        % Compatibility aliases (primary now strict recirculation).
+        outMetrics.nLeftMovingTracks = nStrictPrimaryTracks;
+        outMetrics.nActivatedLeftMovingTracks = nStrictActivatedTracks;
+        outMetrics.leftMovingTrackFrameExposure = strictTrackFrameExposure;
+        outMetrics.activationEventsTotal = strictActivationEventsTotal;
+        outMetrics.meanLeftMovingPerFrame = strictMeanVisiblePerFrame;
+        outMetrics.peakLeftMovingPerFrame = strictPeakVisiblePerFrame;
+        outMetrics.nInjected = nStrictPrimaryTracks;
+        outMetrics.nActivated = nStrictActivatedTracks;
+        outMetrics.injInception_xy = strictInjInception_xy;
+        outMetrics.actLocation_xy = strictActLocation_xy;
+        outMetrics.inception2x_xy = strictActLocation_xy;
+        outMetrics.upstreamTrack_xy = strictTrack_xy;
+        outMetrics.leftMovingTrack_xy = strictTrack_xy;
+        outMetrics.activationEvent_xy = strictActLocation_xy;
+        outMetrics.activationEvent_frame = strictActivationEventFrames;
+        outMetrics.activationEvent_trackId = strictActivationEventTrackIds;
+        outMetrics.tau_values = strictTau_values;
+        outMetrics.tau_mean = mean(strictTau_values, 'omitnan');
+        outMetrics.tau_std = std(strictTau_values, 0, 'omitnan');
+        outMetrics.upstreamSize_eqd = strictUpstreamSize_eqd;
+        outMetrics.frame_axis = strictFrameAxis;
+        outMetrics.frame_nLeftMovingVisible = strictFrameVisible;
+        outMetrics.frame_nActivationEvents = strictFrameActEvents;
+        outMetrics.frame_cumExposure = strictFrameCumExposure;
+        outMetrics.frame_cumActivationEvents = strictFrameCumActEvents;
 
-        outMetrics.frame_axis = frameAxis;
-        outMetrics.frame_nLeftMovingVisible = frameLeftVisible;
-        outMetrics.frame_nActivationEvents = frameActEvents;
-        outMetrics.frame_cumExposure = frameCumExposure;
-        outMetrics.frame_cumActivationEvents = frameCumActEvents;
+        % Net-left legacy framewise outputs for audit continuity.
+        outMetrics.nLeftMovingTracks_netLeftLegacy = nNetLeftTracks;
+        outMetrics.nActivatedLeftMovingTracks_netLeftLegacy = nNetLeftActivatedTracks;
+        outMetrics.leftMovingTrackFrameExposure_netLeftLegacy = netLeftTrackFrameExposure;
+        outMetrics.activationEventsTotal_netLeftLegacy = netLeftActivationEventsTotal;
+        outMetrics.meanLeftMovingPerFrame_netLeftLegacy = netLeftMeanVisiblePerFrame;
+        outMetrics.peakLeftMovingPerFrame_netLeftLegacy = netLeftPeakVisiblePerFrame;
+        outMetrics.A_over_I_netLeftLegacy = A_over_I_netLeftLegacy;
+        outMetrics.A_over_I_ci_low_netLeftLegacy = A_over_I_ci_low_netLeftLegacy;
+        outMetrics.A_over_I_ci_high_netLeftLegacy = A_over_I_ci_high_netLeftLegacy;
+        outMetrics.injInception_xy_netLeftLegacy = netLeftInception_xy;
+        outMetrics.activationEvent_xy_netLeftLegacy = netLeftActivationEvent_xy;
+        outMetrics.leftMovingTrack_xy_netLeftLegacy = netLeftTrack_xy;
+        outMetrics.tau_values_netLeftLegacy = netLeftTau_values;
+        outMetrics.upstreamSize_eqd_netLeftLegacy = netLeftUpstreamSize_eqd;
+        outMetrics.frame_axis_netLeftLegacy = netLeftFrameAxis;
+        outMetrics.frame_nLeftMovingVisible_netLeftLegacy = netLeftFrameVisible;
+        outMetrics.frame_nActivationEvents_netLeftLegacy = netLeftFrameActEvents;
+        outMetrics.frame_cumExposure_netLeftLegacy = netLeftFrameCumExposure;
+        outMetrics.frame_cumActivationEvents_netLeftLegacy = netLeftFrameCumActEvents;
 
         % Secondary strict legacy metrics.
         outMetrics.nInjected_strictLegacy = nInjectedStrict;
@@ -300,11 +411,17 @@ tpl = struct( ...
     'y', nan(0,1), ...
     'isBasicValid', false, ...
     'isLeftMoving', false, ...
+    'isStrictPrimary', false, ...
+    'isStrictActivated', false, ...
     'isActivated', false, ...
     'activationFrame', NaN, ...
     'activationX', NaN, ...
     'activationY', NaN, ...
-    'activationIndex', NaN);
+    'activationIndex', NaN, ...
+    'strictActivationFrame', NaN, ...
+    'strictActivationX', NaN, ...
+    'strictActivationY', NaN, ...
+    'strictActivationIndex', NaN);
 end
 
 function prep = build_track_prep(thisTraj, spotRowById, spots, qcOpts, activationOpts)
@@ -377,11 +494,17 @@ catalog.x = prep.x;
 catalog.y = prep.y;
 catalog.isBasicValid = prep.isBasicValid;
 catalog.isLeftMoving = prep.isLeftMoving;
+catalog.isStrictPrimary = false;
+catalog.isStrictActivated = false;
 catalog.isActivated = prep.hasActivation;
 catalog.activationFrame = prep.actFrame;
 catalog.activationX = prep.actX;
 catalog.activationY = prep.actY;
 catalog.activationIndex = prep.actIdx;
+catalog.strictActivationFrame = NaN;
+catalog.strictActivationX = NaN;
+catalog.strictActivationY = NaN;
+catalog.strictActivationIndex = NaN;
 end
 
 function areaVals = extract_area_values(spotIds, spotRowById, spots)

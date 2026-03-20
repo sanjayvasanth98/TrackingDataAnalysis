@@ -258,9 +258,20 @@ for i = 1:numel(cases)
         g.nRejectedNoActivation, g.nRejectedWallBand);
 
     nValidTracks = metrics.nBasicValidTracks;
-    nRecirculationTracks = metrics.nLeftMovingTracks;
-    recirculationFrac_total = nRecirculationTracks / max(metrics.nTracksTotal, 1);
-    activationFrac_valid = metrics.nActivatedLeftMovingTracks / max(nValidTracks, 1);
+    nStrictRecirculationTracks = metrics.nStrictPrimaryTracks;
+    nStrictActivatedTracks = metrics.nStrictActivatedTracks;
+    strictRecirculationFrac_total = nStrictRecirculationTracks / max(metrics.nTracksTotal, 1);
+    strictActivationFrac_valid = nStrictActivatedTracks / max(nValidTracks, 1);
+
+    nNetLeftTracksLegacy = get_metric_field(metrics, 'nLeftMovingTracks_netLeftLegacy', NaN);
+    nNetLeftActivatedTracksLegacy = get_metric_field(metrics, 'nActivatedLeftMovingTracks_netLeftLegacy', NaN);
+    netLeftTrackFrameExposureLegacy = get_metric_field(metrics, 'leftMovingTrackFrameExposure_netLeftLegacy', NaN);
+    netLeftActivationEventsTotalLegacy = get_metric_field(metrics, 'activationEventsTotal_netLeftLegacy', NaN);
+    netLeftMeanVisibleLegacy = get_metric_field(metrics, 'meanLeftMovingPerFrame_netLeftLegacy', NaN);
+    netLeftPeakVisibleLegacy = get_metric_field(metrics, 'peakLeftMovingPerFrame_netLeftLegacy', NaN);
+    A_over_I_netLeftLegacy = get_metric_field(metrics, 'A_over_I_netLeftLegacy', NaN);
+    A_over_I_ci_low_netLeftLegacy = get_metric_field(metrics, 'A_over_I_ci_low_netLeftLegacy', NaN);
+    A_over_I_ci_high_netLeftLegacy = get_metric_field(metrics, 'A_over_I_ci_high_netLeftLegacy', NaN);
 
     [inj_x_mean_mm, inj_x_std_mm, ~, ~, nInjectionPoints] = xy_stats(metrics.injInception_xy);
     [act_x_mean_mm, act_x_std_mm, act_y_mean_mm, act_y_std_mm, nInceptionPoints] = xy_stats(metrics.activationEvent_xy);
@@ -272,11 +283,15 @@ for i = 1:numel(cases)
     row = table( ...
         string(cases(i).name), cases(i).Re, cases(i).kDh, ...
         metrics.nTracksTotal, nValidTracks, ...
-        metrics.nLeftMovingTracks, metrics.nActivatedLeftMovingTracks, ...
-        metrics.leftMovingTrackFrameExposure, metrics.activationEventsTotal, ...
-        metrics.meanLeftMovingPerFrame, metrics.peakLeftMovingPerFrame, ...
-        recirculationFrac_total, activationFrac_valid, ...
+        nStrictRecirculationTracks, nStrictActivatedTracks, ...
+        metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
+        metrics.strictMeanVisiblePerFrame, metrics.strictPeakVisiblePerFrame, ...
+        strictRecirculationFrac_total, strictActivationFrac_valid, ...
         metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, ...
+        nNetLeftTracksLegacy, nNetLeftActivatedTracksLegacy, ...
+        netLeftTrackFrameExposureLegacy, netLeftActivationEventsTotalLegacy, ...
+        netLeftMeanVisibleLegacy, netLeftPeakVisibleLegacy, ...
+        A_over_I_netLeftLegacy, A_over_I_ci_low_netLeftLegacy, A_over_I_ci_high_netLeftLegacy, ...
         metrics.nInjected_strictLegacy, metrics.nActivated_strictLegacy, ...
         metrics.A_over_I_strictLegacy, metrics.A_over_I_ci_low_strictLegacy, metrics.A_over_I_ci_high_strictLegacy, ...
         tau_mean_val, tau_median, tau_p90, tau_std_val, nTauVals, ...
@@ -284,10 +299,14 @@ for i = 1:numel(cases)
         act_y_mean_mm, act_y_std_mm, nInjectionPoints, nInceptionPoints, ...
         upstream_eqd_mean, upstream_eqd_median, upstream_eqd_p90, upstream_eqd_std, nUpstreamSizeSamples, ...
         'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks', ...
-        'nLeftMovingTracks','nActivatedLeftMovingTracks', ...
-        'leftMovingTrackFrameExposure','activationEventsTotal', ...
-        'meanLeftMovingPerFrame','peakLeftMovingPerFrame', ...
-        'recirculationFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high', ...
+        'nStrictRecirculationTracks','nStrictActivatedTracks', ...
+        'strictTrackFrameExposure','strictActivationEventsTotal', ...
+        'strictMeanVisiblePerFrame','strictPeakVisiblePerFrame', ...
+        'strictRecirculationFrac_total','strictActivationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high', ...
+        'nLeftMovingTracks_netLeftLegacy','nActivatedLeftMovingTracks_netLeftLegacy', ...
+        'leftMovingTrackFrameExposure_netLeftLegacy','activationEventsTotal_netLeftLegacy', ...
+        'meanLeftMovingPerFrame_netLeftLegacy','peakLeftMovingPerFrame_netLeftLegacy', ...
+        'A_over_I_netLeftLegacy','A_over_I_ci_low_netLeftLegacy','A_over_I_ci_high_netLeftLegacy', ...
         'nInjected_strictLegacy','nActivated_strictLegacy', ...
         'A_over_I_strictLegacy','A_over_I_ci_low_strictLegacy','A_over_I_ci_high_strictLegacy', ...
         'tau_mean','tau_median','tau_p90','tau_std','nTau', ...
@@ -325,6 +344,7 @@ for i = 1:numel(cases)
     gateSummaryRows = [gateSummaryRows; gateRow]; %#ok<AGROW>
 
     write_framewise_case_csv(resultsDir, cases(i), metrics);
+    run_diagnostic_parity_checks(cases(i), metrics);
 
     if plotOpts.makeTrackDiagnostics
         plot_verification_tracks_for_case(cases(i), metrics, trackFigOutDir, plotOpts);
@@ -455,34 +475,113 @@ end
 end
 
 function write_framewise_case_csv(resultsDir, caseDef, metrics)
-frameAxis = nan(0,1);
-nLeft = nan(0,1);
-nAct = nan(0,1);
-cumExposure = nan(0,1);
-cumAct = nan(0,1);
-if isfield(metrics, 'frame_axis'), frameAxis = metrics.frame_axis(:); end
-if isfield(metrics, 'frame_nLeftMovingVisible'), nLeft = metrics.frame_nLeftMovingVisible(:); end
-if isfield(metrics, 'frame_nActivationEvents'), nAct = metrics.frame_nActivationEvents(:); end
-if isfield(metrics, 'frame_cumExposure'), cumExposure = metrics.frame_cumExposure(:); end
-if isfield(metrics, 'frame_cumActivationEvents'), cumAct = metrics.frame_cumActivationEvents(:); end
+strictAxis = get_metric_vector(metrics, 'strict_frame_axis', metrics.frame_axis);
+strictVisible = get_metric_vector(metrics, 'strict_frame_nVisible', metrics.frame_nLeftMovingVisible);
+strictAct = get_metric_vector(metrics, 'strict_frame_nActivationEvents', metrics.frame_nActivationEvents);
+strictCumExposure = get_metric_vector(metrics, 'strict_frame_cumExposure', metrics.frame_cumExposure);
+strictCumAct = get_metric_vector(metrics, 'strict_frame_cumActivationEvents', metrics.frame_cumActivationEvents);
 
-n = min([numel(frameAxis), numel(nLeft), numel(nAct), numel(cumExposure), numel(cumAct)]);
-if n < 0 || ~isfinite(n)
-    n = 0;
+legacyAxis = get_metric_vector(metrics, 'frame_axis_netLeftLegacy', nan(0,1));
+legacyVisible = get_metric_vector(metrics, 'frame_nLeftMovingVisible_netLeftLegacy', nan(0,1));
+legacyAct = get_metric_vector(metrics, 'frame_nActivationEvents_netLeftLegacy', nan(0,1));
+legacyCumExposure = get_metric_vector(metrics, 'frame_cumExposure_netLeftLegacy', nan(0,1));
+legacyCumAct = get_metric_vector(metrics, 'frame_cumActivationEvents_netLeftLegacy', nan(0,1));
+
+frameAxis = unique([strictAxis(:); legacyAxis(:)]);
+frameAxis = frameAxis(isfinite(frameAxis));
+if isempty(frameAxis)
+    frameAxis = nan(0,1);
+end
+
+n = numel(frameAxis);
+nStrictVisible = zeros(n,1);
+nStrictAct = zeros(n,1);
+cumStrictExposure = zeros(n,1);
+cumStrictAct = zeros(n,1);
+nLegacyVisible = zeros(n,1);
+nLegacyAct = zeros(n,1);
+cumLegacyExposure = zeros(n,1);
+cumLegacyAct = zeros(n,1);
+
+for ii = 1:n
+    f = frameAxis(ii);
+    nStrictVisible(ii) = lookup_exact(strictAxis, strictVisible, f);
+    nStrictAct(ii) = lookup_exact(strictAxis, strictAct, f);
+    cumStrictExposure(ii) = lookup_cumulative(strictAxis, strictCumExposure, f);
+    cumStrictAct(ii) = lookup_cumulative(strictAxis, strictCumAct, f);
+
+    nLegacyVisible(ii) = lookup_exact(legacyAxis, legacyVisible, f);
+    nLegacyAct(ii) = lookup_exact(legacyAxis, legacyAct, f);
+    cumLegacyExposure(ii) = lookup_cumulative(legacyAxis, legacyCumExposure, f);
+    cumLegacyAct(ii) = lookup_cumulative(legacyAxis, legacyCumAct, f);
 end
 
 frameTbl = table( ...
-    frameAxis(1:n), ...
-    nLeft(1:n), ...
-    nAct(1:n), ...
-    cumExposure(1:n), ...
-    cumAct(1:n), ...
-    'VariableNames', {'frame','nLeftMovingVisible','nActivationEvents','cumExposure','cumActivationEvents'});
+    frameAxis, ...
+    nStrictVisible, ...
+    nStrictAct, ...
+    cumStrictExposure, ...
+    cumStrictAct, ...
+    nLegacyVisible, ...
+    nLegacyAct, ...
+    cumLegacyExposure, ...
+    cumLegacyAct, ...
+    'VariableNames', {'frame', ...
+    'nStrictVisible','nStrictActivationEvents','cumStrictExposure','cumStrictActivationEvents', ...
+    'nLeftMovingVisible_netLeftLegacy','nActivationEvents_netLeftLegacy', ...
+    'cumExposure_netLeftLegacy','cumActivationEvents_netLeftLegacy'});
 
 caseToken = sanitize_case_token(caseDef.name);
 outCsv = fullfile(resultsDir, sprintf('framewise_counts_%s_Re_%g_kDh_%g.csv', caseToken, caseDef.Re, caseDef.kDh));
 write_table_csv_compat(frameTbl, outCsv);
 fprintf("Saved: %s\n", outCsv);
+end
+
+function v = get_metric_vector(metrics, fieldName, fallback)
+v = fallback;
+if isfield(metrics, fieldName)
+    raw = metrics.(fieldName);
+    if ~isempty(raw)
+        v = raw(:);
+    end
+end
+if isempty(v)
+    v = nan(0,1);
+end
+end
+
+function v = lookup_exact(axisVals, dataVals, frameVal)
+v = 0;
+if isempty(axisVals) || isempty(dataVals)
+    return;
+end
+axisVals = axisVals(:);
+dataVals = dataVals(:);
+if numel(axisVals) ~= numel(dataVals)
+    return;
+end
+idx = find(axisVals == frameVal, 1, 'first');
+if isempty(idx) || ~isfinite(dataVals(idx))
+    return;
+end
+v = dataVals(idx);
+end
+
+function v = lookup_cumulative(axisVals, dataVals, frameVal)
+v = 0;
+if isempty(axisVals) || isempty(dataVals)
+    return;
+end
+axisVals = axisVals(:);
+dataVals = dataVals(:);
+if numel(axisVals) ~= numel(dataVals)
+    return;
+end
+idx = find(axisVals <= frameVal, 1, 'last');
+if isempty(idx) || ~isfinite(dataVals(idx))
+    return;
+end
+v = dataVals(idx);
 end
 
 function token = sanitize_case_token(caseName)
@@ -492,6 +591,75 @@ token = regexprep(token, '^_+', '');
 token = regexprep(token, '_+$', '');
 if isempty(token)
     token = 'case';
+end
+end
+
+function v = get_metric_field(metrics, fieldName, defaultValue)
+v = defaultValue;
+if isfield(metrics, fieldName)
+    raw = metrics.(fieldName);
+    if ~isempty(raw)
+        v = raw;
+    end
+end
+end
+
+function run_diagnostic_parity_checks(caseDef, metrics)
+if ~isstruct(metrics) || ~isfield(metrics, 'trackCatalog') || isempty(metrics.trackCatalog)
+    return;
+end
+
+trackRequests = [];
+if isfield(caseDef, 'diagnosticTrackIds') && ~isempty(caseDef.diagnosticTrackIds)
+    trackRequests = caseDef.diagnosticTrackIds(:).';
+end
+[selectedIdx, selectedTrackIds] = resolve_diagnostic_track_indices(metrics.trackCatalog, trackRequests, caseDef, 'Parity check');
+if isempty(selectedIdx)
+    return;
+end
+
+strictMask = false(numel(selectedIdx), 1);
+for i = 1:numel(selectedIdx)
+    tr = metrics.trackCatalog(selectedIdx(i));
+    strictMask(i) = is_catalog_true(tr, 'isStrictPrimary');
+end
+strictIds = unique(selectedTrackIds(strictMask));
+
+if isempty(trackRequests) && isfield(metrics, 'nStrictPrimaryTracks')
+    if numel(strictIds) ~= metrics.nStrictPrimaryTracks
+        warning(['Parity check failed for %s: strict diagnostic ID count (%d) ', ...
+            '!= metrics.nStrictPrimaryTracks (%d).'], ...
+            char(caseDef.name), numel(strictIds), metrics.nStrictPrimaryTracks);
+    end
+end
+
+eventIds = nan(0,1);
+if isfield(metrics, 'strictActivationEvent_trackId')
+    eventIds = metrics.strictActivationEvent_trackId(:);
+elseif isfield(metrics, 'activationEvent_trackId')
+    eventIds = metrics.activationEvent_trackId(:);
+end
+eventIds = eventIds(isfinite(eventIds));
+
+if isempty(trackRequests) && isfield(metrics, 'strictActivationEventsTotal')
+    if numel(eventIds) ~= metrics.strictActivationEventsTotal
+        warning(['Parity check failed for %s: strict activation events (%d) ', ...
+            '!= metrics.strictActivationEventsTotal (%d).'], ...
+            char(caseDef.name), numel(eventIds), metrics.strictActivationEventsTotal);
+    end
+end
+end
+
+function tf = is_catalog_true(tr, fieldName)
+tf = false;
+if ~isstruct(tr) || ~isfield(tr, fieldName)
+    return;
+end
+v = tr.(fieldName);
+if islogical(v)
+    tf = any(v(:));
+elseif isnumeric(v)
+    tf = any(v(:) ~= 0);
 end
 end
 
