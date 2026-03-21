@@ -39,14 +39,14 @@ maxTracksToParse = maxTracksChoices(1 + isArc);
 % - [1 3 6]          -> run multiple cases by index
 % - "5um"            -> run one case by name
 % - ["5um","30um"]   -> run multiple cases by name
-caseSelection = "all";
+caseSelection = 1;
 
 % Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
 useMatCache = true;
 forceReparse = false;
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 2";
+resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 3";
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
