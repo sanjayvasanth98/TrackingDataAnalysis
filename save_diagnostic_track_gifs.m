@@ -12,42 +12,8 @@ trackRequests = [];
 if isfield(caseDef, 'diagnosticTrackIds') && ~isempty(caseDef.diagnosticTrackIds)
     trackRequests = caseDef.diagnosticTrackIds(:).';
 end
-[selectedIdx, selectedTrackIds] = resolve_diagnostic_track_indices(trackCatalog, trackRequests, caseDef, 'Diagnostic GIF');
+[selectedIdx, ~] = resolve_diagnostic_track_indices(trackCatalog, trackRequests, caseDef, 'Diagnostic GIF');
 if isempty(selectedIdx)
-    warning('Diagnostic GIF: no tracks selected for case %s.', char(caseDef.name));
-    return;
-end
-
-strictMask = false(numel(selectedIdx), 1);
-for i = 1:numel(selectedIdx)
-    strictMask(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isStrictPrimary');
-end
-strictIdx = selectedIdx(strictMask);
-strictTrackIds = selectedTrackIds(strictMask);
-
-if isempty(strictIdx)
-    warning('Diagnostic GIF: selected set has no strict recirculation tracks for case %s.', char(caseDef.name));
-    return;
-end
-
-[activationXY, activationFrames, activationTrackIds] = strict_activation_events(metrics);
-if ~isempty(activationTrackIds)
-    keepAct = ismember(activationTrackIds, strictTrackIds);
-    activationXY = activationXY(keepAct, :);
-    activationFrames = activationFrames(keepAct);
-    activationTrackIds = activationTrackIds(keepAct);
-end
-
-[frameAxisCounts, nVisibleCounts, nActCounts, cumExpCounts, cumActCounts] = ...
-    strict_subset_framewise_counts(trackCatalog, strictIdx, activationFrames);
-
-if isempty(trackRequests)
-    verify_strict_parity_warnings(metrics, strictTrackIds, activationTrackIds, caseDef);
-end
-
-allFrames = frameAxisCounts(:);
-if isempty(allFrames)
-    warning('Diagnostic GIF: no valid frame values found for case %s.', char(caseDef.name));
     return;
 end
 
@@ -55,7 +21,22 @@ yExtent_mm = plotOpts.inceptionImageSize_px(2) * caseDef.pixelSize;
 delayTime = plotOpts.diagnosticGifDelayTime;
 trailLength = max(1, round(plotOpts.diagnosticGifTrailLength));
 
-gifPath = fullfile(outDir, sprintf('%s_Re_%g_kDh_%g_strict_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kDh));
+allFrames = collect_selected_frames(trackCatalog, selectedIdx);
+if isempty(allFrames)
+    warning('No valid frame values found for case %s. Skipping diagnostic GIF export.', char(caseDef.name));
+    return;
+end
+
+gifPath = fullfile(outDir, sprintf('%s_Re_%g_kDh_%g_all_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kDh));
+
+[activationXY, activationFrames] = activation_arrays(metrics);
+[leftFrameAxis, leftFrameVisible, leftFrameCumExposure] = ...
+    build_leftmoving_frame_counts(trackCatalog, selectedIdx);
+
+xLim = plotOpts.inceptionXLim_mm;
+yLim = [0 yExtent_mm];
+xTicks = fixed_ticks(xLim(1), xLim(2), 0.5);
+yTicks = fixed_ticks(yLim(1), yLim(2), 0.2);
 
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px], 'Visible', 'off');
 ax = axes(f);
@@ -65,22 +46,35 @@ for fi = 1:numel(allFrames)
     cla(ax);
     hold(ax, 'on');
 
-    nStrictVisibleNow = 0;
-    for i = 1:numel(strictIdx)
-        tr = trackCatalog(strictIdx(i));
+    nVisibleAll = 0;
+    nVisibleLeftMoving = 0;
+    for i = 1:numel(selectedIdx)
+        tr = trackCatalog(selectedIdx(i));
         [idxNow, xTail, yTail] = visible_tail_until_frame(tr, frameVal, trailLength);
         if isempty(idxNow)
             continue;
         end
 
-        nStrictVisibleNow = nStrictVisibleNow + 1;
+        nVisibleAll = nVisibleAll + 1;
+        if is_true_field(tr, 'isLeftMoving')
+            nVisibleLeftMoving = nVisibleLeftMoving + 1;
+            lineColor = [0 0 1];
+            lineWidth = 1.6;
+            spotColor = [0 0 0.85];
+            markerSize = 16;
+        else
+            lineColor = [0.55 0.55 0.55];
+            lineWidth = 1.0;
+            spotColor = [0 0 0];
+            markerSize = 12;
+        end
+
         yTailPlot = yExtent_mm - yTail;
         yNowPlot = yExtent_mm - tr.y(idxNow);
-
-        plot(ax, xTail, yTailPlot, '-', 'Color', [0 0 1], 'LineWidth', 1.6);
-        scatter(ax, tr.x(idxNow), yNowPlot, 16, ...
+        plot(ax, xTail, yTailPlot, '-', 'Color', lineColor, 'LineWidth', lineWidth);
+        scatter(ax, tr.x(idxNow), yNowPlot, markerSize, ...
             'Marker', 'o', ...
-            'MarkerFaceColor', [0 0 0.85], ...
+            'MarkerFaceColor', spotColor, ...
             'MarkerEdgeColor', 'none');
     end
 
@@ -94,22 +88,29 @@ for fi = 1:numel(allFrames)
             'MarkerEdgeColor', 'none');
     end
 
-    nActThisFrame = frame_lookup_arrays(frameAxisCounts, nActCounts, frameVal, false);
-    cumExposure = frame_lookup_arrays(frameAxisCounts, cumExpCounts, frameVal, true);
-    cumAct = frame_lookup_arrays(frameAxisCounts, cumActCounts, frameVal, true);
+    nActThisFrame = sum(isfinite(activationFrames) & (activationFrames == frameVal));
+    cumAct = sum(idxActVisible);
+    cumExposure = frame_lookup_arrays(leftFrameAxis, leftFrameCumExposure, frameVal, true);
 
-    xlim(ax, plotOpts.inceptionXLim_mm);
-    ylim(ax, [0 yExtent_mm]);
+    xlim(ax, xLim);
+    ylim(ax, yLim);
     axis(ax, 'equal');
+    axis(ax, 'manual');
+    set(ax, ...
+        'XTick', xTicks, ...
+        'YTick', yTicks, ...
+        'XLimMode', 'manual', ...
+        'YLimMode', 'manual', ...
+        'XTickMode', 'manual', ...
+        'YTickMode', 'manual');
     grid(ax, 'on');
     box(ax, 'on');
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
-    title(ax, sprintf(['Diagnostic GIF (strict): %s | frame %g (%d/%d) | visible=%d | ', ...
-        'strict-visible=%d | act@frame=%d | cum exp=%d | cum act=%d | A/I=%.4g'], ...
-        char(caseDef.name), frameVal, fi, numel(allFrames), nStrictVisibleNow, ...
-        frame_lookup_arrays(frameAxisCounts, nVisibleCounts, frameVal, false), ...
-        nActThisFrame, cumExposure, cumAct, metrics.A_over_I));
+    title(ax, sprintf(['Diagnostic GIF: %s | frame %g (%d/%d) | visible=%d | ', ...
+        'left-moving=%d | act@frame=%d | cum exp=%d | cum act=%d | A/I=%.4g'], ...
+        char(caseDef.name), frameVal, fi, numel(allFrames), nVisibleAll, ...
+        nVisibleLeftMoving, nActThisFrame, cumExposure, cumAct, metrics.A_over_I));
     apply_plot_theme(ax, 'normal');
 
     drawnow;
@@ -125,113 +126,88 @@ end
 close(f);
 end
 
-function [activationXY, activationFrames, activationTrackIds] = strict_activation_events(metrics)
+function allFrames = collect_selected_frames(trackCatalog, selectedIdx)
+allFrames = nan(0,1);
+for i = 1:numel(selectedIdx)
+    frameVals = trackCatalog(selectedIdx(i)).frame(:);
+    frameVals = frameVals(isfinite(frameVals));
+    if ~isempty(frameVals)
+        allFrames = [allFrames; frameVals(:)]; %#ok<AGROW>
+    end
+end
+allFrames = unique(allFrames);
+end
+
+function [activationXY, activationFrames] = activation_arrays(metrics)
 activationXY = zeros(0,2);
 activationFrames = nan(0,1);
-activationTrackIds = nan(0,1);
-
-if isfield(metrics, 'strictActivationEvent_xy') && ~isempty(metrics.strictActivationEvent_xy)
-    activationXY = metrics.strictActivationEvent_xy;
-elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
+if isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
     activationXY = metrics.activationEvent_xy;
+elseif isfield(metrics, 'strictActivationEvent_xy') && ~isempty(metrics.strictActivationEvent_xy)
+    activationXY = metrics.strictActivationEvent_xy;
 end
 
-if isfield(metrics, 'strictActivationEvent_frame') && ~isempty(metrics.strictActivationEvent_frame)
-    activationFrames = metrics.strictActivationEvent_frame(:);
-elseif isfield(metrics, 'activationEvent_frame') && ~isempty(metrics.activationEvent_frame)
+if isfield(metrics, 'activationEvent_frame') && ~isempty(metrics.activationEvent_frame)
     activationFrames = metrics.activationEvent_frame(:);
+elseif isfield(metrics, 'strictActivationEvent_frame') && ~isempty(metrics.strictActivationEvent_frame)
+    activationFrames = metrics.strictActivationEvent_frame(:);
 end
 
-if isfield(metrics, 'strictActivationEvent_trackId') && ~isempty(metrics.strictActivationEvent_trackId)
-    activationTrackIds = metrics.strictActivationEvent_trackId(:);
-elseif isfield(metrics, 'activationEvent_trackId') && ~isempty(metrics.activationEvent_trackId)
-    activationTrackIds = metrics.activationEvent_trackId(:);
-end
-
-nAct = min([size(activationXY, 1), numel(activationFrames), numel(activationTrackIds)]);
-if isempty(nAct) || ~isfinite(nAct) || nAct < 1
+nAct = min(size(activationXY, 1), numel(activationFrames));
+if nAct < 1
     activationXY = zeros(0,2);
     activationFrames = nan(0,1);
-    activationTrackIds = nan(0,1);
     return;
 end
 activationXY = activationXY(1:nAct, :);
 activationFrames = activationFrames(1:nAct);
-activationTrackIds = activationTrackIds(1:nAct);
 end
 
-function [frameAxis, nVisible, nActEvents, cumExposure, cumActEvents] = ...
-    strict_subset_framewise_counts(trackCatalog, strictIdx, activationFrames)
-
-if isempty(strictIdx)
-    frameAxis = nan(0,1);
-    nVisible = nan(0,1);
-    nActEvents = nan(0,1);
-    cumExposure = nan(0,1);
-    cumActEvents = nan(0,1);
-    return;
-end
-
-allFrames = nan(0,1);
-for i = 1:numel(strictIdx)
-    tr = trackCatalog(strictIdx(i));
+function [frameAxis, nVisible, cumExposure] = build_leftmoving_frame_counts(trackCatalog, selectedIdx)
+allLeftFrames = nan(0,1);
+for i = 1:numel(selectedIdx)
+    tr = trackCatalog(selectedIdx(i));
+    if ~is_true_field(tr, 'isLeftMoving')
+        continue;
+    end
     frameVals = tr.frame(:);
     frameVals = frameVals(isfinite(frameVals));
-    if ~isempty(frameVals)
-        allFrames = [allFrames; unique(frameVals)]; %#ok<AGROW>
+    if isempty(frameVals)
+        continue;
     end
+    allLeftFrames = [allLeftFrames; unique(frameVals)]; %#ok<AGROW>
 end
 
-activationFrames = activationFrames(:);
-activationFrames = activationFrames(isfinite(activationFrames));
-frameAxis = unique([allFrames; activationFrames]);
+frameAxis = unique(allLeftFrames);
 if isempty(frameAxis)
     nVisible = nan(0,1);
-    nActEvents = nan(0,1);
     cumExposure = nan(0,1);
-    cumActEvents = nan(0,1);
     return;
 end
 
 nFrames = numel(frameAxis);
 nVisible = zeros(nFrames,1);
-nActEvents = zeros(nFrames,1);
-
-if ~isempty(allFrames)
-    [~, locVisible] = ismember(allFrames, frameAxis);
-    locVisible = locVisible(locVisible > 0);
-    if ~isempty(locVisible)
-        nVisible = accumarray(locVisible, 1, [nFrames, 1]);
-    end
+[~, loc] = ismember(allLeftFrames, frameAxis);
+loc = loc(loc > 0);
+if ~isempty(loc)
+    nVisible = accumarray(loc, 1, [nFrames, 1]);
 end
-
-if ~isempty(activationFrames)
-    [~, locAct] = ismember(activationFrames, frameAxis);
-    locAct = locAct(locAct > 0);
-    if ~isempty(locAct)
-        nActEvents = accumarray(locAct, 1, [nFrames, 1]);
-    end
-end
-
 cumExposure = cumsum(nVisible);
-cumActEvents = cumsum(nActEvents);
 end
 
-function verify_strict_parity_warnings(metrics, strictTrackIds, activationTrackIds, caseDef)
-if isfield(metrics, 'nStrictPrimaryTracks') && isfinite(metrics.nStrictPrimaryTracks)
-    if numel(strictTrackIds) ~= metrics.nStrictPrimaryTracks
-        warning(['Diagnostic GIF parity check failed for %s: strict blue track count (%d) ', ...
-            'does not match metrics.nStrictPrimaryTracks (%d).'], ...
-            char(caseDef.name), numel(strictTrackIds), metrics.nStrictPrimaryTracks);
-    end
+function ticks = fixed_ticks(lo, hi, step)
+if ~(isfinite(lo) && isfinite(hi) && isfinite(step) && step > 0)
+    ticks = [];
+    return;
 end
-
-if isfield(metrics, 'strictActivationEventsTotal') && isfinite(metrics.strictActivationEventsTotal)
-    if numel(activationTrackIds) ~= metrics.strictActivationEventsTotal
-        warning(['Diagnostic GIF parity check failed for %s: strict activation event count (%d) ', ...
-            'does not match metrics.strictActivationEventsTotal (%d).'], ...
-            char(caseDef.name), numel(activationTrackIds), metrics.strictActivationEventsTotal);
-    end
+if hi < lo
+    tmp = lo;
+    lo = hi;
+    hi = tmp;
+end
+ticks = lo:step:hi;
+if isempty(ticks) || ticks(end) < hi
+    ticks = [ticks, hi]; %#ok<AGROW>
 end
 end
 
@@ -283,7 +259,6 @@ if cumulativeMode
 else
     idx = find(frameAxis == frameVal, 1, 'first');
 end
-
 if isempty(idx) || ~isfinite(vals(idx))
     return;
 end

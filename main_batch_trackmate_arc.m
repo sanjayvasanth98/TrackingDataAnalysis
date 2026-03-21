@@ -33,6 +33,14 @@ localEventLimit = Inf;
 maxTracksChoices = [localEventLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
 
+% Case selection:
+% - "all"            -> run every case below
+% - 1                -> run one case by index
+% - [1 3 6]          -> run multiple cases by index
+% - "5um"            -> run one case by name
+% - ["5um","30um"]   -> run multiple cases by name
+caseSelection = "all";
+
 % Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
 useMatCache = true;
 forceReparse = false;
@@ -177,6 +185,13 @@ end
 % cases(7).xmlFile   = "<path_to_Re124k_case_5um.xml>";
 % cases(7).pixelSize = 0.00375009375;
 % cases(7).dt        = 1/102247;
+
+[cases, selectedCaseIdx, totalCaseCount] = select_cases(cases, caseSelection);
+selectedLabels = strings(numel(cases), 1);
+for si = 1:numel(cases)
+    selectedLabels(si) = sprintf('%d:%s', selectedCaseIdx(si), char(cases(si).name));
+end
+fprintf('Selected %d/%d case(s): %s\n', numel(cases), totalCaseCount, strjoin(cellstr(selectedLabels), ', '));
 
 %% ---------------- RUN ALL CASES ----------------
 summaryRows = table();
@@ -714,6 +729,69 @@ policyTag = sprintf([ ...
     activationOpts.postMedianFactor, activationOpts.postMaxFactor, ...
     double(logical(activationOpts.enableBurstFallback)), activationOpts.burstJumpFactor, ...
     activationOpts.burstPostFactor);
+end
+
+function [casesOut, selectedIdx, totalCaseCount] = select_cases(casesIn, selection)
+totalCaseCount = numel(casesIn);
+allIdx = (1:totalCaseCount).';
+
+if nargin < 2 || isempty(selection)
+    selection = "all";
+end
+
+if islogical(selection)
+    mask = selection(:);
+    if numel(mask) ~= totalCaseCount
+        error('Logical caseSelection must have %d elements.', totalCaseCount);
+    end
+    selectedIdx = find(mask);
+elseif isnumeric(selection)
+    vals = selection(:);
+    vals = vals(isfinite(vals));
+    if isempty(vals)
+        selectedIdx = allIdx;
+    else
+        vals = round(vals);
+        if any(vals < 1) || any(vals > totalCaseCount)
+            error('Numeric caseSelection indices must be in [1, %d].', totalCaseCount);
+        end
+        selectedIdx = unique(vals, 'stable');
+    end
+else
+    if iscell(selection)
+        selection = string(selection);
+    end
+    tokens = string(selection);
+    tokens = tokens(:);
+    tokens = strtrim(tokens);
+    tokens = tokens(strlength(tokens) > 0);
+    if isempty(tokens)
+        selectedIdx = allIdx;
+    elseif any(strcmpi(tokens, "all"))
+        selectedIdx = allIdx;
+    else
+        caseNames = strings(totalCaseCount, 1);
+        for i = 1:totalCaseCount
+            caseNames(i) = string(casesIn(i).name);
+        end
+        selectedIdx = zeros(0,1);
+        for ti = 1:numel(tokens)
+            idx = find(strcmpi(caseNames, tokens(ti)));
+            if isempty(idx)
+                error("Unknown caseSelection '%s'. Valid names: %s", ...
+                    char(tokens(ti)), strjoin(cellstr(caseNames), ", "));
+            end
+            selectedIdx = [selectedIdx; idx(:)]; %#ok<AGROW>
+        end
+        selectedIdx = unique(selectedIdx, 'stable');
+    end
+end
+
+if isempty(selectedIdx)
+    error('caseSelection resolved to 0 cases. Please select at least one case.');
+end
+
+casesOut = casesIn(selectedIdx);
 end
 
 function themes = enabled_plot_themes(plotOpts)
