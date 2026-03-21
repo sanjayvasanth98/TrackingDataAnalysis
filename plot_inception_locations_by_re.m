@@ -24,8 +24,8 @@ if isempty(pixelSizeVals)
 end
 
 yExtent_mm = plotOpts.inceptionImageSize_px(2) * median(pixelSizeVals);
-xLim = plotOpts.inceptionXLim_mm;
-yLim = [0 yExtent_mm];
+xLim = [0 5];
+yLim = [0 1.3];
 
 hasPoints = false;
 for i = 1:nCases
@@ -35,7 +35,7 @@ for i = 1:nCases
     end
 end
 if ~hasPoints
-    warning('No inception points found (2x growth criterion).');
+    warning('No activation points found on left-moving tracks.');
     return;
 end
 
@@ -74,10 +74,14 @@ for theme = reshape(plotOpts.themes, 1, [])
 
         xlim(ax, xLim);
         ylim(ax, yLim);
-        axis(ax, 'equal');
+        set(ax, ...
+            'XLimMode', 'manual', ...
+            'YLimMode', 'manual', ...
+            'DataAspectRatioMode', 'auto', ...
+            'PlotBoxAspectRatioMode', 'auto');
         xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
         ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
-        title(ax, sprintf('Inception locations (2x growth), Re=%g', Rei));
+        title(ax, sprintf('Activation locations on left-moving tracks, Re=%g', Rei));
         grid(ax, 'on');
         box(ax, 'on');
 

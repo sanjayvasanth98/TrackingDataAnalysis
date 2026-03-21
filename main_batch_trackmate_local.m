@@ -201,7 +201,7 @@ allLoc.caseName = strings(0,1);
 allLoc.Re       = nan(0,1);
 allLoc.kDh      = nan(0,1);
 allLoc.pixelSize = nan(0,1);
-allLoc.inception2x_xy = cell(0,1);  % [x y] where first growth jump >= factor
+allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving tracks
 
 trackFigOutDir = fullfile(figDir, "TrackDiagnostics");
 if ~isfolder(trackFigOutDir), mkdir(trackFigOutDir); end
@@ -217,8 +217,10 @@ allSize.size_eqd = cell(0,1);
 
 gateSummaryRows = table();
 cachePolicyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts);
+runTimer = tic;
 
 for i = 1:numel(cases)
+    caseTimer = tic;
     fprintf("\n=== Case %d/%d: %s (Re=%g, k/D_h=%.6g) ===\n", ...
         i, numel(cases), cases(i).name, cases(i).Re, cases(i).kDh);
 
@@ -288,29 +290,12 @@ for i = 1:numel(cases)
         tau_sem = NaN;
     end
 
-    % Store per-case summary
-    row = table( ...
-        string(cases(i).name), cases(i).Re, cases(i).kDh, ...
-        metrics.nTracksTotal, nValidTracks, ...
-        nStrictRecirculationTracks, nStrictActivatedTracks, ...
-        metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
-        strictRecirculationFrac_total, strictActivationFrac_valid, ...
-        metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, A_over_I_err_low, A_over_I_err_high, ...
-        tau_mean_val, tau_std_val, tau_sem, nTauVals, ...
-        'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks', ...
-        'nStrictRecirculationTracks','nStrictActivatedTracks', ...
-        'strictTrackFrameExposure','strictActivationEventsTotal', ...
-        'strictRecirculationFrac_total','strictActivationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
-        'tau_mean','tau_std','tau_sem','nTau'});
-
-    summaryRows = [summaryRows; row]; %#ok<AGROW>
-
     % Accumulate inception (2x growth) locations for plotting
     allLoc.caseName(end+1,1) = string(cases(i).name);
     allLoc.Re(end+1,1)       = cases(i).Re;
     allLoc.kDh(end+1,1)      = cases(i).kDh;
     allLoc.pixelSize(end+1,1) = cases(i).pixelSize;
-    allLoc.inception2x_xy{end+1,1} = metrics.inception2x_xy;
+    allLoc.inception2x_xy{end+1,1} = choose_inception_activation_xy(metrics);
 
     % Accumulate upstream-size samples for distribution plot
     allSize.caseName(end+1,1) = string(cases(i).name);
@@ -342,6 +327,26 @@ for i = 1:numel(cases)
     if plotOpts.saveDiagnosticGifs
         save_diagnostic_track_gifs(cases(i), metrics, gifOutDir, plotOpts);
     end
+
+    elapsed_case_sec = toc(caseTimer);
+    fprintf('Case elapsed: %.2f s (%s)\n', elapsed_case_sec, format_elapsed_hms(elapsed_case_sec));
+
+    % Store per-case summary
+    row = table( ...
+        string(cases(i).name), cases(i).Re, cases(i).kDh, ...
+        metrics.nTracksTotal, nValidTracks, ...
+        nStrictRecirculationTracks, nStrictActivatedTracks, ...
+        metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
+        strictRecirculationFrac_total, strictActivationFrac_valid, ...
+        metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, A_over_I_err_low, A_over_I_err_high, ...
+        tau_mean_val, tau_std_val, tau_sem, nTauVals, elapsed_case_sec, ...
+        'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks', ...
+        'nStrictRecirculationTracks','nStrictActivatedTracks', ...
+        'strictTrackFrameExposure','strictActivationEventsTotal', ...
+        'strictRecirculationFrac_total','strictActivationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
+        'tau_mean','tau_std','tau_sem','nTau','elapsed_case_sec'});
+
+    summaryRows = [summaryRows; row]; %#ok<AGROW>
 
     % Close any accidental figures
     close all force;
@@ -384,6 +389,8 @@ if useMatCache && cacheUpdated
     fprintf("Saved cache DB: %s (%d entries)\n", cacheFile, numel(cacheDB.key));
 end
 
+totalElapsedSec = toc(runTimer);
+fprintf("Total elapsed time (selected cases): %.2f s (%s)\n", totalElapsedSec, format_elapsed_hms(totalElapsedSec));
 fprintf("\nAll done. Results in: %s\n", resultsDir);
 
 function [xMean, xStd, yMean, yStd, nPts] = xy_stats(xy)
@@ -581,6 +588,29 @@ token = regexprep(token, '_+$', '');
 if isempty(token)
     token = 'case';
 end
+end
+
+function xy = choose_inception_activation_xy(metrics)
+xy = zeros(0,2);
+if isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
+    xy = metrics.activationEvent_xy_netLeftLegacy;
+elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
+    xy = metrics.activationEvent_xy;
+elseif isfield(metrics, 'inception2x_xy') && ~isempty(metrics.inception2x_xy)
+    xy = metrics.inception2x_xy;
+end
+end
+
+function s = format_elapsed_hms(secondsVal)
+if ~isfinite(secondsVal) || secondsVal < 0
+    s = 'n/a';
+    return;
+end
+totalSeconds = round(secondsVal);
+h = floor(totalSeconds / 3600);
+m = floor(mod(totalSeconds, 3600) / 60);
+sSec = mod(totalSeconds, 60);
+s = sprintf('%02d:%02d:%02d', h, m, sSec);
 end
 
 function v = get_metric_field(metrics, fieldName, defaultValue)

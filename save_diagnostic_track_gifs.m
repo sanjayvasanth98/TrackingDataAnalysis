@@ -29,12 +29,22 @@ end
 
 gifPath = fullfile(outDir, sprintf('%s_Re_%g_kDh_%g_all_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kDh));
 
-[activationXY, activationFrames] = activation_arrays(metrics);
-[leftFrameAxis, leftFrameVisible, leftFrameCumExposure] = ...
+[activationXY, activationFrames, activationTrackIds] = activation_arrays(metrics);
+[leftFrameAxis, ~, leftFrameCumExposure] = ...
     build_leftmoving_frame_counts(trackCatalog, selectedIdx);
+selectedLeftTrackIds = collect_leftmoving_track_ids(trackCatalog, selectedIdx);
+if ~isempty(activationTrackIds)
+    finiteIds = isfinite(activationTrackIds);
+    if any(finiteIds)
+        keepAct = ismember(activationTrackIds, selectedLeftTrackIds);
+        activationXY = activationXY(keepAct, :);
+        activationFrames = activationFrames(keepAct);
+        activationTrackIds = activationTrackIds(keepAct);
+    end
+end
 
-xLim = plotOpts.inceptionXLim_mm;
-yLim = [0 yExtent_mm];
+xLim = [0 5];
+yLim = [0 1.3];
 xTicks = fixed_ticks(xLim(1), xLim(2), 0.5);
 yTicks = fixed_ticks(yLim(1), yLim(2), 0.2);
 
@@ -94,15 +104,15 @@ for fi = 1:numel(allFrames)
 
     xlim(ax, xLim);
     ylim(ax, yLim);
-    axis(ax, 'equal');
-    axis(ax, 'manual');
     set(ax, ...
         'XTick', xTicks, ...
         'YTick', yTicks, ...
         'XLimMode', 'manual', ...
         'YLimMode', 'manual', ...
         'XTickMode', 'manual', ...
-        'YTickMode', 'manual');
+        'YTickMode', 'manual', ...
+        'DataAspectRatioMode', 'auto', ...
+        'PlotBoxAspectRatioMode', 'auto');
     grid(ax, 'on');
     box(ax, 'on');
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
@@ -138,29 +148,67 @@ end
 allFrames = unique(allFrames);
 end
 
-function [activationXY, activationFrames] = activation_arrays(metrics)
+function [activationXY, activationFrames, activationTrackIds] = activation_arrays(metrics)
 activationXY = zeros(0,2);
 activationFrames = nan(0,1);
-if isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
+activationTrackIds = nan(0,1);
+
+if isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
+    activationXY = metrics.activationEvent_xy_netLeftLegacy;
+elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
     activationXY = metrics.activationEvent_xy;
 elseif isfield(metrics, 'strictActivationEvent_xy') && ~isempty(metrics.strictActivationEvent_xy)
     activationXY = metrics.strictActivationEvent_xy;
 end
 
-if isfield(metrics, 'activationEvent_frame') && ~isempty(metrics.activationEvent_frame)
+if isfield(metrics, 'activationEvent_frame_netLeftLegacy') && ~isempty(metrics.activationEvent_frame_netLeftLegacy)
+    activationFrames = metrics.activationEvent_frame_netLeftLegacy(:);
+elseif isfield(metrics, 'activationEvent_frame') && ~isempty(metrics.activationEvent_frame)
     activationFrames = metrics.activationEvent_frame(:);
 elseif isfield(metrics, 'strictActivationEvent_frame') && ~isempty(metrics.strictActivationEvent_frame)
     activationFrames = metrics.strictActivationEvent_frame(:);
 end
 
+if isfield(metrics, 'activationEvent_trackId_netLeftLegacy') && ~isempty(metrics.activationEvent_trackId_netLeftLegacy)
+    activationTrackIds = metrics.activationEvent_trackId_netLeftLegacy(:);
+elseif isfield(metrics, 'activationEvent_trackId') && ~isempty(metrics.activationEvent_trackId)
+    activationTrackIds = metrics.activationEvent_trackId(:);
+elseif isfield(metrics, 'strictActivationEvent_trackId') && ~isempty(metrics.strictActivationEvent_trackId)
+    activationTrackIds = metrics.strictActivationEvent_trackId(:);
+end
+
 nAct = min(size(activationXY, 1), numel(activationFrames));
+if isempty(activationTrackIds)
+    activationTrackIds = nan(nAct,1);
+else
+    nAct = min(nAct, numel(activationTrackIds));
+end
 if nAct < 1
     activationXY = zeros(0,2);
     activationFrames = nan(0,1);
+    activationTrackIds = nan(0,1);
     return;
 end
 activationXY = activationXY(1:nAct, :);
 activationFrames = activationFrames(1:nAct);
+activationTrackIds = activationTrackIds(1:nAct);
+end
+
+function trackIds = collect_leftmoving_track_ids(trackCatalog, selectedIdx)
+trackIds = nan(0,1);
+for i = 1:numel(selectedIdx)
+    tr = trackCatalog(selectedIdx(i));
+    if ~is_true_field(tr, 'isLeftMoving')
+        continue;
+    end
+    if isfield(tr, 'TRACK_ID')
+        tid = tr.TRACK_ID;
+        if isfinite(tid)
+            trackIds(end+1,1) = tid; %#ok<AGROW>
+        end
+    end
+end
+trackIds = unique(trackIds);
 end
 
 function [frameAxis, nVisible, cumExposure] = build_leftmoving_frame_counts(trackCatalog, selectedIdx)
