@@ -121,8 +121,16 @@ plotOpts.savePNG = true; % <---edit
 plotOpts.saveSVG = false; % <---edit
 plotOpts.makeTrackDiagnostics = true; % <---edit
 plotOpts.saveDiagnosticGifs = true; % <---edit
+plotOpts.makeVideoOverlayGifs = false; % <---edit: overlay tracks on source AVI and export GIF
+plotOpts.saveVideoOverlayGifs = true; % <---edit
 plotOpts.diagnosticGifTrailLength = 10;
 plotOpts.diagnosticGifDelayTime = 0.08;
+plotOpts.videoOverlayTrailLength = 10; % <---edit
+plotOpts.videoOverlayDelayTime = 0.08; % <---edit
+plotOpts.videoOverlayFadeHalfLifeFrames = 30; % <---edit
+plotOpts.videoOverlayUseContiguousRange = true; % <---edit
+plotOpts.videoOverlayMaxFrames = 600; % <---edit (Inf for all)
+plotOpts.videoOverlayMarkerSize = 26; % <---edit
 plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
 plotOpts.inceptionXLim_mm = [0 5]; % <---edit
@@ -181,10 +189,16 @@ cases(6).dt        = 1/102247;
 
 for ci = 1:numel(cases)
     cases(ci).diagnosticTrackIds = []; % empty = all parsed tracks in this case; otherwise list TRACK_IDs
+    if ~isfield(cases, 'videoFile')
+        cases(ci).videoFile = ""; % <---edit: optional AVI path for overlay GIF export
+    elseif strlength(string(cases(ci).videoFile)) < 1
+        cases(ci).videoFile = ""; % <---edit: optional AVI path for overlay GIF export
+    end
 end
 
 % Example:
 % cases(2).diagnosticTrackIds = [123 456];
+% cases(1).videoFile = "/home/.../case1.avi"; % <---edit
 
 % Example second Reynolds set (uncomment/edit as needed)
 % cases(7).name      = "5um";
@@ -216,6 +230,9 @@ if ~isfolder(trackFigOutDir), mkdir(trackFigOutDir); end
 
 gifOutDir = fullfile(resultsDir, "diagnostic gifs");
 if plotOpts.saveDiagnosticGifs && ~isfolder(gifOutDir), mkdir(gifOutDir); end
+
+videoGifOutDir = fullfile(resultsDir, "video overlay gifs");
+if plotOpts.makeVideoOverlayGifs && plotOpts.saveVideoOverlayGifs && ~isfolder(videoGifOutDir), mkdir(videoGifOutDir); end
 
 allSize = struct();
 allSize.caseName = strings(0,1);
@@ -334,6 +351,10 @@ for i = 1:numel(cases)
 
     if plotOpts.saveDiagnosticGifs
         save_diagnostic_track_gifs(cases(i), metrics, gifOutDir, plotOpts);
+    end
+
+    if plotOpts.makeVideoOverlayGifs
+        save_video_overlay_gif_from_avi(cases(i), metrics, videoGifOutDir, plotOpts);
     end
 
     elapsed_case_sec = toc(caseTimer);
