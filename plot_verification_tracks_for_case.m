@@ -111,7 +111,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
 
     if ~isempty(lgdHandles)
-        leg = legend(ax, lgdHandles, cellstr(lgdLabels), 'Location', 'best', 'Box', 'off');
+        leg = legend(ax, lgdHandles, cellstr(lgdLabels), 'Location', 'northwest', 'Box', 'off');
     else
         leg = [];
     end
