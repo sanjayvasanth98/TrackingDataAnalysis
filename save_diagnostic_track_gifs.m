@@ -44,7 +44,10 @@ if ~isempty(activationTrackIds)
 end
 
 xLim = [0 5];
-yLim = [0 1.3];
+yLim = [0 1.2];
+if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 2
+    yLim = double(plotOpts.inceptionYLim_mm(1:2));
+end
 xTicks = fixed_ticks(xLim(1), xLim(2), 0.5);
 yTicks = fixed_ticks(yLim(1), yLim(2), 0.2);
 
@@ -99,8 +102,8 @@ for fi = 1:numel(allFrames)
     end
 
     nActThisFrame = sum(isfinite(activationFrames) & (activationFrames == frameVal));
-    cumAct = sum(idxActVisible);
-    cumExposure = frame_lookup_arrays(leftFrameAxis, leftFrameCumExposure, frameVal, true);
+    cumAct = sum(idxActVisible); %#ok<NASGU>
+    cumExposure = frame_lookup_arrays(leftFrameAxis, leftFrameCumExposure, frameVal, true); %#ok<NASGU>
 
     xlim(ax, xLim);
     ylim(ax, yLim);
@@ -118,9 +121,9 @@ for fi = 1:numel(allFrames)
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
     title(ax, sprintf(['Diagnostic GIF: %s | frame %g (%d/%d) | visible=%d | ', ...
-        'left-moving=%d | act@frame=%d | cum exp=%d | cum act=%d | A/I=%.4g'], ...
+        'left-moving=%d | act@frame=%d'], ...
         char(caseDef.name), frameVal, fi, numel(allFrames), nVisibleAll, ...
-        nVisibleLeftMoving, nActThisFrame, cumExposure, cumAct, metrics.A_over_I));
+        nVisibleLeftMoving, nActThisFrame));
     apply_plot_theme(ax, 'normal');
 
     drawnow;

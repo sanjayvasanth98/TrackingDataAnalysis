@@ -120,6 +120,7 @@ plotOpts.diagnosticGifDelayTime = 0.08;
 plotOpts.upstreamSizeXLim_um = [];
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
 plotOpts.inceptionXLim_mm = [0 5];
+plotOpts.inceptionYLim_mm = [0 1.2];
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
