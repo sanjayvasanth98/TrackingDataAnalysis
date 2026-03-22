@@ -19,19 +19,24 @@ rehash;
 
 %% ---------------- USER SETTINGS ----------------
 % Toggle run mode by commenting one line
-% runMode = "local";
-runMode = "arc";
+% runMode = "local"; % <---edit
+runMode = "arc"; % <---edit
 
 isArc = strcmpi(runMode, "arc");
 visMode = ["on", "off"];
 set(0,'DefaultFigureVisible', visMode(1 + isArc));
 
-% Local quick-test limit (tracks/events parsed per XML)
-% - Use 100 (or any number) for fast local testing
-% - Use Inf to parse all tracks
-localEventLimit = Inf;
-maxTracksChoices = [localEventLimit, Inf];
+% Local quick-test parsing limit (total parsed tracks per XML).
+% Keep Inf to parse all tracks; this is separate from left-moving analysis cap below.
+localParseTrackLimit = Inf; % <---edit: keep Inf to avoid truncating true left-moving population
+maxTracksChoices = [localParseTrackLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
+
+% Local quick-test analysis cap (left-moving tracks kept for diagnostics/inception).
+% For 100 left-moving tracks, use: localParseTrackLimit = Inf and localEventLimit = 100. <---edit
+localEventLimit = Inf; % <---edit: max number of left-moving tracks to analyze per case
+leftMovingTrackLimitChoices = [localEventLimit, Inf];
+maxLeftMovingTracks = leftMovingTrackLimitChoices(1 + isArc);
 
 % Case selection:
 % - "all"            -> run every case below
@@ -39,14 +44,14 @@ maxTracksToParse = maxTracksChoices(1 + isArc);
 % - [1 3 6]          -> run multiple cases by index
 % - "5um"            -> run one case by name
 % - ["5um","30um"]   -> run multiple cases by name
-caseSelection = "all";
+caseSelection = "all"; % <---edit
 
 % Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
-useMatCache = true;
-forceReparse = false;
+useMatCache = true; % <---edit
+forceReparse = false; % <---edit
 
 % Where to save all results
-resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results1";
+resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results1"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
@@ -79,7 +84,7 @@ parserOpts.parseFilteredTracksOnly = true;
 
 % Bulk flow in this dataset is left->right; recirculating injection is counterflow (right->left).
 flowOpts = struct();
-flowOpts.bulkDirection = "left_to_right";
+flowOpts.bulkDirection = "left_to_right"; % <---edit if dataset orientation changes
 flowOpts.minNetDxCounterflow_mm = 0.08;
 flowOpts.minNegativeStepFraction = 0.65;
 flowOpts.maxPositiveStepFraction = 0.30;
@@ -89,6 +94,7 @@ flowOpts.rightOriginFrac = 0.60; % rightmost 40% source band
 qcOpts = struct();
 qcOpts.minTrackSpots = 5;
 qcOpts.maxTrackGaps = 1;
+qcOpts.maxLeftMovingTracks = maxLeftMovingTracks;
 qcOpts.rejectSplitMergeComplex = true;
 qcOpts.wallBandEnabled = false;
 qcOpts.wallBandYLimits_mm = [];
@@ -105,28 +111,29 @@ activationOpts.burstJumpFactor = 2.2;
 activationOpts.burstPostFactor = 1.4;
 
 % Density plot bin size (physical units)
-binSize_phys = 0.02;    % adjust based on your mm/px and field size (e.g., 0.02 mm)
+binSize_phys = 0.02;    % <---edit if needed based on mm/px and field size
 
 % Centralized plot/export configuration
 plotOpts = struct();
-plotOpts.enableNormalTheme = true;
-plotOpts.enablePosterTheme = false;
-plotOpts.savePNG = true;
-plotOpts.saveSVG = false;
-plotOpts.makeTrackDiagnostics = true;
-plotOpts.saveDiagnosticGifs = true;
+plotOpts.enableNormalTheme = true; % <---edit
+plotOpts.enablePosterTheme = false; % <---edit
+plotOpts.savePNG = true; % <---edit
+plotOpts.saveSVG = false; % <---edit
+plotOpts.makeTrackDiagnostics = true; % <---edit
+plotOpts.saveDiagnosticGifs = true; % <---edit
 plotOpts.diagnosticGifTrailLength = 10;
 plotOpts.diagnosticGifDelayTime = 0.08;
-plotOpts.upstreamSizeXLim_um = [];
+plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
-plotOpts.inceptionXLim_mm = [0 5];
-plotOpts.inceptionYLim_mm = [0 1.2];
+plotOpts.inceptionXLim_mm = [0 5]; % <---edit
+plotOpts.inceptionYLim_mm = [0 1.2]; % <---edit
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
 % Required fields per case:
 %   name, Re, kDh, xmlFile, pixelSize, dt
 % If you include one Re only, everything still runs.
+% Edit case definitions below for your runs. <---edit
 
 cases = struct([]);
 

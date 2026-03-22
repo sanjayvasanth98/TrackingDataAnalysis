@@ -30,9 +30,11 @@ end
 gifPath = fullfile(outDir, sprintf('%s_Re_%g_kDh_%g_all_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kDh));
 
 [activationXY, activationFrames, activationTrackIds] = activation_arrays(metrics);
-[leftFrameAxis, ~, leftFrameCumExposure] = ...
-    build_leftmoving_frame_counts(trackCatalog, selectedIdx);
-selectedLeftTrackIds = collect_leftmoving_track_ids(trackCatalog, selectedIdx);
+[leftMaskSelected, selectedLeftTrackIds] = resolve_leftmoving_selection(metrics, trackCatalog, selectedIdx);
+if ~any(leftMaskSelected)
+    warning('No left-moving tracks selected for case %s. Skipping diagnostic GIF export.', char(caseDef.name));
+    return;
+end
 if ~isempty(activationTrackIds)
     finiteIds = isfinite(activationTrackIds);
     if any(finiteIds)
@@ -59,7 +61,6 @@ for fi = 1:numel(allFrames)
     cla(ax);
     hold(ax, 'on');
 
-    nVisibleAll = 0;
     nVisibleLeftMoving = 0;
     for i = 1:numel(selectedIdx)
         tr = trackCatalog(selectedIdx(i));
@@ -68,8 +69,7 @@ for fi = 1:numel(allFrames)
             continue;
         end
 
-        nVisibleAll = nVisibleAll + 1;
-        if is_true_field(tr, 'isLeftMoving')
+        if leftMaskSelected(i)
             nVisibleLeftMoving = nVisibleLeftMoving + 1;
             lineColor = [0 0 1];
             lineWidth = 1.6;
@@ -102,8 +102,6 @@ for fi = 1:numel(allFrames)
     end
 
     nActThisFrame = sum(isfinite(activationFrames) & (activationFrames == frameVal));
-    cumAct = sum(idxActVisible); %#ok<NASGU>
-    cumExposure = frame_lookup_arrays(leftFrameAxis, leftFrameCumExposure, frameVal, true); %#ok<NASGU>
 
     xlim(ax, xLim);
     ylim(ax, yLim);
@@ -120,9 +118,9 @@ for fi = 1:numel(allFrames)
     box(ax, 'on');
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
-    title(ax, sprintf(['Diagnostic GIF: %s | frame %g (%d/%d) | visible=%d | ', ...
+    title(ax, sprintf(['Diagnostic GIF: %s | frame %g (%d/%d) | ', ...
         'left-moving=%d | act@frame=%d'], ...
-        char(caseDef.name), frameVal, fi, numel(allFrames), nVisibleAll, ...
+        char(caseDef.name), frameVal, fi, numel(allFrames), ...
         nVisibleLeftMoving, nActThisFrame));
     apply_plot_theme(ax, 'normal');
 
@@ -197,53 +195,46 @@ activationFrames = activationFrames(1:nAct);
 activationTrackIds = activationTrackIds(1:nAct);
 end
 
-function trackIds = collect_leftmoving_track_ids(trackCatalog, selectedIdx)
-trackIds = nan(0,1);
-for i = 1:numel(selectedIdx)
-    tr = trackCatalog(selectedIdx(i));
-    if ~is_true_field(tr, 'isLeftMoving')
-        continue;
-    end
-    if isfield(tr, 'TRACK_ID')
-        tid = tr.TRACK_ID;
-        if isfinite(tid)
-            trackIds(end+1,1) = tid; %#ok<AGROW>
+function [leftMaskSelected, leftTrackIds] = resolve_leftmoving_selection(metrics, trackCatalog, selectedIdx)
+leftMaskSelected = false(numel(selectedIdx), 1);
+leftTrackIds = nan(0,1);
+
+metricIds = nan(0,1);
+if isfield(metrics, 'leftMovingTrackIds_netLeftLegacy') && ~isempty(metrics.leftMovingTrackIds_netLeftLegacy)
+    metricIds = metrics.leftMovingTrackIds_netLeftLegacy(:);
+end
+metricIds = unique(metricIds(isfinite(metricIds)), 'stable');
+
+if ~isempty(metricIds)
+    for i = 1:numel(selectedIdx)
+        tid = get_track_id(trackCatalog(selectedIdx(i)));
+        if isfinite(tid) && ismember(tid, metricIds)
+            leftMaskSelected(i) = true;
         end
     end
-end
-trackIds = unique(trackIds);
+else
+    for i = 1:numel(selectedIdx)
+        leftMaskSelected(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isLeftMoving');
+    end
 end
 
-function [frameAxis, nVisible, cumExposure] = build_leftmoving_frame_counts(trackCatalog, selectedIdx)
-allLeftFrames = nan(0,1);
 for i = 1:numel(selectedIdx)
-    tr = trackCatalog(selectedIdx(i));
-    if ~is_true_field(tr, 'isLeftMoving')
+    if ~leftMaskSelected(i)
         continue;
     end
-    frameVals = tr.frame(:);
-    frameVals = frameVals(isfinite(frameVals));
-    if isempty(frameVals)
-        continue;
+    tid = get_track_id(trackCatalog(selectedIdx(i)));
+    if isfinite(tid)
+        leftTrackIds(end+1,1) = tid; %#ok<AGROW>
     end
-    allLeftFrames = [allLeftFrames; unique(frameVals)]; %#ok<AGROW>
+end
+leftTrackIds = unique(leftTrackIds, 'stable');
 end
 
-frameAxis = unique(allLeftFrames);
-if isempty(frameAxis)
-    nVisible = nan(0,1);
-    cumExposure = nan(0,1);
-    return;
+function tid = get_track_id(tr)
+tid = NaN;
+if isstruct(tr) && isfield(tr, 'TRACK_ID') && isfinite(tr.TRACK_ID)
+    tid = tr.TRACK_ID;
 end
-
-nFrames = numel(frameAxis);
-nVisible = zeros(nFrames,1);
-[~, loc] = ismember(allLeftFrames, frameAxis);
-loc = loc(loc > 0);
-if ~isempty(loc)
-    nVisible = accumarray(loc, 1, [nFrames, 1]);
-end
-cumExposure = cumsum(nVisible);
 end
 
 function ticks = fixed_ticks(lo, hi, step)
@@ -292,28 +283,6 @@ end
 tailStart = max(1, idxNow - trailLength + 1);
 xTail = x(tailStart:idxNow);
 yTail = y(tailStart:idxNow);
-end
-
-function outVal = frame_lookup_arrays(frameAxis, vals, frameVal, cumulativeMode)
-outVal = 0;
-if isempty(frameAxis) || isempty(vals)
-    return;
-end
-frameAxis = frameAxis(:);
-vals = vals(:);
-if numel(frameAxis) ~= numel(vals)
-    return;
-end
-
-if cumulativeMode
-    idx = find(frameAxis <= frameVal, 1, 'last');
-else
-    idx = find(frameAxis == frameVal, 1, 'first');
-end
-if isempty(idx) || ~isfinite(vals(idx))
-    return;
-end
-outVal = vals(idx);
 end
 
 function tf = is_true_field(s, fieldName)

@@ -19,12 +19,7 @@ if isempty(selectedIdx)
     return;
 end
 
-leftMask = false(numel(selectedIdx), 1);
-for i = 1:numel(selectedIdx)
-    leftMask(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isLeftMoving');
-end
-leftIdx = selectedIdx(leftMask);
-leftTrackIds = selectedTrackIds(leftMask);
+[leftIdx, leftTrackIds] = resolve_leftmoving_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics);
 if isempty(leftIdx)
     warning('No left-moving tracks found for case %s. Skipping diagnostic track plot.', char(caseDef.name));
     return;
@@ -124,6 +119,30 @@ for theme = reshape(plotOpts.themes, 1, [])
     close(f);
 end
 
+end
+
+function [leftIdx, leftTrackIds] = resolve_leftmoving_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics)
+leftIdx = zeros(0,1);
+leftTrackIds = nan(0,1);
+
+metricIds = nan(0,1);
+if isfield(metrics, 'leftMovingTrackIds_netLeftLegacy') && ~isempty(metrics.leftMovingTrackIds_netLeftLegacy)
+    metricIds = metrics.leftMovingTrackIds_netLeftLegacy(:);
+end
+metricIds = unique(metricIds(isfinite(metricIds)), 'stable');
+
+if ~isempty(metricIds)
+    mask = ismember(selectedTrackIds, metricIds);
+else
+    mask = false(numel(selectedIdx), 1);
+    for i = 1:numel(selectedIdx)
+        mask(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isLeftMoving');
+    end
+end
+
+leftIdx = selectedIdx(mask);
+leftTrackIds = selectedTrackIds(mask);
+leftTrackIds = unique(leftTrackIds(isfinite(leftTrackIds)), 'stable');
 end
 
 function [actXY, actTrackIds] = leftmoving_activation_points(metrics)

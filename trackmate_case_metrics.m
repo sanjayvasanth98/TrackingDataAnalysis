@@ -113,6 +113,10 @@ for k = 1:nTotal
     if ~(prep(k).isBasicValid && prep(k).isLeftMoving)
         continue;
     end
+    if isfinite(qcOpts.maxLeftMovingTracks) && qcOpts.maxLeftMovingTracks >= 0 ...
+            && numel(netLeftTrackIds) >= qcOpts.maxLeftMovingTracks
+        continue;
+    end
 
     netLeftTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
     netLeftTrack_xy{end+1,1} = [prep(k).x, prep(k).y]; %#ok<AGROW>
@@ -349,6 +353,8 @@ metrics = pack_metrics();
         outMetrics.activationEventsTotal_netLeftLegacy = netLeftActivationEventsTotal;
         outMetrics.meanLeftMovingPerFrame_netLeftLegacy = netLeftMeanVisiblePerFrame;
         outMetrics.peakLeftMovingPerFrame_netLeftLegacy = netLeftPeakVisiblePerFrame;
+        outMetrics.leftMovingTrackIds_netLeftLegacy = unique(netLeftTrackIds(isfinite(netLeftTrackIds)), 'stable');
+        outMetrics.maxLeftMovingTracks_netLeftLegacy = qcOpts.maxLeftMovingTracks;
         outMetrics.A_over_I_netLeftLegacy = A_over_I_netLeftLegacy;
         outMetrics.A_over_I_ci_low_netLeftLegacy = A_over_I_ci_low_netLeftLegacy;
         outMetrics.A_over_I_ci_high_netLeftLegacy = A_over_I_ci_high_netLeftLegacy;
@@ -815,6 +821,11 @@ end
 
 qcOpts.minTrackSpots = max(2, round(qcOpts.minTrackSpots));
 qcOpts.maxTrackGaps = max(0, round(qcOpts.maxTrackGaps));
+if ~isfield(qcOpts, 'maxLeftMovingTracks') || isempty(qcOpts.maxLeftMovingTracks) || ~isfinite(qcOpts.maxLeftMovingTracks)
+    qcOpts.maxLeftMovingTracks = Inf;
+else
+    qcOpts.maxLeftMovingTracks = max(0, round(double(qcOpts.maxLeftMovingTracks)));
+end
 flowOpts.minNetDxCounterflow_mm = max(0, flowOpts.minNetDxCounterflow_mm);
 flowOpts.minNegativeStepFraction = min(1, max(0, flowOpts.minNegativeStepFraction));
 flowOpts.maxPositiveStepFraction = min(1, max(0, flowOpts.maxPositiveStepFraction));
@@ -837,6 +848,7 @@ function qcOpts = default_qc_opts()
 qcOpts = struct();
 qcOpts.minTrackSpots = 5;
 qcOpts.maxTrackGaps = 1;
+qcOpts.maxLeftMovingTracks = Inf;
 qcOpts.rejectSplitMergeComplex = true;
 qcOpts.wallBandEnabled = false;
 qcOpts.wallBandYLimits_mm = [];
