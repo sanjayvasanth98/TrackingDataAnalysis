@@ -84,13 +84,6 @@ for theme = reshape(plotOpts.themes, 1, [])
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
 
-    exposureVal = 0;
-    if isfield(metrics, 'leftMovingTrackFrameExposure_netLeftLegacy') && isfinite(metrics.leftMovingTrackFrameExposure_netLeftLegacy)
-        exposureVal = metrics.leftMovingTrackFrameExposure_netLeftLegacy;
-    elseif isfield(metrics, 'leftMovingTrackFrameExposure') && isfinite(metrics.leftMovingTrackFrameExposure)
-        exposureVal = metrics.leftMovingTrackFrameExposure;
-    end
-
     actTotal = 0;
     if isfield(metrics, 'activationEventsTotal_netLeftLegacy') && isfinite(metrics.activationEventsTotal_netLeftLegacy)
         actTotal = metrics.activationEventsTotal_netLeftLegacy;
@@ -98,9 +91,8 @@ for theme = reshape(plotOpts.themes, 1, [])
         actTotal = metrics.activationEventsTotal;
     end
 
-    title(ax, sprintf(['Track diagnostics (GIF-consistent left-moving): %s, Re=%g, k/D_h=%.4g | ', ...
-        'A/I=%.4g, events=%d, exposure=%d'], ...
-        char(caseDef.name), caseDef.Re, caseDef.kDh, metrics.A_over_I, actTotal, exposureVal));
+    title(ax, sprintf('Track diagnostics | k/Dh %.4g | Re %g | AE %d | tracks %d', ...
+        caseDef.kDh, caseDef.Re, actTotal, numel(leftTrackIds)));
     grid(ax, 'on');
     box(ax, 'on');
 
@@ -108,15 +100,15 @@ for theme = reshape(plotOpts.themes, 1, [])
     lgdLabels = strings(0,1);
     if ~isempty(hTrack)
         lgdHandles(end+1,1) = hTrack(1); %#ok<AGROW>
-        lgdLabels(end+1,1) = sprintf('Left-moving tracks (GIF blue set, n=%d)', numel(leftTrackIds)); %#ok<AGROW>
+        lgdLabels(end+1,1) = "Left moving"; %#ok<AGROW>
     end
     if ~isempty(hAct)
         lgdHandles(end+1,1) = hAct; %#ok<AGROW>
-        lgdLabels(end+1,1) = sprintf('Activation events on left-moving tracks (n=%d)', size(actXY, 1)); %#ok<AGROW>
+        lgdLabels(end+1,1) = "Activation events"; %#ok<AGROW>
     end
 
     if ~isempty(lgdHandles)
-        leg = legend(ax, lgdHandles, cellstr(lgdLabels), 'Location', 'eastoutside', 'Box', 'off');
+        leg = legend(ax, lgdHandles, cellstr(lgdLabels), 'Location', 'best', 'Box', 'off');
     else
         leg = [];
     end

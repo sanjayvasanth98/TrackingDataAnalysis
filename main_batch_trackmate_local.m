@@ -29,7 +29,7 @@ set(0,'DefaultFigureVisible', visMode(1 + isArc));
 % Local quick-test limit (tracks/events parsed per XML)
 % - Use 100 (or any number) for fast local testing
 % - Use Inf to parse all tracks
-localEventLimit = 200;
+localEventLimit = 100;
 maxTracksChoices = [localEventLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
 
@@ -46,7 +46,7 @@ useMatCache = true;
 forceReparse = false;
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 3";
+resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 4";
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
