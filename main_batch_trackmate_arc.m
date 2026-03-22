@@ -131,6 +131,7 @@ plotOpts.videoOverlayFadeHalfLifeFrames = 30; % <---edit
 plotOpts.videoOverlayUseContiguousRange = true; % <---edit
 plotOpts.videoOverlayMaxFrames = 600; % <---edit (Inf for all)
 plotOpts.videoOverlayMarkerSize = 26; % <---edit
+plotOpts.videoOverlayXLim_mm = [0 4.8]; % <---edit
 plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
 plotOpts.inceptionXLim_mm = [0 5]; % <---edit

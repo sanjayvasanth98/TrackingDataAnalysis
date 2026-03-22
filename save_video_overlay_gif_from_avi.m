@@ -101,9 +101,14 @@ fadeHalfLifeFrames = max(1, fadeHalfLifeFrames);
 markerSize = get_numeric_opt(plotOpts, 'videoOverlayMarkerSize', 26);
 markerSize = max(4, markerSize);
 
-xLim = [0 5];
-if isfield(plotOpts, 'inceptionXLim_mm') && numel(plotOpts.inceptionXLim_mm) >= 2
+xLim = [0 4.8];
+if isfield(plotOpts, 'videoOverlayXLim_mm') && numel(plotOpts.videoOverlayXLim_mm) >= 2
+    xLim = double(plotOpts.videoOverlayXLim_mm(1:2));
+elseif isfield(plotOpts, 'inceptionXLim_mm') && numel(plotOpts.inceptionXLim_mm) >= 2
     xLim = double(plotOpts.inceptionXLim_mm(1:2));
+end
+if ~all(isfinite(xLim)) || xLim(2) <= xLim(1)
+    xLim = [0 4.8];
 end
 yLim = [0 1.2];
 if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 2
@@ -151,7 +156,7 @@ for ii = 1:numel(frameIdxToRender)
         if isempty(xTail)
             continue;
         end
-        plot(ax, xTail, yTailPlot, '-', 'Color', [0 0 1], 'LineWidth', 1.6);
+        plot(ax, xTail, yTailPlot, '-', 'Color', [0 0 1], 'LineWidth', 1.0);
     end
 
     for a = 1:size(actXY, 1)

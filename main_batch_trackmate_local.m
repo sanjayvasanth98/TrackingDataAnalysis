@@ -28,13 +28,13 @@ set(0,'DefaultFigureVisible', visMode(1 + isArc));
 
 % Local quick-test parsing limit (total parsed tracks per XML).
 % Keep Inf to parse all tracks; this is separate from left-moving analysis cap below.
-localParseTrackLimit = Inf; % <---edit: keep Inf to avoid truncating true left-moving population
+localParseTrackLimit = 100; % <---edit: keep Inf to avoid truncating true left-moving population
 maxTracksChoices = [localParseTrackLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
 
 % Local quick-test analysis cap (left-moving tracks kept for diagnostics/inception).
 % For 100 left-moving tracks, use: localParseTrackLimit = Inf and localEventLimit = 100. <---edit
-localEventLimit = 100; % <---edit: max number of left-moving tracks to analyze per case
+localEventLimit = Inf; % <---edit: max number of left-moving tracks to analyze per case
 leftMovingTrackLimitChoices = [localEventLimit, Inf];
 maxLeftMovingTracks = leftMovingTrackLimitChoices(1 + isArc);
 
@@ -121,7 +121,7 @@ plotOpts.savePNG = true; % <---edit
 plotOpts.saveSVG = false; % <---edit
 plotOpts.makeTrackDiagnostics = true; % <---edit
 plotOpts.saveDiagnosticGifs = true; % <---edit
-plotOpts.makeVideoOverlayGifs = false; % <---edit: overlay tracks on source AVI and export GIF
+plotOpts.makeVideoOverlayGifs = true; % <---edit: overlay tracks on source AVI and export GIF
 plotOpts.saveVideoOverlayGifs = true; % <---edit
 plotOpts.diagnosticGifTrailLength = 10;
 plotOpts.diagnosticGifDelayTime = 0.08;
@@ -131,6 +131,7 @@ plotOpts.videoOverlayFadeHalfLifeFrames = 30; % <---edit
 plotOpts.videoOverlayUseContiguousRange = true; % <---edit
 plotOpts.videoOverlayMaxFrames = 600; % <---edit (Inf for all)
 plotOpts.videoOverlayMarkerSize = 26; % <---edit
+plotOpts.videoOverlayXLim_mm = [0 4.8]; % <---edit
 plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
 plotOpts.inceptionXLim_mm = [0 5]; % <---edit
@@ -151,6 +152,7 @@ cases(1).kDh       = 5; % <-- set your k/D_h
 cases(1).xmlFile   = "E:\March Re 90,000 inception data\Processed images\Smooth variation 2\smoothvar2_48lit.xml"; % <-- set XML path
 cases(1).pixelSize = 0.00375009375;  % mm/px
 cases(1).dt        = 1/102247;
+cases(1).videoFile = "E:\March Re 90,000 inception data\Processed images\Smooth variation 2\Smooth variation 2000.avi"; % <---edit: optional AVI path for overlay GIF export
 
 cases(2).name      = "12um";
 cases(2).Re        = 95000;
