@@ -58,6 +58,14 @@ if isempty(allTrackFrames)
     return;
 end
 
+drawTrackIds = nan(numel(drawIdx), 1);
+for t = 1:numel(drawIdx)
+    drawTrackIds(t) = get_track_id(trackCatalog(drawIdx(t)));
+end
+drawStrictMask = ismember(drawTrackIds, leftTrackIds);
+drawMicroMask = ismember(drawTrackIds, microTrackIds);
+microBlueState = false(numel(drawIdx), 1);
+
 isZeroBased = min(allTrackFrames) <= 0;
 
 v = VideoReader(char(videoFile));
@@ -159,11 +167,22 @@ for ii = 1:numel(frameIdxToRender)
         if isempty(xTail)
             continue;
         end
-        tid = get_track_id(tr);
-        if isfinite(tid) && ismember(tid, leftTrackIds)
+
+        if drawStrictMask(t)
             cLine = [0 0 1];
-        elseif isfinite(tid) && ismember(tid, microTrackIds)
-            cLine = [0 0.60 0.10];
+        elseif drawMicroMask(t)
+            motionSignal = recent_motion_signal(xTail, 3);
+            if motionSignal < 0
+                microBlueState(t) = true;
+            elseif motionSignal > 0
+                microBlueState(t) = false;
+            end
+
+            if microBlueState(t)
+                cLine = [0 0 1];
+            else
+                cLine = [0 0.60 0.10];
+            end
         else
             cLine = [0.4 0.4 0.4];
         end
@@ -560,5 +579,31 @@ if islogical(v)
     tf = any(v(:));
 elseif isnumeric(v)
     tf = any(v(:) ~= 0);
+end
+end
+
+function motionSignal = recent_motion_signal(xVals, nSteps)
+% motionSignal: -1 => last nSteps are leftward, +1 => last nSteps are rightward, 0 => no switch.
+motionSignal = 0;
+if nargin < 2 || ~isfinite(nSteps) || nSteps < 1
+    nSteps = 3;
+end
+nSteps = round(nSteps);
+
+xVals = xVals(:);
+xVals = xVals(isfinite(xVals));
+if numel(xVals) < (nSteps + 1)
+    return;
+end
+
+dx = diff(xVals);
+if numel(dx) < nSteps
+    return;
+end
+recent = dx(end - nSteps + 1:end);
+if all(recent < 0)
+    motionSignal = -1;
+elseif all(recent > 0)
+    motionSignal = 1;
 end
 end

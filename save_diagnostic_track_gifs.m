@@ -36,6 +36,7 @@ if ~any(leftMaskSelected) && ~any(microMaskSelected)
     warning('No left-moving or microbubble-rescue tracks selected for case %s. Skipping diagnostic GIF export.', char(caseDef.name));
     return;
 end
+microBlueState = false(numel(selectedIdx), 1);
 if ~isempty(activationTrackIds)
     finiteIds = isfinite(activationTrackIds);
     if any(finiteIds)
@@ -80,10 +81,24 @@ for fi = 1:numel(allFrames)
             markerSize = 16;
         elseif microMaskSelected(i)
             nVisibleMicroRescue = nVisibleMicroRescue + 1;
-            lineColor = [0 0.60 0.10];
-            lineWidth = 1.6;
-            spotColor = [0 0.55 0.10];
-            markerSize = 16;
+            motionSignal = recent_motion_signal(xTail, 3);
+            if motionSignal < 0
+                microBlueState(i) = true;
+            elseif motionSignal > 0
+                microBlueState(i) = false;
+            end
+
+            if microBlueState(i)
+                lineColor = [0 0 1];
+                lineWidth = 1.6;
+                spotColor = [0 0 0.85];
+                markerSize = 16;
+            else
+                lineColor = [0 0.60 0.10];
+                lineWidth = 1.6;
+                spotColor = [0 0.55 0.10];
+                markerSize = 16;
+            end
         else
             lineColor = [0.55 0.55 0.55];
             lineWidth = 1.0;
@@ -392,5 +407,31 @@ if islogical(v)
     tf = any(v(:));
 elseif isnumeric(v)
     tf = any(v(:) ~= 0);
+end
+end
+
+function motionSignal = recent_motion_signal(xVals, nSteps)
+% motionSignal: -1 => last nSteps are leftward, +1 => last nSteps are rightward, 0 => no switch.
+motionSignal = 0;
+if nargin < 2 || ~isfinite(nSteps) || nSteps < 1
+    nSteps = 3;
+end
+nSteps = round(nSteps);
+
+xVals = xVals(:);
+xVals = xVals(isfinite(xVals));
+if numel(xVals) < (nSteps + 1)
+    return;
+end
+
+dx = diff(xVals);
+if numel(dx) < nSteps
+    return;
+end
+recent = dx(end - nSteps + 1:end);
+if all(recent < 0)
+    motionSignal = -1;
+elseif all(recent > 0)
+    motionSignal = 1;
 end
 end
