@@ -31,24 +31,27 @@ if isempty(selectedIdx)
 end
 
 [leftIdx, leftTrackIds] = resolve_leftmoving_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics);
-if isempty(leftIdx)
-    warning('AVI overlay GIF: no left-moving tracks selected for case %s.', char(caseDef.name));
+[microIdx, microTrackIds] = resolve_microbubble_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics);
+if isempty(leftIdx) && isempty(microIdx)
+    warning('AVI overlay GIF: no left-moving or microbubble-rescue tracks selected for case %s.', char(caseDef.name));
     return;
 end
 
-[actXY, actFrames, actTrackIds] = leftmoving_activation_events(metrics);
+[actXY, actFrames, actTrackIds] = activation_events_left_and_micro(metrics);
 if ~isempty(actTrackIds)
     finiteIds = isfinite(actTrackIds);
     if any(finiteIds)
-        keepAct = ismember(actTrackIds, leftTrackIds);
+        keepIds = unique([leftTrackIds(:); microTrackIds(:)]);
+        keepAct = ismember(actTrackIds, keepIds);
         actXY = actXY(keepAct, :);
         actFrames = actFrames(keepAct);
         actTrackIds = actTrackIds(keepAct);
     end
 end
 
-leftTrackFrames = collect_track_frames(trackCatalog, leftIdx);
-allTrackFrames = [leftTrackFrames(:); actFrames(:)];
+drawIdx = unique([leftIdx(:); microIdx(:)]);
+drawTrackFrames = collect_track_frames(trackCatalog, drawIdx);
+allTrackFrames = [drawTrackFrames(:); actFrames(:)];
 allTrackFrames = allTrackFrames(isfinite(allTrackFrames));
 if isempty(allTrackFrames)
     warning('AVI overlay GIF: no finite frame values for case %s.', char(caseDef.name));
@@ -60,7 +63,7 @@ isZeroBased = min(allTrackFrames) <= 0;
 v = VideoReader(char(videoFile));
 nFramesEst = max(1, floor(v.Duration * v.FrameRate));
 
-trackFrameIdx = map_track_frames_to_video_idx(leftTrackFrames, isZeroBased, nFramesEst);
+trackFrameIdx = map_track_frames_to_video_idx(drawTrackFrames, isZeroBased, nFramesEst);
 actFrameIdx = map_track_frames_to_video_idx(actFrames, isZeroBased, nFramesEst);
 baseFrameIdx = unique([trackFrameIdx(:); actFrameIdx(:)]);
 baseFrameIdx = baseFrameIdx(isfinite(baseFrameIdx));
@@ -150,13 +153,21 @@ for ii = 1:numel(frameIdxToRender)
         'CData', flipud(frameRgb));
     set(ax, 'YDir', 'normal');
 
-    for t = 1:numel(leftIdx)
-        tr = trackCatalog(leftIdx(t));
+    for t = 1:numel(drawIdx)
+        tr = trackCatalog(drawIdx(t));
         [xTail, yTailPlot] = tail_xy_at_frame(tr, currentTrackFrame, trailLength, yExtent_mm);
         if isempty(xTail)
             continue;
         end
-        plot(ax, xTail, yTailPlot, '-', 'Color', [0 0 1], 'LineWidth', 1.0);
+        tid = get_track_id(tr);
+        if isfinite(tid) && ismember(tid, leftTrackIds)
+            cLine = [0 0 1];
+        elseif isfinite(tid) && ismember(tid, microTrackIds)
+            cLine = [0 0.60 0.10];
+        else
+            cLine = [0.4 0.4 0.4];
+        end
+        plot(ax, xTail, yTailPlot, '-', 'Color', cLine, 'LineWidth', 1.0);
     end
 
     for a = 1:size(actXY, 1)
@@ -223,7 +234,9 @@ leftIdx = zeros(0,1);
 leftTrackIds = nan(0,1);
 
 metricIds = nan(0,1);
-if isfield(metrics, 'leftMovingTrackIds_netLeftLegacy') && ~isempty(metrics.leftMovingTrackIds_netLeftLegacy)
+if isfield(metrics, 'strictPrimaryTrackIds') && ~isempty(metrics.strictPrimaryTrackIds)
+    metricIds = metrics.strictPrimaryTrackIds(:);
+elseif isfield(metrics, 'leftMovingTrackIds_netLeftLegacy') && ~isempty(metrics.leftMovingTrackIds_netLeftLegacy)
     metricIds = metrics.leftMovingTrackIds_netLeftLegacy(:);
 end
 metricIds = unique(metricIds(isfinite(metricIds)), 'stable');
@@ -232,9 +245,17 @@ if ~isempty(metricIds)
     mask = ismember(selectedTrackIds, metricIds);
 else
     mask = false(numel(selectedIdx),1);
+    hasStrictFlag = false;
+    for i = 1:numel(selectedIdx)
+        hasStrictFlag = hasStrictFlag || is_true_field(trackCatalog(selectedIdx(i)), 'isStrictPrimary');
+    end
     for i = 1:numel(selectedIdx)
         tr = trackCatalog(selectedIdx(i));
-        mask(i) = is_true_field(tr, 'isLeftMoving');
+        if hasStrictFlag
+            mask(i) = is_true_field(tr, 'isStrictPrimary');
+        else
+            mask(i) = is_true_field(tr, 'isLeftMoving');
+        end
     end
 end
 
@@ -243,44 +264,53 @@ leftTrackIds = selectedTrackIds(mask);
 leftTrackIds = unique(leftTrackIds(isfinite(leftTrackIds)), 'stable');
 end
 
-function [actXY, actFrames, actTrackIds] = leftmoving_activation_events(metrics)
+function [microIdx, microTrackIds] = resolve_microbubble_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics)
+microIdx = zeros(0,1);
+microTrackIds = nan(0,1);
+
+metricIds = nan(0,1);
+if isfield(metrics, 'microbubbleRescueTrackIds_nonLeft') && ~isempty(metrics.microbubbleRescueTrackIds_nonLeft)
+    metricIds = metrics.microbubbleRescueTrackIds_nonLeft(:);
+end
+metricIds = unique(metricIds(isfinite(metricIds)), 'stable');
+if isempty(metricIds)
+    return;
+end
+
+mask = ismember(selectedTrackIds, metricIds);
+microIdx = selectedIdx(mask);
+microTrackIds = selectedTrackIds(mask);
+microTrackIds = unique(microTrackIds(isfinite(microTrackIds)), 'stable');
+end
+
+function [actXY, actFrames, actTrackIds] = activation_events_left_and_micro(metrics)
 actXY = zeros(0,2);
 actFrames = nan(0,1);
 actTrackIds = nan(0,1);
 
-if isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
-    actXY = metrics.activationEvent_xy_netLeftLegacy;
-elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
-    actXY = metrics.activationEvent_xy;
+[xyA, frA, idA] = get_activation_triplet(metrics, ...
+    'strictActivationEvent_xy', ...
+    'strictActivationEvent_frame', ...
+    'strictActivationEvent_trackId');
+if isempty(xyA)
+    [xyA, frA, idA] = get_activation_triplet(metrics, ...
+        'activationEvent_xy', ...
+        'activationEvent_frame', ...
+        'activationEvent_trackId');
+end
+if isempty(xyA)
+    [xyA, frA, idA] = get_activation_triplet(metrics, ...
+        'activationEvent_xy_netLeftLegacy', ...
+        'activationEvent_frame_netLeftLegacy', ...
+        'activationEvent_trackId_netLeftLegacy');
 end
 
-if isfield(metrics, 'activationEvent_frame_netLeftLegacy') && ~isempty(metrics.activationEvent_frame_netLeftLegacy)
-    actFrames = metrics.activationEvent_frame_netLeftLegacy(:);
-elseif isfield(metrics, 'activationEvent_frame') && ~isempty(metrics.activationEvent_frame)
-    actFrames = metrics.activationEvent_frame(:);
-end
+[xyB, frB, idB] = get_activation_triplet(metrics, ...
+    'microbubbleActivationEvent_xy_nonLeft', ...
+    'microbubbleActivationEvent_frame_nonLeft', ...
+    'microbubbleActivationEvent_trackId_nonLeft');
 
-if isfield(metrics, 'activationEvent_trackId_netLeftLegacy') && ~isempty(metrics.activationEvent_trackId_netLeftLegacy)
-    actTrackIds = metrics.activationEvent_trackId_netLeftLegacy(:);
-elseif isfield(metrics, 'activationEvent_trackId') && ~isempty(metrics.activationEvent_trackId)
-    actTrackIds = metrics.activationEvent_trackId(:);
-end
-
-n = min(size(actXY,1), numel(actFrames));
-if ~isempty(actTrackIds)
-    n = min(n, numel(actTrackIds));
-else
-    actTrackIds = nan(n,1);
-end
-if n < 1
-    actXY = zeros(0,2);
-    actFrames = nan(0,1);
-    actTrackIds = nan(0,1);
-    return;
-end
-actXY = actXY(1:n,:);
-actFrames = actFrames(1:n);
-actTrackIds = actTrackIds(1:n);
+[actXY, actFrames, actTrackIds] = concat_unique_events(xyA, frA, idA, xyB, frB, idB);
 end
 
 function frameVals = collect_track_frames(trackCatalog, trackIdx)
@@ -426,6 +456,82 @@ if isfield(opts, fieldName)
         out = double(v);
     end
 end
+end
+
+function tid = get_track_id(tr)
+tid = NaN;
+if isstruct(tr) && isfield(tr, 'TRACK_ID') && isfinite(tr.TRACK_ID)
+    tid = tr.TRACK_ID;
+end
+end
+
+function [xy, fr, tid] = get_activation_triplet(metrics, fieldXY, fieldFr, fieldTid)
+xy = zeros(0,2);
+fr = nan(0,1);
+tid = nan(0,1);
+
+if isfield(metrics, fieldXY) && ~isempty(metrics.(fieldXY))
+    xy = metrics.(fieldXY);
+end
+if isfield(metrics, fieldFr) && ~isempty(metrics.(fieldFr))
+    fr = metrics.(fieldFr)(:);
+end
+if isfield(metrics, fieldTid) && ~isempty(metrics.(fieldTid))
+    tid = metrics.(fieldTid)(:);
+end
+
+n = min(size(xy,1), numel(fr));
+if isempty(tid)
+    tid = nan(n,1);
+else
+    n = min(n, numel(tid));
+end
+if n < 1
+    xy = zeros(0,2);
+    fr = nan(0,1);
+    tid = nan(0,1);
+    return;
+end
+xy = xy(1:n, :);
+fr = fr(1:n);
+tid = tid(1:n);
+end
+
+function [xyOut, frOut, tidOut] = concat_unique_events(xyA, frA, tidA, xyB, frB, tidB)
+xy = [xyA; xyB];
+fr = [frA; frB];
+tid = [tidA; tidB];
+
+n = min([size(xy,1), numel(fr), numel(tid)]);
+if n < 1
+    xyOut = zeros(0,2);
+    frOut = nan(0,1);
+    tidOut = nan(0,1);
+    return;
+end
+
+xy = xy(1:n, :);
+fr = fr(1:n);
+tid = tid(1:n);
+
+keep = true(n,1);
+seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+for i = 1:n
+    if isfinite(tid(i)) && isfinite(fr(i))
+        key = sprintf('tid:%0.0f|fr:%0.0f', tid(i), fr(i));
+    else
+        key = sprintf('xy:%0.6f|%0.6f|fr:%0.6f', xy(i,1), xy(i,2), fr(i));
+    end
+    if isKey(seen, key)
+        keep(i) = false;
+    else
+        seen(key) = true;
+    end
+end
+
+xyOut = xy(keep, :);
+frOut = fr(keep);
+tidOut = tid(keep);
 end
 
 function ticks = fixed_ticks(lo, hi, step)

@@ -20,16 +20,18 @@ if isempty(selectedIdx)
 end
 
 [leftIdx, leftTrackIds] = resolve_leftmoving_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics);
-if isempty(leftIdx)
-    warning('No left-moving tracks found for case %s. Skipping diagnostic track plot.', char(caseDef.name));
+[microIdx, microTrackIds] = resolve_microbubble_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics);
+if isempty(leftIdx) && isempty(microIdx)
+    warning('No left-moving or microbubble-rescue tracks found for case %s. Skipping diagnostic track plot.', char(caseDef.name));
     return;
 end
 
-[actXY, actTrackIds] = leftmoving_activation_points(metrics);
+[actXY, actTrackIds] = activation_points_left_and_micro(metrics);
 if ~isempty(actTrackIds)
     finiteIds = isfinite(actTrackIds);
     if any(finiteIds)
-        keepAct = ismember(actTrackIds, leftTrackIds);
+        keepIds = unique([leftTrackIds(:); microTrackIds(:)]);
+        keepAct = ismember(actTrackIds, keepIds);
         actXY = actXY(keepAct, :);
         actTrackIds = actTrackIds(keepAct);
     end
@@ -63,6 +65,19 @@ for theme = reshape(plotOpts.themes, 1, [])
             'LineWidth', 1.6); %#ok<AGROW>
     end
 
+    microTrackColor = [0 0.60 0.10];
+    hMicro = gobjects(0,1);
+    for i = 1:numel(microIdx)
+        tr = trackCatalog(microIdx(i));
+        [xComp, yComp] = trail_composite_xy(tr, yExtent_mm, trailLength);
+        if isempty(xComp)
+            continue;
+        end
+        hMicro(end+1,1) = plot(ax, xComp, yComp, '-', ...
+            'Color', microTrackColor, ...
+            'LineWidth', 1.6); %#ok<AGROW>
+    end
+
     hAct = gobjects(0,1);
     if ~isempty(actXY)
         yAct = yExtent_mm - actXY(:,2);
@@ -82,15 +97,11 @@ for theme = reshape(plotOpts.themes, 1, [])
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
 
-    actTotal = 0;
-    if isfield(metrics, 'activationEventsTotal_netLeftLegacy') && isfinite(metrics.activationEventsTotal_netLeftLegacy)
-        actTotal = metrics.activationEventsTotal_netLeftLegacy;
-    elseif isfield(metrics, 'activationEventsTotal') && isfinite(metrics.activationEventsTotal)
-        actTotal = metrics.activationEventsTotal;
-    end
+    actTotal = size(actXY, 1);
+    nTrackTotal = numel(unique([leftTrackIds(:); microTrackIds(:)]));
 
     title(ax, sprintf('Track diagnostics | k/Dh %.4g | Re %g | AE %d | tracks %d', ...
-        caseDef.kDh, caseDef.Re, actTotal, numel(leftTrackIds)));
+        caseDef.kDh, caseDef.Re, actTotal, nTrackTotal));
     grid(ax, 'on');
     box(ax, 'on');
 
@@ -99,6 +110,10 @@ for theme = reshape(plotOpts.themes, 1, [])
     if ~isempty(hTrack)
         lgdHandles(end+1,1) = hTrack(1); %#ok<AGROW>
         lgdLabels(end+1,1) = "Left moving"; %#ok<AGROW>
+    end
+    if ~isempty(hMicro)
+        lgdHandles(end+1,1) = hMicro(1); %#ok<AGROW>
+        lgdLabels(end+1,1) = "Microbubble start 1-120"; %#ok<AGROW>
     end
     if ~isempty(hAct)
         lgdHandles(end+1,1) = hAct; %#ok<AGROW>
@@ -126,7 +141,9 @@ leftIdx = zeros(0,1);
 leftTrackIds = nan(0,1);
 
 metricIds = nan(0,1);
-if isfield(metrics, 'leftMovingTrackIds_netLeftLegacy') && ~isempty(metrics.leftMovingTrackIds_netLeftLegacy)
+if isfield(metrics, 'strictPrimaryTrackIds') && ~isempty(metrics.strictPrimaryTrackIds)
+    metricIds = metrics.strictPrimaryTrackIds(:);
+elseif isfield(metrics, 'leftMovingTrackIds_netLeftLegacy') && ~isempty(metrics.leftMovingTrackIds_netLeftLegacy)
     metricIds = metrics.leftMovingTrackIds_netLeftLegacy(:);
 end
 metricIds = unique(metricIds(isfinite(metricIds)), 'stable');
@@ -135,8 +152,16 @@ if ~isempty(metricIds)
     mask = ismember(selectedTrackIds, metricIds);
 else
     mask = false(numel(selectedIdx), 1);
+    hasStrictFlag = false;
     for i = 1:numel(selectedIdx)
-        mask(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isLeftMoving');
+        hasStrictFlag = hasStrictFlag || is_true_field(trackCatalog(selectedIdx(i)), 'isStrictPrimary');
+    end
+    for i = 1:numel(selectedIdx)
+        if hasStrictFlag
+            mask(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isStrictPrimary');
+        else
+            mask(i) = is_true_field(trackCatalog(selectedIdx(i)), 'isLeftMoving');
+        end
     end
 end
 
@@ -145,34 +170,40 @@ leftTrackIds = selectedTrackIds(mask);
 leftTrackIds = unique(leftTrackIds(isfinite(leftTrackIds)), 'stable');
 end
 
-function [actXY, actTrackIds] = leftmoving_activation_points(metrics)
+function [microIdx, microTrackIds] = resolve_microbubble_subset(trackCatalog, selectedIdx, selectedTrackIds, metrics)
+microIdx = zeros(0,1);
+microTrackIds = nan(0,1);
+
+metricIds = nan(0,1);
+if isfield(metrics, 'microbubbleRescueTrackIds_nonLeft') && ~isempty(metrics.microbubbleRescueTrackIds_nonLeft)
+    metricIds = metrics.microbubbleRescueTrackIds_nonLeft(:);
+end
+metricIds = unique(metricIds(isfinite(metricIds)), 'stable');
+if isempty(metricIds)
+    return;
+end
+
+mask = ismember(selectedTrackIds, metricIds);
+microIdx = selectedIdx(mask);
+microTrackIds = selectedTrackIds(mask);
+microTrackIds = unique(microTrackIds(isfinite(microTrackIds)), 'stable');
+end
+
+function [actXY, actTrackIds] = activation_points_left_and_micro(metrics)
 actXY = zeros(0,2);
 actTrackIds = nan(0,1);
 
-if isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
-    actXY = metrics.activationEvent_xy_netLeftLegacy;
-elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
-    actXY = metrics.activationEvent_xy;
+[xyA, idA] = get_event_pair(metrics, 'strictActivationEvent_xy', 'strictActivationEvent_trackId');
+if isempty(xyA)
+    [xyA, idA] = get_event_pair(metrics, 'activationEvent_xy', 'activationEvent_trackId');
+end
+if isempty(xyA)
+    [xyA, idA] = get_event_pair(metrics, 'activationEvent_xy_netLeftLegacy', 'activationEvent_trackId_netLeftLegacy');
 end
 
-if isfield(metrics, 'activationEvent_trackId_netLeftLegacy') && ~isempty(metrics.activationEvent_trackId_netLeftLegacy)
-    actTrackIds = metrics.activationEvent_trackId_netLeftLegacy(:);
-elseif isfield(metrics, 'activationEvent_trackId') && ~isempty(metrics.activationEvent_trackId)
-    actTrackIds = metrics.activationEvent_trackId(:);
-end
+[xyB, idB] = get_event_pair(metrics, 'microbubbleActivationEvent_xy_nonLeft', 'microbubbleActivationEvent_trackId_nonLeft');
 
-nAct = min(size(actXY,1), numel(actTrackIds));
-if isempty(actTrackIds)
-    nAct = size(actXY,1);
-    actTrackIds = nan(nAct,1);
-end
-if nAct < 1
-    actXY = zeros(0,2);
-    actTrackIds = nan(0,1);
-    return;
-end
-actXY = actXY(1:nAct, :);
-actTrackIds = actTrackIds(1:nAct);
+[actXY, actTrackIds] = concat_unique_event_pairs(xyA, idA, xyB, idB);
 end
 
 function [xComp, yComp] = trail_composite_xy(tr, yExtent_mm, trailLength)
@@ -224,6 +255,61 @@ if islogical(v)
 elseif isnumeric(v)
     tf = any(v(:) ~= 0);
 end
+end
+
+function [xy, tid] = get_event_pair(metrics, fieldXY, fieldTid)
+xy = zeros(0,2);
+tid = nan(0,1);
+if isfield(metrics, fieldXY) && ~isempty(metrics.(fieldXY))
+    xy = metrics.(fieldXY);
+end
+if isfield(metrics, fieldTid) && ~isempty(metrics.(fieldTid))
+    tid = metrics.(fieldTid)(:);
+end
+n = min(size(xy,1), numel(tid));
+if isempty(tid)
+    n = size(xy,1);
+    tid = nan(n,1);
+end
+if n < 1
+    xy = zeros(0,2);
+    tid = nan(0,1);
+    return;
+end
+xy = xy(1:n, :);
+tid = tid(1:n);
+end
+
+function [xyOut, tidOut] = concat_unique_event_pairs(xyA, tidA, xyB, tidB)
+xy = [xyA; xyB];
+tid = [tidA; tidB];
+
+n = min(size(xy,1), numel(tid));
+if n < 1
+    xyOut = zeros(0,2);
+    tidOut = nan(0,1);
+    return;
+end
+xy = xy(1:n, :);
+tid = tid(1:n);
+
+keep = true(n,1);
+seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+for i = 1:n
+    if isfinite(tid(i))
+        key = sprintf('tid:%0.0f', tid(i));
+    else
+        key = sprintf('xy:%0.6f|%0.6f', xy(i,1), xy(i,2));
+    end
+    if isKey(seen, key)
+        keep(i) = false;
+    else
+        seen(key) = true;
+    end
+end
+
+xyOut = xy(keep, :);
+tidOut = tid(keep);
 end
 
 function style_legend_for_theme(leg, theme)

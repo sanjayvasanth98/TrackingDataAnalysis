@@ -27,6 +27,15 @@ netLeftActivationEventFrames = nan(0,1);
 netLeftActivationEventTrackIds = nan(0,1);
 netLeftFrameCells = cell(0,1);
 netLeftTrackIds = nan(0,1);
+netLeftMemberMask = false(nTotal,1);
+
+% Non-strict microbubble-start set (diagnostic inclusion for activated tracks).
+microRescueTrack_xy = cell(0,1);
+microRescueTrackIds = nan(0,1);
+microRescueActivationEvent_xy = zeros(0,2);
+microRescueActivationEventFrames = nan(0,1);
+microRescueActivationEventTrackIds = nan(0,1);
+microRescueActivationSeedArea_px2 = nan(0,1);
 
 % Strict recirculation set (authoritative primary outputs).
 strictInjInception_xy = zeros(0,2);
@@ -111,9 +120,17 @@ for k = 1:nTotal
 
     % Net-left framewise set (legacy comparison).
     isNetLeftMember = prep(k).isBasicValid && prep(k).isLeftMoving;
-    if isNetLeftMember && flowOpts.requireRightOrigin && isfinite(originThreshold)
-        isNetLeftMember = passes_origin_gate(prep(k).x(1), originThreshold, flowOpts);
+    usedBandRescue = false;
+    if ~isNetLeftMember
+        usedBandRescue = prep(k).isBasicValid && passes_netleft_band_rescue(prep(k), flowOpts);
+        isNetLeftMember = usedBandRescue;
     end
+    if isNetLeftMember && flowOpts.requireRightOrigin && isfinite(originThreshold)
+        if ~(usedBandRescue && flowOpts.netLeftBandRescueBypassOriginGate)
+            isNetLeftMember = passes_origin_gate(prep(k).x(1), originThreshold, flowOpts);
+        end
+    end
+    netLeftMemberMask(k) = isNetLeftMember;
     if ~isNetLeftMember
         continue;
     end
@@ -235,6 +252,37 @@ for k = 1:nTotal
     strictTau_values(end+1,1) = max(prep(k).t(prep(k).actIdx) - prep(k).t(1), 0); %#ok<AGROW>
 end
 
+% Include microbubble-start tracks (configured px^2 range) outside strict set.
+if activationOpts.includeMicrobubbleActivationRescue
+    startRange = sort(double(activationOpts.microbubbleStartAreaRange_px2(1:2)));
+    for k = 1:nTotal
+        if ~prep(k).isBasicValid
+            continue;
+        end
+        if activationOpts.microbubbleRequireOutsideStrictPrimary && is_true_field(trackCatalog(k), 'isStrictPrimary')
+            continue;
+        end
+
+        startArea = prep(k).startArea;
+        if ~(isfinite(startArea) && startArea >= startRange(1) && startArea <= startRange(2))
+            continue;
+        end
+
+        trackCatalog(k).isMicrobubbleRescueNonLeft = true;
+        trackCatalog(k).microbubbleSeedArea_px2 = startArea;
+
+        microRescueTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+        microRescueTrack_xy{end+1,1} = [prep(k).x, prep(k).y]; %#ok<AGROW>
+
+        if prep(k).hasActivation
+            microRescueActivationEvent_xy(end+1,:) = [prep(k).actX, prep(k).actY]; %#ok<AGROW>
+            microRescueActivationEventFrames(end+1,1) = prep(k).actFrame; %#ok<AGROW>
+            microRescueActivationEventTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
+            microRescueActivationSeedArea_px2(end+1,1) = startArea; %#ok<AGROW>
+        end
+    end
+end
+
 % Framewise counts.
 [strictFrameAxis, strictFrameVisible, strictFrameActEvents, strictFrameCumExposure, strictFrameCumActEvents] = ...
     build_framewise_counts(strictFrameCells, strictActivationEventFrames);
@@ -267,6 +315,10 @@ metrics = pack_metrics();
         A_over_I_netLeftLegacy = netLeftActivationEventsTotal / max(netLeftTrackFrameExposure, 1);
         [A_over_I_ci_low_netLeftLegacy, A_over_I_ci_high_netLeftLegacy] = ...
             wilson_ci(netLeftActivationEventsTotal, netLeftTrackFrameExposure, 0.95);
+
+        microTrackIdsFinite = microRescueTrackIds(isfinite(microRescueTrackIds));
+        nMicroRescueTracks = numel(unique(microTrackIdsFinite));
+        nMicroRescueActivationEvents = size(microRescueActivationEvent_xy, 1);
 
         nInjectedStrict = gateStats.nInjected;
         nActivatedStrict = gateStats.nActivated;
@@ -375,6 +427,17 @@ metrics = pack_metrics();
         outMetrics.frame_cumExposure_netLeftLegacy = netLeftFrameCumExposure;
         outMetrics.frame_cumActivationEvents_netLeftLegacy = netLeftFrameCumActEvents;
 
+        % Non-strict microbubble-start outputs (for diagnostics/visualization).
+        outMetrics.nMicrobubbleRescueTracks_nonLeft = nMicroRescueTracks;
+        outMetrics.nMicrobubbleRescueActivationEvents_nonLeft = nMicroRescueActivationEvents;
+        outMetrics.microbubbleRescueTrackIds_nonLeft = unique(microTrackIdsFinite, 'stable');
+        outMetrics.microbubbleRescueTrack_xy_nonLeft = microRescueTrack_xy;
+        outMetrics.microbubbleActivationEvent_xy_nonLeft = microRescueActivationEvent_xy;
+        outMetrics.microbubbleActivationEvent_frame_nonLeft = microRescueActivationEventFrames;
+        outMetrics.microbubbleActivationEvent_trackId_nonLeft = microRescueActivationEventTrackIds;
+        outMetrics.microbubbleActivationSeedArea_px2_nonLeft = microRescueActivationSeedArea_px2;
+        outMetrics.microbubbleActivationAreaRange_px2 = activationOpts.microbubbleStartAreaRange_px2(:).';
+
         % Secondary strict legacy metrics.
         outMetrics.nInjected_strictLegacy = nInjectedStrict;
         outMetrics.nActivated_strictLegacy = nActivatedStrict;
@@ -402,6 +465,7 @@ tpl = struct( ...
     't', nan(0,1), ...
     'frame', nan(0,1), ...
     'areaVals', nan(0,1), ...
+    'startArea', NaN, ...
     'isShort', false, ...
     'isNonFinite', false, ...
     'isNonMonotonicTime', false, ...
@@ -412,7 +476,8 @@ tpl = struct( ...
     'actIdx', NaN, ...
     'actX', NaN, ...
     'actY', NaN, ...
-    'actFrame', NaN);
+    'actFrame', NaN, ...
+    'actSeedArea', NaN);
 end
 
 function tpl = make_catalog_template()
@@ -425,11 +490,13 @@ tpl = struct( ...
     'isLeftMoving', false, ...
     'isStrictPrimary', false, ...
     'isStrictActivated', false, ...
+    'isMicrobubbleRescueNonLeft', false, ...
     'isActivated', false, ...
     'activationFrame', NaN, ...
     'activationX', NaN, ...
     'activationY', NaN, ...
     'activationIndex', NaN, ...
+    'microbubbleSeedArea_px2', NaN, ...
     'strictActivationFrame', NaN, ...
     'strictActivationX', NaN, ...
     'strictActivationY', NaN, ...
@@ -484,6 +551,7 @@ prep.isBasicValid = true;
 prep.isLeftMoving = passes_netleft_motion_gate(prep.x, flowOpts);
 
 prep.areaVals = extract_area_values(prep.spotIds, spotRowById, spots);
+prep.startArea = estimate_track_start_area(prep.areaVals);
 idxJump = find_sustained_growth_activation(prep.areaVals, activationOpts);
 if ~isempty(idxJump)
     actIdx = idxJump + 1;
@@ -494,6 +562,7 @@ if ~isempty(idxJump)
         prep.actX = prep.x(actIdx);
         prep.actY = prep.y(actIdx);
         prep.actFrame = prep.frame(actIdx);
+        prep.actSeedArea = estimate_activation_seed_area(prep.areaVals, idxJump, activationOpts);
     end
 end
 end
@@ -508,11 +577,13 @@ catalog.isBasicValid = prep.isBasicValid;
 catalog.isLeftMoving = prep.isLeftMoving;
 catalog.isStrictPrimary = false;
 catalog.isStrictActivated = false;
+catalog.isMicrobubbleRescueNonLeft = false;
 catalog.isActivated = prep.hasActivation;
 catalog.activationFrame = prep.actFrame;
 catalog.activationX = prep.actX;
 catalog.activationY = prep.actY;
 catalog.activationIndex = prep.actIdx;
+catalog.microbubbleSeedArea_px2 = prep.startArea;
 catalog.strictActivationFrame = NaN;
 catalog.strictActivationX = NaN;
 catalog.strictActivationY = NaN;
@@ -531,6 +602,44 @@ for ii = 1:numel(spotIds)
         row = spotRowById(sid);
         areaVals(ii) = spots.AREA(row);
     end
+end
+end
+
+function startArea = estimate_track_start_area(areaVals)
+startArea = NaN;
+if isempty(areaVals)
+    return;
+end
+idx = find(isfinite(areaVals) & areaVals > 0, 1, 'first');
+if isempty(idx)
+    return;
+end
+startArea = areaVals(idx);
+end
+
+function seedArea = estimate_activation_seed_area(areaVals, idxJump, opts)
+seedArea = NaN;
+
+if isempty(areaVals) || ~isfinite(idxJump)
+    return;
+end
+n = numel(areaVals);
+i = round(idxJump);
+if i < 1 || i > n
+    return;
+end
+
+preStart = max(1, i - opts.preWindowFrames + 1);
+preVals = areaVals(preStart:i);
+preVals = preVals(isfinite(preVals) & preVals > 0);
+if numel(preVals) >= opts.minPrePoints
+    seedArea = median(preVals);
+    return;
+end
+
+aCurr = areaVals(i);
+if isfinite(aCurr) && aCurr > 0
+    seedArea = aCurr;
 end
 end
 
@@ -611,6 +720,19 @@ function x = get_struct_column(s, fieldName)
 x = nan(0,1);
 if isfield(s, fieldName)
     x = s.(fieldName)(:);
+end
+end
+
+function tf = is_true_field(s, fieldName)
+tf = false;
+if ~isstruct(s) || ~isfield(s, fieldName)
+    return;
+end
+v = s.(fieldName);
+if islogical(v)
+    tf = any(v(:));
+elseif isnumeric(v)
+    tf = any(v(:) ~= 0);
 end
 end
 
@@ -729,6 +851,74 @@ for r = 1:numel(runStart)
         return;
     end
 end
+end
+
+function pass = passes_netleft_band_rescue(prep, flowOpts)
+pass = false;
+if ~isfield(flowOpts, 'netLeftBandRescueEnabled') || ~flowOpts.netLeftBandRescueEnabled
+    return;
+end
+
+xBand = nan(1,2);
+if isfield(flowOpts, 'netLeftBandRescueX_mm') && numel(flowOpts.netLeftBandRescueX_mm) >= 2
+    xBand = double(flowOpts.netLeftBandRescueX_mm(1:2));
+end
+if any(~isfinite(xBand))
+    return;
+end
+xBand = sort(xBand);
+
+if numel(prep.x) < 2
+    return;
+end
+
+if flowOpts.netLeftBandRescueRequireActivation
+    if ~prep.hasActivation
+        return;
+    end
+    if flowOpts.netLeftBandRescueRequireActXInBand
+        if ~(isfinite(prep.actX) && prep.actX >= xBand(1) && prep.actX <= xBand(2))
+            return;
+        end
+    end
+end
+
+dx = diff(prep.x);
+x0 = prep.x(1:end-1);
+x1 = prep.x(2:end);
+finiteStep = isfinite(dx) & isfinite(x0) & isfinite(x1);
+if ~any(finiteStep)
+    return;
+end
+
+if strcmpi(flowOpts.bulkDirection, 'left_to_right')
+    isCounterflowStep = (dx < 0);
+    counterflowStepMag = -dx;
+else
+    isCounterflowStep = (dx > 0);
+    counterflowStepMag = dx;
+end
+
+inBandStep = (min(x0, x1) <= xBand(2)) & (max(x0, x1) >= xBand(1));
+cand = finiteStep & isCounterflowStep & inBandStep;
+
+if ~any(cand)
+    return;
+end
+
+minSteps = max(1, round(flowOpts.netLeftBandRescueMinCounterflowSteps));
+minDx = max(0, double(flowOpts.netLeftBandRescueMinCounterflowDx_mm));
+
+if sum(cand) < minSteps
+    return;
+end
+
+sumDx = sum(counterflowStepMag(cand), 'omitnan');
+if ~(isfinite(sumDx) && sumDx >= minDx)
+    return;
+end
+
+pass = true;
 end
 
 function pass = passes_origin_gate(xStart, originThreshold, flowOpts)
@@ -883,10 +1073,62 @@ flowOpts.maxPositiveStepFraction = min(1, max(0, flowOpts.maxPositiveStepFractio
 flowOpts.rightOriginFrac = min(1, max(0, flowOpts.rightOriginFrac));
 flowOpts.netLeftMinConsecutiveNegSteps = max(1, round(flowOpts.netLeftMinConsecutiveNegSteps));
 flowOpts.netLeftMinConsecutiveNetDx_mm = max(0, flowOpts.netLeftMinConsecutiveNetDx_mm);
+if ~isfield(flowOpts, 'netLeftBandRescueEnabled') || isempty(flowOpts.netLeftBandRescueEnabled)
+    flowOpts.netLeftBandRescueEnabled = false;
+end
+if ~isfield(flowOpts, 'netLeftBandRescueX_mm') || numel(flowOpts.netLeftBandRescueX_mm) < 2
+    flowOpts.netLeftBandRescueX_mm = [0.5 1.5];
+end
+if ~isfield(flowOpts, 'netLeftBandRescueMinCounterflowSteps') || isempty(flowOpts.netLeftBandRescueMinCounterflowSteps)
+    flowOpts.netLeftBandRescueMinCounterflowSteps = 1;
+end
+if ~isfield(flowOpts, 'netLeftBandRescueMinCounterflowDx_mm') || isempty(flowOpts.netLeftBandRescueMinCounterflowDx_mm)
+    flowOpts.netLeftBandRescueMinCounterflowDx_mm = 0.0;
+end
+if ~isfield(flowOpts, 'netLeftBandRescueRequireActivation') || isempty(flowOpts.netLeftBandRescueRequireActivation)
+    flowOpts.netLeftBandRescueRequireActivation = true;
+end
+if ~isfield(flowOpts, 'netLeftBandRescueRequireActXInBand') || isempty(flowOpts.netLeftBandRescueRequireActXInBand)
+    flowOpts.netLeftBandRescueRequireActXInBand = false;
+end
+if ~isfield(flowOpts, 'netLeftBandRescueBypassOriginGate') || isempty(flowOpts.netLeftBandRescueBypassOriginGate)
+    flowOpts.netLeftBandRescueBypassOriginGate = true;
+end
+flowOpts.netLeftBandRescueMinCounterflowSteps = max(1, round(flowOpts.netLeftBandRescueMinCounterflowSteps));
+flowOpts.netLeftBandRescueMinCounterflowDx_mm = max(0, flowOpts.netLeftBandRescueMinCounterflowDx_mm);
 activationOpts.areaJumpFactor = max(1, activationOpts.areaJumpFactor);
 activationOpts.preWindowFrames = max(1, round(activationOpts.preWindowFrames));
 activationOpts.minPrePoints = max(1, round(activationOpts.minPrePoints));
 activationOpts.requiredPostFrames = max(1, round(activationOpts.requiredPostFrames));
+if ~isfield(activationOpts, 'includeMicrobubbleActivationRescue') || isempty(activationOpts.includeMicrobubbleActivationRescue)
+    activationOpts.includeMicrobubbleActivationRescue = false;
+end
+if ~isfield(activationOpts, 'microbubbleStartAreaRange_px2') || numel(activationOpts.microbubbleStartAreaRange_px2) < 2
+    if isfield(activationOpts, 'microbubbleSeedAreaRange_px2') && numel(activationOpts.microbubbleSeedAreaRange_px2) >= 2
+        activationOpts.microbubbleStartAreaRange_px2 = activationOpts.microbubbleSeedAreaRange_px2(1:2);
+    else
+        activationOpts.microbubbleStartAreaRange_px2 = [1 120];
+    end
+end
+startRange = double(activationOpts.microbubbleStartAreaRange_px2(1:2));
+if any(~isfinite(startRange))
+    startRange = [1 120];
+end
+startRange = sort(startRange);
+startRange(startRange < 0) = 0;
+activationOpts.microbubbleStartAreaRange_px2 = startRange;
+
+if ~isfield(activationOpts, 'microbubbleRequireOutsideStrictPrimary') || isempty(activationOpts.microbubbleRequireOutsideStrictPrimary)
+    if isfield(activationOpts, 'microbubbleRequireNonLeftMoving') && ~isempty(activationOpts.microbubbleRequireNonLeftMoving)
+        activationOpts.microbubbleRequireOutsideStrictPrimary = logical(activationOpts.microbubbleRequireNonLeftMoving);
+    else
+        activationOpts.microbubbleRequireOutsideStrictPrimary = true;
+    end
+end
+
+% Keep legacy aliases populated for downstream compatibility.
+activationOpts.microbubbleSeedAreaRange_px2 = activationOpts.microbubbleStartAreaRange_px2;
+activationOpts.microbubbleRequireNonLeftMoving = activationOpts.microbubbleRequireOutsideStrictPrimary;
 end
 
 function out = merge_struct(base, override)
@@ -899,7 +1141,7 @@ end
 
 function qcOpts = default_qc_opts()
 qcOpts = struct();
-qcOpts.minTrackSpots = 5;
+qcOpts.minTrackSpots = 2;
 qcOpts.maxTrackGaps = 1;
 qcOpts.maxLeftMovingTracks = Inf;
 qcOpts.rejectSplitMergeComplex = true;
@@ -917,11 +1159,18 @@ flowOpts.requireRightOrigin = true;
 flowOpts.rightOriginFrac = 0.60;
 flowOpts.netLeftMinConsecutiveNegSteps = 3;
 flowOpts.netLeftMinConsecutiveNetDx_mm = 0.0;
+flowOpts.netLeftBandRescueEnabled = false;
+flowOpts.netLeftBandRescueX_mm = [0.5 1.5];
+flowOpts.netLeftBandRescueMinCounterflowSteps = 1;
+flowOpts.netLeftBandRescueMinCounterflowDx_mm = 0.0;
+flowOpts.netLeftBandRescueRequireActivation = true;
+flowOpts.netLeftBandRescueRequireActXInBand = false;
+flowOpts.netLeftBandRescueBypassOriginGate = true;
 end
 
 function activationOpts = default_activation_opts()
 activationOpts = struct();
-activationOpts.areaJumpFactor = 2.0;
+activationOpts.areaJumpFactor = 6.0;
 activationOpts.preWindowFrames = 2;
 activationOpts.minPrePoints = 2;
 activationOpts.requiredPostFrames = 2;
@@ -930,6 +1179,11 @@ activationOpts.postMaxFactor = 1.5;
 activationOpts.enableBurstFallback = true;
 activationOpts.burstJumpFactor = 2.2;
 activationOpts.burstPostFactor = 1.4;
+activationOpts.includeMicrobubbleActivationRescue = false;
+activationOpts.microbubbleStartAreaRange_px2 = [1 120];
+activationOpts.microbubbleRequireOutsideStrictPrimary = true;
+activationOpts.microbubbleSeedAreaRange_px2 = activationOpts.microbubbleStartAreaRange_px2;
+activationOpts.microbubbleRequireNonLeftMoving = activationOpts.microbubbleRequireOutsideStrictPrimary;
 end
 
 function [ciLow, ciHigh] = wilson_ci(k, n, confidenceLevel)

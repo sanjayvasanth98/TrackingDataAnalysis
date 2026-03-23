@@ -90,11 +90,18 @@ flowOpts.minNegativeStepFraction = 0.65;
 flowOpts.maxPositiveStepFraction = 0.30;
 flowOpts.requireRightOrigin = true;
 flowOpts.rightOriginFrac = 0.25; % rightmost 75% source band
-flowOpts.netLeftMinConsecutiveNegSteps = 3; % <---edit: minimum consecutive counterflow steps for net-left membership
+flowOpts.netLeftMinConsecutiveNegSteps = 2; % <---edit: minimum consecutive counterflow steps for net-left membership
 flowOpts.netLeftMinConsecutiveNetDx_mm = 0.00; % <---edit: minimum cumulative counterflow displacement over that run
+flowOpts.netLeftBandRescueEnabled = true; % <---edit: special inclusion for short left-moving tracks in a target x-band
+flowOpts.netLeftBandRescueX_mm = [0.5 1.5]; % <---edit: x-band for rescue inclusion
+flowOpts.netLeftBandRescueMinCounterflowSteps = 1; % <---edit: minimum counterflow steps inside rescue band
+flowOpts.netLeftBandRescueMinCounterflowDx_mm = 0.00; % <---edit: minimum cumulative counterflow dx inside rescue band
+flowOpts.netLeftBandRescueRequireActivation = true; % <---edit: require track to activate to be rescued
+flowOpts.netLeftBandRescueRequireActXInBand = false; % <---edit: if true, activation x must also lie inside rescue band
+flowOpts.netLeftBandRescueBypassOriginGate = true; % <---edit: let rescued tracks pass even if they do not satisfy right-origin gate
 
 qcOpts = struct();
-qcOpts.minTrackSpots = 5;
+qcOpts.minTrackSpots = 2;
 qcOpts.maxTrackGaps = 1;
 qcOpts.maxLeftMovingTracks = maxLeftMovingTracks;
 qcOpts.rejectSplitMergeComplex = false; % <---edit: include breakup/split/merge tracks if they satisfy left-moving/counterflow gates
@@ -102,15 +109,20 @@ qcOpts.wallBandEnabled = false;
 qcOpts.wallBandYLimits_mm = [];
 
 activationOpts = struct();
-activationOpts.areaJumpFactor = 2.0; % growth trigger: A(i+1)/A(i) and A(i+1)/A_pre must both exceed this
+activationOpts.areaJumpFactor = 6.0; % growth trigger: A(i+1)/A(i) and A(i+1)/A_pre must both exceed this
 activationOpts.preWindowFrames = 2; % number of frames used to compute pre-jump baseline A_pre
 activationOpts.minPrePoints = 2; % minimum finite pre-jump points required to test activation
-activationOpts.requiredPostFrames = 2; % sustained-growth requirement: number of post-jump frames to validate
+activationOpts.requiredPostFrames = 3; % sustained-growth requirement: number of post-jump frames to validate
 activationOpts.postMedianFactor = 1.35; % sustained check: median(post/A_pre) must exceed this
 activationOpts.postMaxFactor = 1.5; % sustained check: max(post/A_pre) must exceed this
 activationOpts.enableBurstFallback = true; % allow short-lived burst detection when only 1 post frame exists
 activationOpts.burstJumpFactor = 2.2; % burst check: jump ratio A(i+1)/A_pre threshold
 activationOpts.burstPostFactor = 1.4; % burst check: single post-frame ratio threshold
+activationOpts.includeMicrobubbleActivationRescue = true; % <---edit: include activated microbubble-start tracks even when non-strict
+activationOpts.microbubbleStartAreaRange_px2 = [1 120]; % <---edit: start-area range (px^2) for green track inclusion
+activationOpts.microbubbleRequireOutsideStrictPrimary = true; % <---edit: only add green tracks that are outside strict-blue membership
+activationOpts.microbubbleSeedAreaRange_px2 = activationOpts.microbubbleStartAreaRange_px2; % legacy alias
+activationOpts.microbubbleRequireNonLeftMoving = activationOpts.microbubbleRequireOutsideStrictPrimary; % legacy alias
 
 % Density plot bin size (physical units)
 binSize_phys = 0.02;    % <---edit if needed based on mm/px and field size
@@ -226,7 +238,7 @@ allLoc.caseName = strings(0,1);
 allLoc.Re       = nan(0,1);
 allLoc.kDh      = nan(0,1);
 allLoc.pixelSize = nan(0,1);
-allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving tracks
+allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving + microbubble-rescue tracks
 
 trackFigOutDir = fullfile(figDir, "TrackDiagnostics");
 if ~isfolder(trackFigOutDir), mkdir(trackFigOutDir); end
@@ -624,12 +636,20 @@ end
 
 function xy = choose_inception_activation_xy(metrics)
 xy = zeros(0,2);
-if isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
-    xy = metrics.activationEvent_xy_netLeftLegacy;
+if isfield(metrics, 'strictActivationEvent_xy') && ~isempty(metrics.strictActivationEvent_xy)
+    xy = metrics.strictActivationEvent_xy;
 elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
     xy = metrics.activationEvent_xy;
+elseif isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
+    xy = metrics.activationEvent_xy_netLeftLegacy;
 elseif isfield(metrics, 'inception2x_xy') && ~isempty(metrics.inception2x_xy)
     xy = metrics.inception2x_xy;
+end
+if isfield(metrics, 'microbubbleActivationEvent_xy_nonLeft') && ~isempty(metrics.microbubbleActivationEvent_xy_nonLeft)
+    xy = [xy; metrics.microbubbleActivationEvent_xy_nonLeft];
+end
+if ~isempty(xy)
+    xy = unique(xy, 'rows', 'stable');
 end
 end
 
@@ -779,19 +799,27 @@ end
 function policyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts)
 policyTag = sprintf([ ...
     'pv=%d|pts=%d|pft=%d|bulk=%s|dx=%.6g|neg=%.4g|pos=%.4g|origin=%d|originFrac=%.4g|netRun=%d|netRunDx=%.6g|', ...
+    'bandOn=%d|bandX0=%.6g|bandX1=%.6g|bandSteps=%d|bandDx=%.6g|bandAct=%d|bandActX=%d|bandBypassOrigin=%d|', ...
     'spots=%d|gaps=%.4g|rsmc=%d|wall=%d|jump=%.4g|pre=%d|minpre=%d|post=%d|', ...
-    'postMed=%.4g|postMax=%.4g|burst=%d|burstJump=%.4g|burstPost=%.4g'], ...
+    'postMed=%.4g|postMax=%.4g|burst=%d|burstJump=%.4g|burstPost=%.4g|mbAct=%d|mbLo=%.4g|mbHi=%.4g|mbNonLeft=%d'], ...
     parserOpts.parserVersion, double(logical(parserOpts.parseTrackedSpotsOnly)), double(logical(parserOpts.parseFilteredTracksOnly)), ...
     char(string(flowOpts.bulkDirection)), flowOpts.minNetDxCounterflow_mm, ...
     flowOpts.minNegativeStepFraction, flowOpts.maxPositiveStepFraction, ...
     double(logical(flowOpts.requireRightOrigin)), flowOpts.rightOriginFrac, ...
     flowOpts.netLeftMinConsecutiveNegSteps, flowOpts.netLeftMinConsecutiveNetDx_mm, ...
+    double(logical(flowOpts.netLeftBandRescueEnabled)), flowOpts.netLeftBandRescueX_mm(1), flowOpts.netLeftBandRescueX_mm(2), ...
+    flowOpts.netLeftBandRescueMinCounterflowSteps, flowOpts.netLeftBandRescueMinCounterflowDx_mm, ...
+    double(logical(flowOpts.netLeftBandRescueRequireActivation)), double(logical(flowOpts.netLeftBandRescueRequireActXInBand)), ...
+    double(logical(flowOpts.netLeftBandRescueBypassOriginGate)), ...
     qcOpts.minTrackSpots, qcOpts.maxTrackGaps, double(logical(qcOpts.rejectSplitMergeComplex)), ...
     double(logical(qcOpts.wallBandEnabled)), activationOpts.areaJumpFactor, ...
     activationOpts.preWindowFrames, activationOpts.minPrePoints, activationOpts.requiredPostFrames, ...
     activationOpts.postMedianFactor, activationOpts.postMaxFactor, ...
     double(logical(activationOpts.enableBurstFallback)), activationOpts.burstJumpFactor, ...
-    activationOpts.burstPostFactor);
+    activationOpts.burstPostFactor, ...
+    double(logical(activationOpts.includeMicrobubbleActivationRescue)), ...
+    activationOpts.microbubbleSeedAreaRange_px2(1), activationOpts.microbubbleSeedAreaRange_px2(2), ...
+    double(logical(activationOpts.microbubbleRequireNonLeftMoving)));
 end
 
 function [casesOut, selectedIdx, totalCaseCount] = select_cases(casesIn, selection)
