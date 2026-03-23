@@ -89,26 +89,28 @@ flowOpts.minNetDxCounterflow_mm = 0.08;
 flowOpts.minNegativeStepFraction = 0.65;
 flowOpts.maxPositiveStepFraction = 0.30;
 flowOpts.requireRightOrigin = true;
-flowOpts.rightOriginFrac = 0.60; % rightmost 40% source band
+flowOpts.rightOriginFrac = 0.25; % rightmost 75% source band
+flowOpts.netLeftMinConsecutiveNegSteps = 3; % <---edit: minimum consecutive counterflow steps for net-left membership
+flowOpts.netLeftMinConsecutiveNetDx_mm = 0.00; % <---edit: minimum cumulative counterflow displacement over that run
 
 qcOpts = struct();
 qcOpts.minTrackSpots = 5;
 qcOpts.maxTrackGaps = 1;
 qcOpts.maxLeftMovingTracks = maxLeftMovingTracks;
-qcOpts.rejectSplitMergeComplex = true;
+qcOpts.rejectSplitMergeComplex = false; % <---edit: include breakup/split/merge tracks if they satisfy left-moving/counterflow gates
 qcOpts.wallBandEnabled = false;
 qcOpts.wallBandYLimits_mm = [];
 
 activationOpts = struct();
-activationOpts.areaJumpFactor = 2.0;
-activationOpts.preWindowFrames = 2;
-activationOpts.minPrePoints = 2;
-activationOpts.requiredPostFrames = 2;
-activationOpts.postMedianFactor = 1.35;
-activationOpts.postMaxFactor = 1.5;
-activationOpts.enableBurstFallback = true;
-activationOpts.burstJumpFactor = 2.2;
-activationOpts.burstPostFactor = 1.4;
+activationOpts.areaJumpFactor = 2.0; % growth trigger: A(i+1)/A(i) and A(i+1)/A_pre must both exceed this
+activationOpts.preWindowFrames = 2; % number of frames used to compute pre-jump baseline A_pre
+activationOpts.minPrePoints = 2; % minimum finite pre-jump points required to test activation
+activationOpts.requiredPostFrames = 2; % sustained-growth requirement: number of post-jump frames to validate
+activationOpts.postMedianFactor = 1.35; % sustained check: median(post/A_pre) must exceed this
+activationOpts.postMaxFactor = 1.5; % sustained check: max(post/A_pre) must exceed this
+activationOpts.enableBurstFallback = true; % allow short-lived burst detection when only 1 post frame exists
+activationOpts.burstJumpFactor = 2.2; % burst check: jump ratio A(i+1)/A_pre threshold
+activationOpts.burstPostFactor = 1.4; % burst check: single post-frame ratio threshold
 
 % Density plot bin size (physical units)
 binSize_phys = 0.02;    % <---edit if needed based on mm/px and field size
@@ -776,13 +778,14 @@ end
 
 function policyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts)
 policyTag = sprintf([ ...
-    'pv=%d|pts=%d|pft=%d|bulk=%s|dx=%.6g|neg=%.4g|pos=%.4g|origin=%d|originFrac=%.4g|', ...
+    'pv=%d|pts=%d|pft=%d|bulk=%s|dx=%.6g|neg=%.4g|pos=%.4g|origin=%d|originFrac=%.4g|netRun=%d|netRunDx=%.6g|', ...
     'spots=%d|gaps=%.4g|rsmc=%d|wall=%d|jump=%.4g|pre=%d|minpre=%d|post=%d|', ...
     'postMed=%.4g|postMax=%.4g|burst=%d|burstJump=%.4g|burstPost=%.4g'], ...
     parserOpts.parserVersion, double(logical(parserOpts.parseTrackedSpotsOnly)), double(logical(parserOpts.parseFilteredTracksOnly)), ...
     char(string(flowOpts.bulkDirection)), flowOpts.minNetDxCounterflow_mm, ...
     flowOpts.minNegativeStepFraction, flowOpts.maxPositiveStepFraction, ...
     double(logical(flowOpts.requireRightOrigin)), flowOpts.rightOriginFrac, ...
+    flowOpts.netLeftMinConsecutiveNegSteps, flowOpts.netLeftMinConsecutiveNetDx_mm, ...
     qcOpts.minTrackSpots, qcOpts.maxTrackGaps, double(logical(qcOpts.rejectSplitMergeComplex)), ...
     double(logical(qcOpts.wallBandEnabled)), activationOpts.areaJumpFactor, ...
     activationOpts.preWindowFrames, activationOpts.minPrePoints, activationOpts.requiredPostFrames, ...

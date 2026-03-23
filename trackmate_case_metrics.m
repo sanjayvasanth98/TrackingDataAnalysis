@@ -106,11 +106,15 @@ gateStats.xStartMax = xMaxAll;
 % Build per-track prepared records once (single source of truth).
 prep = repmat(make_prep_template(), nTotal, 1);
 for k = 1:nTotal
-    prep(k) = build_track_prep(traj(k), spotRowById, spots, qcOpts, activationOpts);
+    prep(k) = build_track_prep(traj(k), spotRowById, spots, qcOpts, flowOpts, activationOpts);
     trackCatalog(k) = build_track_catalog_entry(prep(k));
 
     % Net-left framewise set (legacy comparison).
-    if ~(prep(k).isBasicValid && prep(k).isLeftMoving)
+    isNetLeftMember = prep(k).isBasicValid && prep(k).isLeftMoving;
+    if isNetLeftMember && flowOpts.requireRightOrigin && isfinite(originThreshold)
+        isNetLeftMember = passes_origin_gate(prep(k).x(1), originThreshold, flowOpts);
+    end
+    if ~isNetLeftMember
         continue;
     end
     if isfinite(qcOpts.maxLeftMovingTracks) && qcOpts.maxLeftMovingTracks >= 0 ...
@@ -432,7 +436,7 @@ tpl = struct( ...
     'strictActivationIndex', NaN);
 end
 
-function prep = build_track_prep(thisTraj, spotRowById, spots, qcOpts, activationOpts)
+function prep = build_track_prep(thisTraj, spotRowById, spots, qcOpts, flowOpts, activationOpts)
 prep = make_prep_template();
 
 if isfield(thisTraj, 'TRACK_ID')
@@ -477,7 +481,7 @@ if prep.isShort
 end
 
 prep.isBasicValid = true;
-prep.isLeftMoving = (prep.x(end) < prep.x(1));
+prep.isLeftMoving = passes_netleft_motion_gate(prep.x, flowOpts);
 
 prep.areaVals = extract_area_values(prep.spotIds, spotRowById, spots);
 idxJump = find_sustained_growth_activation(prep.areaVals, activationOpts);
@@ -680,6 +684,53 @@ else
 end
 end
 
+function pass = passes_netleft_motion_gate(x, flowOpts)
+pass = false;
+
+if numel(x) < 2
+    return;
+end
+
+dx = diff(x);
+dx = dx(isfinite(dx));
+if isempty(dx)
+    return;
+end
+
+minRunSteps = max(1, round(flowOpts.netLeftMinConsecutiveNegSteps));
+minRunNetDx = max(0, double(flowOpts.netLeftMinConsecutiveNetDx_mm));
+
+if strcmpi(flowOpts.bulkDirection, 'left_to_right')
+    isCounterflowStep = (dx < 0);
+    counterflowStepMag = -dx;
+else
+    isCounterflowStep = (dx > 0);
+    counterflowStepMag = dx;
+end
+
+if ~any(isCounterflowStep)
+    return;
+end
+
+runEdge = diff([false; isCounterflowStep(:); false]);
+runStart = find(runEdge == 1);
+runStop = find(runEdge == -1) - 1;
+
+for r = 1:numel(runStart)
+    s = runStart(r);
+    e = runStop(r);
+    if (e - s + 1) < minRunSteps
+        continue;
+    end
+
+    runNetDx = sum(counterflowStepMag(s:e), 'omitnan');
+    if isfinite(runNetDx) && runNetDx >= minRunNetDx
+        pass = true;
+        return;
+    end
+end
+end
+
 function pass = passes_origin_gate(xStart, originThreshold, flowOpts)
 if ~flowOpts.requireRightOrigin || ~isfinite(originThreshold) || ~isfinite(xStart)
     pass = true;
@@ -830,6 +881,8 @@ flowOpts.minNetDxCounterflow_mm = max(0, flowOpts.minNetDxCounterflow_mm);
 flowOpts.minNegativeStepFraction = min(1, max(0, flowOpts.minNegativeStepFraction));
 flowOpts.maxPositiveStepFraction = min(1, max(0, flowOpts.maxPositiveStepFraction));
 flowOpts.rightOriginFrac = min(1, max(0, flowOpts.rightOriginFrac));
+flowOpts.netLeftMinConsecutiveNegSteps = max(1, round(flowOpts.netLeftMinConsecutiveNegSteps));
+flowOpts.netLeftMinConsecutiveNetDx_mm = max(0, flowOpts.netLeftMinConsecutiveNetDx_mm);
 activationOpts.areaJumpFactor = max(1, activationOpts.areaJumpFactor);
 activationOpts.preWindowFrames = max(1, round(activationOpts.preWindowFrames));
 activationOpts.minPrePoints = max(1, round(activationOpts.minPrePoints));
@@ -862,6 +915,8 @@ flowOpts.minNegativeStepFraction = 0.65;
 flowOpts.maxPositiveStepFraction = 0.30;
 flowOpts.requireRightOrigin = true;
 flowOpts.rightOriginFrac = 0.60;
+flowOpts.netLeftMinConsecutiveNegSteps = 3;
+flowOpts.netLeftMinConsecutiveNetDx_mm = 0.0;
 end
 
 function activationOpts = default_activation_opts()
