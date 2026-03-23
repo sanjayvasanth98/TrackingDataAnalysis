@@ -16,14 +16,26 @@ if nargin < 4 || isempty(callerTag)
 end
 
 trackIds = [trackCatalog.TRACK_ID];
+excludedMask = false(numel(trackCatalog), 1);
+if isfield(trackCatalog, 'isOriginExcludedBox')
+    for i = 1:numel(trackCatalog)
+        v = trackCatalog(i).isOriginExcludedBox;
+        if islogical(v)
+            excludedMask(i) = any(v(:));
+        elseif isnumeric(v)
+            excludedMask(i) = any(v(:) ~= 0);
+        end
+    end
+end
 caseName = "case";
 if isstruct(caseDef) && isfield(caseDef, 'name')
     caseName = string(caseDef.name);
 end
 
 if isempty(trackRequests)
-    selectedIdx = (1:numel(trackCatalog)).';
+    selectedIdx = find(~excludedMask);
     selectedTrackIds = trackIds(:);
+    selectedTrackIds = selectedTrackIds(selectedIdx);
     return;
 end
 
@@ -43,6 +55,14 @@ for req = trackRequests
 end
 
 selectedIdx = unique(selectedIdx, 'stable');
+if isempty(selectedIdx)
+    return;
+end
+if any(excludedMask(selectedIdx))
+    nDrop = sum(excludedMask(selectedIdx));
+    warning('%s: dropped %d requested track(s) excluded by origin box for case %s.', callerTag, nDrop, char(caseName));
+    selectedIdx = selectedIdx(~excludedMask(selectedIdx));
+end
 if isempty(selectedIdx)
     return;
 end

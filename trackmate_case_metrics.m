@@ -63,6 +63,7 @@ gateStats.nTracksTotal = nTotal;
 gateStats.nRejectedTooShort = 0;
 gateStats.nRejectedNonFinite = 0;
 gateStats.nRejectedNonMonotonicTime = 0;
+gateStats.nRejectedOriginWindow = 0;
 gateStats.nRejectedTopology = 0;
 gateStats.nRejectedFlow = 0;
 gateStats.nRejectedOrigin = 0;
@@ -173,6 +174,10 @@ end
 
 % Strict gate accounting + authoritative strict primary set.
 for k = 1:nTotal
+    if prep(k).isOriginExcludedBox
+        gateStats.nRejectedOriginWindow = gateStats.nRejectedOriginWindow + 1;
+        continue;
+    end
     if prep(k).isShort
         gateStats.nRejectedTooShort = gateStats.nRejectedTooShort + 1;
         continue;
@@ -466,6 +471,7 @@ tpl = struct( ...
     'frame', nan(0,1), ...
     'areaVals', nan(0,1), ...
     'startArea', NaN, ...
+    'isOriginExcludedBox', false, ...
     'isShort', false, ...
     'isNonFinite', false, ...
     'isNonMonotonicTime', false, ...
@@ -488,6 +494,7 @@ tpl = struct( ...
     'y', nan(0,1), ...
     'isBasicValid', false, ...
     'isLeftMoving', false, ...
+    'isOriginExcludedBox', false, ...
     'isStrictPrimary', false, ...
     'isStrictActivated', false, ...
     'isMicrobubbleRescueNonLeft', false, ...
@@ -543,6 +550,11 @@ if isempty(dtTrack) || any(~isfinite(dtTrack)) || any(dtTrack <= 0)
     return;
 end
 
+if is_origin_excluded_start(prep.x(1), prep.y(1), qcOpts)
+    prep.isOriginExcludedBox = true;
+    return;
+end
+
 if prep.isShort
     return;
 end
@@ -575,6 +587,7 @@ catalog.x = prep.x;
 catalog.y = prep.y;
 catalog.isBasicValid = prep.isBasicValid;
 catalog.isLeftMoving = prep.isLeftMoving;
+catalog.isOriginExcludedBox = prep.isOriginExcludedBox;
 catalog.isStrictPrimary = false;
 catalog.isStrictActivated = false;
 catalog.isMicrobubbleRescueNonLeft = false;
@@ -734,6 +747,31 @@ if islogical(v)
 elseif isnumeric(v)
     tf = any(v(:) ~= 0);
 end
+end
+
+function tf = is_origin_excluded_start(xStart, yStart, qcOpts)
+tf = false;
+if ~isfield(qcOpts, 'excludeOriginBoxEnabled') || ~logical(qcOpts.excludeOriginBoxEnabled)
+    return;
+end
+if ~(isfinite(xStart) && isfinite(yStart))
+    return;
+end
+if ~isfield(qcOpts, 'excludeOriginBoxX_mm') || numel(qcOpts.excludeOriginBoxX_mm) < 2
+    return;
+end
+if ~isfield(qcOpts, 'excludeOriginBoxY_mm') || numel(qcOpts.excludeOriginBoxY_mm) < 2
+    return;
+end
+
+xLim = sort(double(qcOpts.excludeOriginBoxX_mm(1:2)));
+yLim = sort(double(qcOpts.excludeOriginBoxY_mm(1:2)));
+if any(~isfinite(xLim)) || any(~isfinite(yLim))
+    return;
+end
+
+tf = (xStart >= xLim(1)) && (xStart <= xLim(2)) && ...
+     (yStart >= yLim(1)) && (yStart <= yLim(2));
 end
 
 function pass = passes_topology_gate(thisTraj, trackRowById, tracks, qcOpts)
@@ -1067,6 +1105,23 @@ if ~isfield(qcOpts, 'maxLeftMovingTracks') || isempty(qcOpts.maxLeftMovingTracks
 else
     qcOpts.maxLeftMovingTracks = max(0, round(double(qcOpts.maxLeftMovingTracks)));
 end
+if ~isfield(qcOpts, 'excludeOriginBoxEnabled') || isempty(qcOpts.excludeOriginBoxEnabled)
+    qcOpts.excludeOriginBoxEnabled = false;
+end
+if ~isfield(qcOpts, 'excludeOriginBoxX_mm') || numel(qcOpts.excludeOriginBoxX_mm) < 2
+    qcOpts.excludeOriginBoxX_mm = [0 0.5];
+end
+if ~isfield(qcOpts, 'excludeOriginBoxY_mm') || numel(qcOpts.excludeOriginBoxY_mm) < 2
+    qcOpts.excludeOriginBoxY_mm = [0 1.2];
+end
+qcOpts.excludeOriginBoxX_mm = sort(double(qcOpts.excludeOriginBoxX_mm(1:2)));
+qcOpts.excludeOriginBoxY_mm = sort(double(qcOpts.excludeOriginBoxY_mm(1:2)));
+if any(~isfinite(qcOpts.excludeOriginBoxX_mm))
+    qcOpts.excludeOriginBoxX_mm = [0 0.5];
+end
+if any(~isfinite(qcOpts.excludeOriginBoxY_mm))
+    qcOpts.excludeOriginBoxY_mm = [0 1.2];
+end
 flowOpts.minNetDxCounterflow_mm = max(0, flowOpts.minNetDxCounterflow_mm);
 flowOpts.minNegativeStepFraction = min(1, max(0, flowOpts.minNegativeStepFraction));
 flowOpts.maxPositiveStepFraction = min(1, max(0, flowOpts.maxPositiveStepFraction));
@@ -1147,6 +1202,9 @@ qcOpts.maxLeftMovingTracks = Inf;
 qcOpts.rejectSplitMergeComplex = true;
 qcOpts.wallBandEnabled = false;
 qcOpts.wallBandYLimits_mm = [];
+qcOpts.excludeOriginBoxEnabled = false;
+qcOpts.excludeOriginBoxX_mm = [0 0.5];
+qcOpts.excludeOriginBoxY_mm = [0 1.2];
 end
 
 function flowOpts = default_flow_opts()
