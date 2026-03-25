@@ -25,6 +25,9 @@ end
 
 yExtent_mm = plotOpts.inceptionImageSize_px(2) * median(pixelSizeVals);
 xLim = [0 5];
+if isfield(plotOpts, 'inceptionXLim_mm') && numel(plotOpts.inceptionXLim_mm) >= 2
+    xLim = double(plotOpts.inceptionXLim_mm(1:2));
+end
 yLim = [0 1.2];
 if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 2
     yLim = double(plotOpts.inceptionYLim_mm(1:2));

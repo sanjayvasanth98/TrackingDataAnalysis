@@ -10,9 +10,42 @@ if isempty(ReVals)
     return;
 end
 
-% Write fit summary by Reynolds set
+% Write fit summary by Reynolds set (once, outside theme loop)
 fid = fopen(fitTxtFile, 'w');
-fprintf(fid, 'Fit model by Re: log10(A/I) = a + b*(k/D_h)\n\n');
+if fid < 0
+    warning('Could not open fit text file: %s', fitTxtFile);
+else
+    fprintf(fid, 'Fit model by Re: log10(A/I) = a + b*(k/D_h)\n\n');
+    for r = 1:numel(ReVals)
+        Rei = ReVals(r);
+        sub = summaryTable(summaryTable.Re == Rei, :);
+        sub = sortrows(sub, 'kDh');
+        x = sub.kDh(:);
+        y = sub.A_over_I(:);
+        valid = isfinite(x) & isfinite(y) & (y > 0);
+        x = x(valid);
+        y = y(valid);
+        if numel(x) >= 2
+            p = polyfit(x, log10(y), 1);
+            b = p(1);
+            a = p(2);
+            Y = log10(y);
+            Yhat = polyval(p, x);
+            SSres = sum((Y - Yhat).^2);
+            SStot = sum((Y - mean(Y)).^2);
+            R2 = 1 - SSres / max(SStot, eps);
+            fprintf(fid, 'Re = %g\n', Rei);
+            fprintf(fid, 'a = %.8g\n', a);
+            fprintf(fid, 'b = %.8g\n', b);
+            fprintf(fid, 'R2 = %.6f\n', R2);
+            fprintf(fid, 'A/I = %.8g * 10^(%.8g * (k/D_h))\n\n', 10^a, b);
+        else
+            fprintf(fid, 'Re = %g\n', Rei);
+            fprintf(fid, 'Not enough points for fit (need >=2).\n\n');
+        end
+    end
+    fclose(fid);
+end
 
 for theme = reshape(plotOpts.themes, 1, [])
     f = figure('Color', 'w', 'Position', [100 100 1000 700]);
@@ -79,20 +112,6 @@ for theme = reshape(plotOpts.themes, 1, [])
             lgd(end+1,1) = hFit; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('Fit, Re=%g', Rei); %#ok<AGROW>
 
-            Y = log10(y);
-            Yhat = polyval(p, x);
-            SSres = sum((Y - Yhat).^2);
-            SStot = sum((Y - mean(Y)).^2);
-            R2 = 1 - SSres / max(SStot, eps);
-
-            fprintf(fid, 'Re = %g\n', Rei);
-            fprintf(fid, 'a = %.8g\n', a);
-            fprintf(fid, 'b = %.8g\n', b);
-            fprintf(fid, 'R2 = %.6f\n', R2);
-            fprintf(fid, 'A/I = %.8g * 10^(%.8g * (k/D_h))\n\n', 10^a, b);
-        else
-            fprintf(fid, 'Re = %g\n', Rei);
-            fprintf(fid, 'Not enough points for fit (need >=2).\n\n');
         end
     end
 
@@ -117,7 +136,6 @@ for theme = reshape(plotOpts.themes, 1, [])
     close(f);
 end
 
-fclose(fid);
 fprintf('Saved fit info: %s\n', fitTxtFile);
 end
 

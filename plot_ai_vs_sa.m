@@ -25,6 +25,10 @@ yFit  = 10.^(a + b*SaFit);
 
 % Save fit info
 fid = fopen(fitTxtFile, 'w');
+if fid < 0
+    warning('Could not open fit text file: %s', fitTxtFile);
+    return;
+end
 fprintf(fid, "Fit (semilogy): log10(A/I) = a + b*Sa\n");
 fprintf(fid, "a = %.6g\n", a);
 fprintf(fid, "b = %.6g\n", b);

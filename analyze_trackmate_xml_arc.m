@@ -372,6 +372,7 @@ for k = 1:numel(uniqueTracks)
     dX = diff(xPhys); dY = diff(yPhys);
     ds = hypot(dX, dY);
     dT = diff(tt);
+    dT(dT == 0) = NaN;
     sp = ds ./ dT;
 
     traj(k).TRACK_ID = tid;

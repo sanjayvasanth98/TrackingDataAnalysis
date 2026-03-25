@@ -207,9 +207,9 @@ cases(6).dt        = 1/102247;
 
 for ci = 1:numel(cases)
     cases(ci).diagnosticTrackIds = []; % empty = all parsed tracks in this case; otherwise list TRACK_IDs
-    if ~isfield(cases, 'videoFile')
-        cases(ci).videoFile = ""; % <---edit: optional AVI path for overlay GIF export
-    elseif strlength(string(cases(ci).videoFile)) < 1
+    if ~isfield(cases, 'videoFile') || isempty(cases(ci).videoFile) || ...
+            (~isstring(cases(ci).videoFile) && ~ischar(cases(ci).videoFile)) || ...
+            strlength(string(cases(ci).videoFile)) < 1
         cases(ci).videoFile = ""; % <---edit: optional AVI path for overlay GIF export
     end
 end
@@ -440,83 +440,6 @@ totalElapsedSec = toc(runTimer);
 fprintf("Total elapsed time (selected cases): %.2f s (%s)\n", totalElapsedSec, format_elapsed_hms(totalElapsedSec));
 fprintf("\nAll done. Results in: %s\n", resultsDir);
 
-function [xMean, xStd, yMean, yStd, nPts] = xy_stats(xy)
-nPts = 0;
-xMean = NaN;
-xStd = NaN;
-yMean = NaN;
-yStd = NaN;
-
-if isempty(xy) || size(xy,2) < 2
-    return;
-end
-
-xy = xy(isfinite(xy(:,1)) & isfinite(xy(:,2)), :);
-nPts = size(xy,1);
-if nPts == 0
-    return;
-end
-
-xVals = xy(:,1);
-yVals = xy(:,2);
-xMean = mean(xVals, 'omitnan');
-xStd = std(xVals, 0, 'omitnan');
-yMean = mean(yVals, 'omitnan');
-yStd = std(yVals, 0, 'omitnan');
-end
-
-function [m, s, md, p90, n] = vector_stats(v)
-n = 0;
-m = NaN;
-s = NaN;
-md = NaN;
-p90 = NaN;
-
-if isempty(v)
-    return;
-end
-
-v = v(:);
-v = v(isfinite(v));
-n = numel(v);
-if n == 0
-    return;
-end
-
-m = mean(v, 'omitnan');
-s = std(v, 0, 'omitnan');
-md = median(v, 'omitnan');
-p90 = percentile_legacy(v, 90);
-end
-
-function q = percentile_legacy(v, p)
-q = NaN;
-if isempty(v) || ~isfinite(p)
-    return;
-end
-
-v = sort(v(:));
-n = numel(v);
-if n == 0
-    return;
-end
-if n == 1
-    q = v(1);
-    return;
-end
-
-p = min(100, max(0, p));
-idx = 1 + (n - 1) * (p / 100);
-i0 = floor(idx);
-i1 = ceil(idx);
-if i0 == i1
-    q = v(i0);
-else
-    frac = idx - i0;
-    q = v(i0) + frac * (v(i1) - v(i0));
-end
-end
-
 function write_framewise_case_csv(resultsDir, caseDef, metrics)
 strictAxis = get_metric_vector(metrics, 'strict_frame_axis', metrics.frame_axis);
 strictVisible = get_metric_vector(metrics, 'strict_frame_nVisible', metrics.frame_nLeftMovingVisible);
@@ -666,16 +589,6 @@ h = floor(totalSeconds / 3600);
 m = floor(mod(totalSeconds, 3600) / 60);
 sSec = mod(totalSeconds, 60);
 s = sprintf('%02d:%02d:%02d', h, m, sSec);
-end
-
-function v = get_metric_field(metrics, fieldName, defaultValue)
-v = defaultValue;
-if isfield(metrics, fieldName)
-    raw = metrics.(fieldName);
-    if ~isempty(raw)
-        v = raw;
-    end
-end
 end
 
 function run_diagnostic_parity_checks(caseDef, metrics)
