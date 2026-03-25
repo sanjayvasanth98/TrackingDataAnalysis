@@ -69,6 +69,7 @@ gateStats.nRejectedFlow = 0;
 gateStats.nRejectedOrigin = 0;
 gateStats.nRejectedNoActivation = 0;
 gateStats.nRejectedWallBand = 0;
+gateStats.nRejectedProximityMerge = 0;
 gateStats.nInjected = 0;
 gateStats.nActivated = 0;
 gateStats.originThreshold = NaN;
@@ -117,6 +118,14 @@ gateStats.xStartMax = xMaxAll;
 prep = repmat(make_prep_template(), nTotal, 1);
 for k = 1:nTotal
     prep(k) = build_track_prep(traj(k), spotRowById, spots, qcOpts, flowOpts, activationOpts);
+end
+
+% Post-processing: reject activations caused by proximity merge (overlapping blobs).
+[prep, nProxRejected] = reject_proximity_merge_activations(prep, spots, activationOpts);
+gateStats.nRejectedProximityMerge = nProxRejected;
+
+% Build catalogs and net-left accounting.
+for k = 1:nTotal
     trackCatalog(k) = build_track_catalog_entry(prep(k));
 
     % Net-left framewise set (legacy comparison).
@@ -483,7 +492,8 @@ tpl = struct( ...
     'actX', NaN, ...
     'actY', NaN, ...
     'actFrame', NaN, ...
-    'actSeedArea', NaN);
+    'actSeedArea', NaN, ...
+    'isProximityRejected', false);
 end
 
 function tpl = make_catalog_template()
@@ -1011,7 +1021,107 @@ end
 pass = (yVal >= min(yLimits)) && (yVal <= max(yLimits));
 end
 
+function [prep, nRejected] = reject_proximity_merge_activations(prep, spots, activationOpts)
+%REJECT_PROXIMITY_MERGE_ACTIVATIONS  Reject activations caused by overlapping blobs.
+%   At the pre-jump frame, check if any OTHER spot is within
+%   mergeProximityRadius_mm. If so, the area jump is likely a thresholding
+%   artifact from two bubbles overlapping in the binary image.
+nRejected = 0;
+
+if ~activationOpts.rejectProximityMerge || activationOpts.mergeProximityRadius_mm <= 0
+    return;
+end
+
+% Build per-frame spot position index for efficient lookup.
+hasFrameCol = ismember('FRAME', spots.Properties.VariableNames);
+hasXCol = ismember('X', spots.Properties.VariableNames);
+hasYCol = ismember('Y', spots.Properties.VariableNames);
+hasIDCol = ismember('ID', spots.Properties.VariableNames);
+if ~hasFrameCol || ~hasXCol || ~hasYCol || ~hasIDCol
+    return;
+end
+
+% Get pixelSize to convert spot pixel coords to mm (prep.x/y are in mm).
+if isfield(activationOpts, 'pixelSize') && isfinite(activationOpts.pixelSize) && activationOpts.pixelSize > 0
+    pxSz = activationOpts.pixelSize;
+else
+    pxSz = 1;  % fallback: assume spots are already in physical units
+end
+
+spotFrames = spots.FRAME(:);
+spotX = spots.X(:) * pxSz;  % convert pixels -> mm
+spotY = spots.Y(:) * pxSz;  % convert pixels -> mm
+spotIDs = spots.ID(:);
+uniqueFrames = unique(spotFrames(isfinite(spotFrames)));
+frameSpotIdx = containers.Map('KeyType', 'double', 'ValueType', 'any');
+for fi = 1:numel(uniqueFrames)
+    fr = uniqueFrames(fi);
+    frameSpotIdx(fr) = find(spotFrames == fr);
+end
+
+radius = activationOpts.mergeProximityRadius_mm;
+radiusSq = radius * radius;
+
+for k = 1:numel(prep)
+    if ~prep(k).hasActivation || ~isfinite(prep(k).idxJump)
+        continue;
+    end
+
+    preIdx = prep(k).idxJump;
+    if preIdx < 1 || preIdx > numel(prep(k).frame) || preIdx > numel(prep(k).spotIds)
+        continue;
+    end
+
+    preFrame = prep(k).frame(preIdx);
+    preSpotId = prep(k).spotIds(preIdx);
+    preX = prep(k).x(preIdx);
+    preY = prep(k).y(preIdx);
+
+    if ~isfinite(preFrame) || ~isfinite(preX) || ~isfinite(preY)
+        continue;
+    end
+
+    if ~isKey(frameSpotIdx, preFrame)
+        continue;
+    end
+
+    rowsAtFrame = frameSpotIdx(preFrame);
+    foundNearby = false;
+    for ri = 1:numel(rowsAtFrame)
+        row = rowsAtFrame(ri);
+        if spotIDs(row) == preSpotId
+            continue;
+        end
+        dx = spotX(row) - preX;
+        dy = spotY(row) - preY;
+        if (dx * dx + dy * dy) < radiusSq
+            foundNearby = true;
+            break;
+        end
+    end
+
+    if foundNearby
+        prep(k).hasActivation = false;
+        prep(k).isProximityRejected = true;
+        prep(k).actX = NaN;
+        prep(k).actY = NaN;
+        prep(k).actFrame = NaN;
+        prep(k).actIdx = NaN;
+        prep(k).actSeedArea = NaN;
+        prep(k).idxJump = NaN;
+        nRejected = nRejected + 1;
+    end
+end
+
+if nRejected > 0
+    fprintf('  Proximity merge rejection: %d activation(s) rejected (radius=%.4f mm)\n', nRejected, radius);
+end
+end
+
 function idxJump = find_sustained_growth_activation(areaVals, opts)
+%FIND_SUSTAINED_GROWTH_ACTIVATION  Detect first cavitation activation event.
+%   Uses absolute area floors + sustained monotonic growth instead of a
+%   fixed jump-ratio threshold.
 idxJump = [];
 n = numel(areaVals);
 
@@ -1023,50 +1133,92 @@ for i = 1:(n - 1)
     aCurr = areaVals(i);
     aNext = areaVals(i + 1);
 
+    % Stage 0: basic validity
     if ~(isfinite(aCurr) && isfinite(aNext) && aCurr > 0 && aNext > 0)
         continue;
     end
 
-    preStart = max(1, i - opts.preWindowFrames + 1);
-    preVals = areaVals(preStart:i);
-    preVals = preVals(isfinite(preVals) & preVals > 0);
-    if numel(preVals) < opts.minPrePoints
+    % Stage 1: absolute area floors (eliminates out-of-focus artifacts)
+    if aCurr < opts.minPreJumpArea_px2
+        continue;
+    end
+    if aNext < opts.minPostJumpArea_px2
         continue;
     end
 
-    aPre = median(preVals);
-    if ~(isfinite(aPre) && aPre > 0)
+    % Stage 2: initial growth sanity check — aNext vs aCurr
+    aPre = aCurr;
+    if (aNext / aPre) < opts.minInitialGrowthRatio
         continue;
     end
 
-    if (aNext / aCurr) < opts.areaJumpFactor
-        continue;
-    end
-    if (aNext / aPre) < opts.areaJumpFactor
-        continue;
-    end
-
-    postStart = i + 2;
-    postEnd = min(n, i + 1 + opts.requiredPostFrames);
-    postVals = nan(0,1);
-    if postStart <= postEnd
-        postVals = areaVals(postStart:postEnd);
-    end
-    postVals = postVals(isfinite(postVals) & postVals > 0);
-
-    if numel(postVals) >= opts.requiredPostFrames
-        postRatio = postVals ./ aPre;
-        if median(postRatio) >= opts.postMedianFactor && max(postRatio) >= opts.postMaxFactor
-            idxJump = i;
-            return;
-        end
-    elseif numel(postVals) == 1 && opts.enableBurstFallback
-        if (aNext / aPre) >= opts.burstJumpFactor && (postVals(1) / aPre) >= opts.burstPostFactor
-            idxJump = i;
-            return;
-        end
+    % Stage 3: sustained monotonic growth window
+    % Large post-jump area (>= threshold) uses a shorter sustained window
+    if aNext >= opts.largeAreaThreshold_px2
+        swFrames = opts.largeAreaSustainedFrames;
     else
-        % No post-jump evidence -> reject this jump candidate.
+        swFrames = opts.sustainedWindowFrames;
+    end
+    winEnd = min(n, i + 1 + swFrames);
+    winVals = areaVals((i + 1):winEnd);
+    winVals_valid = winVals(isfinite(winVals) & winVals > 0);
+
+    if numel(winVals_valid) >= 2
+        nPairs = numel(winVals_valid) - 1;
+        nPassing = 0;
+        for j = 1:nPairs
+            ratio_j = winVals_valid(j + 1) / winVals_valid(j);
+            delta_j = winVals_valid(j + 1) - winVals_valid(j);
+            if ratio_j >= opts.sustainedMinRatio || delta_j >= opts.sustainedMinDelta_px2
+                nPassing = nPassing + 1;
+            end
+        end
+
+        if nPairs >= opts.sustainedMinPairsAvailable && nPassing >= opts.sustainedMinPassingPairs
+            if passes_post_activation_area_check(areaVals, i, n, opts)
+                idxJump = i;
+                return;
+            else
+                continue;
+            end
+        elseif nPairs < opts.sustainedMinPairsAvailable
+            % Not enough pairs — fall through to burst fallback (Stage 4)
+        else
+            % Enough pairs but too few passed — reject this candidate
+            continue;
+        end
+    end
+
+    % Stage 4: burst fallback (track/video ends before sustained window)
+    if opts.enableBurstFallback
+        if (aNext / aPre) >= opts.burstMinGrowthRatio && aNext >= opts.burstMinArea_px2
+            if passes_post_activation_area_check(areaVals, i, n, opts)
+                idxJump = i;
+                return;
+            else
+                continue;
+            end
+        end
+    end
+end
+end
+
+function ok = passes_post_activation_area_check(areaVals, i, n, opts)
+%PASSES_POST_ACTIVATION_AREA_CHECK  Verify that the next postActivationCheckFrames
+%   frames after the jump each have area >= postActivationMinArea_px2.
+%   If not enough frames remain, check whatever is available.
+ok = true;
+nCheck = opts.postActivationCheckFrames;
+minA = opts.postActivationMinArea_px2;
+for j = 1:nCheck
+    idx = i + 1 + j;  % i+1 is the jump frame; check i+2, i+3, ...
+    if idx > n
+        break;  % track ends — accept with whatever we've seen
+    end
+    a = areaVals(idx);
+    if ~isfinite(a) || a < minA
+        ok = false;
+        return;
     end
 end
 end
@@ -1084,7 +1236,7 @@ if numel(varargin) >= 3 && isnumeric(varargin{1}) && isnumeric(varargin{2}) && i
     % Backward compatibility mode.
     flowOpts.minNetDxCounterflow_mm = max(0, double(varargin{1}));
     qcOpts.minTrackSpots = max(2, round(double(varargin{2})));
-    activationOpts.areaJumpFactor = max(1, double(varargin{3}));
+    activationOpts.minInitialGrowthRatio = max(1, double(varargin{3}));
     return;
 end
 
@@ -1151,10 +1303,14 @@ if ~isfield(flowOpts, 'netLeftBandRescueBypassOriginGate') || isempty(flowOpts.n
 end
 flowOpts.netLeftBandRescueMinCounterflowSteps = max(1, round(flowOpts.netLeftBandRescueMinCounterflowSteps));
 flowOpts.netLeftBandRescueMinCounterflowDx_mm = max(0, flowOpts.netLeftBandRescueMinCounterflowDx_mm);
-activationOpts.areaJumpFactor = max(1, activationOpts.areaJumpFactor);
+activationOpts.minPreJumpArea_px2 = max(0, activationOpts.minPreJumpArea_px2);
+activationOpts.minPostJumpArea_px2 = max(0, activationOpts.minPostJumpArea_px2);
 activationOpts.preWindowFrames = max(1, round(activationOpts.preWindowFrames));
 activationOpts.minPrePoints = max(1, round(activationOpts.minPrePoints));
-activationOpts.requiredPostFrames = max(1, round(activationOpts.requiredPostFrames));
+activationOpts.minInitialGrowthRatio = max(1, activationOpts.minInitialGrowthRatio);
+activationOpts.sustainedWindowFrames = max(1, round(activationOpts.sustainedWindowFrames));
+activationOpts.sustainedMinPassingPairs = max(1, round(activationOpts.sustainedMinPassingPairs));
+activationOpts.sustainedMinPairsAvailable = max(1, round(activationOpts.sustainedMinPairsAvailable));
 if ~isfield(activationOpts, 'includeMicrobubbleActivationRescue') || isempty(activationOpts.includeMicrobubbleActivationRescue)
     activationOpts.includeMicrobubbleActivationRescue = false;
 end
@@ -1180,6 +1336,14 @@ if ~isfield(activationOpts, 'microbubbleRequireOutsideStrictPrimary') || isempty
         activationOpts.microbubbleRequireOutsideStrictPrimary = true;
     end
 end
+
+if ~isfield(activationOpts, 'rejectProximityMerge') || isempty(activationOpts.rejectProximityMerge)
+    activationOpts.rejectProximityMerge = true;
+end
+if ~isfield(activationOpts, 'mergeProximityRadius_mm') || isempty(activationOpts.mergeProximityRadius_mm)
+    activationOpts.mergeProximityRadius_mm = 0.05;
+end
+activationOpts.mergeProximityRadius_mm = max(0, activationOpts.mergeProximityRadius_mm);
 
 % Keep legacy aliases populated for downstream compatibility.
 activationOpts.microbubbleSeedAreaRange_px2 = activationOpts.microbubbleStartAreaRange_px2;
@@ -1228,15 +1392,26 @@ end
 
 function activationOpts = default_activation_opts()
 activationOpts = struct();
-activationOpts.areaJumpFactor = 6.0;
+activationOpts.minPreJumpArea_px2 = 3;
+activationOpts.minPostJumpArea_px2 = 20;
 activationOpts.preWindowFrames = 2;
-activationOpts.minPrePoints = 2;
-activationOpts.requiredPostFrames = 2;
-activationOpts.postMedianFactor = 1.35;
-activationOpts.postMaxFactor = 1.5;
+activationOpts.minPrePoints = 1;
+activationOpts.minInitialGrowthRatio = 2.0;
+activationOpts.sustainedWindowFrames = 3;
+activationOpts.largeAreaThreshold_px2 = 150;
+activationOpts.largeAreaSustainedFrames = 2;
+activationOpts.sustainedMinRatio = 1.05;
+activationOpts.sustainedMinDelta_px2 = 5;
+activationOpts.sustainedMinPassingPairs = 2;
+activationOpts.sustainedMinPairsAvailable = 2;
 activationOpts.enableBurstFallback = true;
-activationOpts.burstJumpFactor = 2.2;
-activationOpts.burstPostFactor = 1.4;
+activationOpts.burstMinGrowthRatio = 3.0;
+activationOpts.burstMinArea_px2 = 40;
+activationOpts.postActivationCheckFrames = 2;
+activationOpts.postActivationMinArea_px2 = 100;
+activationOpts.rejectProximityMerge = true;
+activationOpts.mergeProximityRadius_mm = 0.05;
+activationOpts.pixelSize = 1;
 activationOpts.includeMicrobubbleActivationRescue = false;
 activationOpts.microbubbleStartAreaRange_px2 = [1 120];
 activationOpts.microbubbleRequireOutsideStrictPrimary = true;
