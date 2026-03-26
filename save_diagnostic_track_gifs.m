@@ -27,6 +27,14 @@ if isempty(allFrames)
     return;
 end
 
+maxFrames = Inf;
+if isfield(plotOpts, 'diagnosticGifMaxFrames') && ~isempty(plotOpts.diagnosticGifMaxFrames)
+    maxFrames = double(plotOpts.diagnosticGifMaxFrames);
+end
+if isfinite(maxFrames) && maxFrames > 0 && numel(allFrames) > maxFrames
+    allFrames = allFrames(1:maxFrames);
+end
+
 gifPath = fullfile(outDir, sprintf('%s_Re_%g_kD_%g_all_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kD));
 
 [activationXY, activationFrames, activationTrackIds] = activation_arrays(metrics);

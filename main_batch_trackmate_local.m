@@ -32,11 +32,23 @@ localParseTrackLimit = 500; % <---edit: keep Inf to avoid truncating true left-m
 maxTracksChoices = [localParseTrackLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
 
-% Local quick-test analysis cap (left-moving tracks kept for diagnostics/inception).
-% For 100 left-moving tracks, use: localParseTrackLimit = Inf and localEventLimit = 100. <---edit
-localEventLimit = Inf; % <---edit: max number of left-moving tracks to analyze per case
-leftMovingTrackLimitChoices = [localEventLimit, Inf];
-maxLeftMovingTracks = leftMovingTrackLimitChoices(1 + isArc);
+% Local quick-test limit mode: "events" caps left-moving tracks, "frames" caps GIF frames.
+% Toggle between the two depending on what you want to inspect.
+localLimitMode = "frames"; % <---edit: "events" or "frames"
+localEventLimit = 100;     % <---edit: used when localLimitMode = "events"
+localFrameLimit = 500;     % <---edit: used when localLimitMode = "frames"
+
+if strcmpi(localLimitMode, "events")
+    maxLeftMovingTracks = localEventLimit;
+    localGifMaxFrames = Inf;
+else
+    maxLeftMovingTracks = Inf;
+    localGifMaxFrames = localFrameLimit;
+end
+if isArc
+    maxLeftMovingTracks = Inf;
+    localGifMaxFrames = Inf;
+end
 
 % Case selection:
 % - "all"            -> run every case below
@@ -153,11 +165,12 @@ plotOpts.makeVideoOverlayGifs = true; % <---edit: overlay tracks on source AVI a
 plotOpts.saveVideoOverlayGifs = true; % <---edit
 plotOpts.diagnosticGifTrailLength = 10;
 plotOpts.diagnosticGifDelayTime = 0.08;
+plotOpts.diagnosticGifMaxFrames = localGifMaxFrames;
 plotOpts.videoOverlayTrailLength = 10; % <---edit
 plotOpts.videoOverlayDelayTime = 0.08; % <---edit
 plotOpts.videoOverlayFadeHalfLifeFrames = 30; % <---edit
 plotOpts.videoOverlayUseContiguousRange = true; % <---edit
-plotOpts.videoOverlayMaxFrames = 600; % <---edit (Inf for all)
+plotOpts.videoOverlayMaxFrames = localGifMaxFrames;
 plotOpts.videoOverlayMarkerSize = 26; % <---edit
 plotOpts.videoOverlayXLim_mm = [0 4.8]; % <---edit
 plotOpts.upstreamSizeXLim_um = []; % <---edit
