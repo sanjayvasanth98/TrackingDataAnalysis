@@ -31,7 +31,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             pooledX = [];
             for j = 1:numel(idxRe)
                 xCase = allSize.size_eqd{idxRe(j)};
-                xCase = xCase(isfinite(xCase) & xCase > 0) * 1000; %#ok<AGROW>
+                xCase = xCase(isfinite(xCase) & xCase > 0) / 1000;
                 if ~isempty(xCase)
                     pooledX = [pooledX; xCase(:)]; %#ok<AGROW>
                 end
@@ -51,7 +51,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         for j = 1:numel(idxRe)
             ci = idxRe(j);
             x = allSize.size_eqd{ci};
-            x = x(isfinite(x) & x > 0) * 1000; % mm -> um
+            x = x(isfinite(x) & x > 0) / 1000; % to um
 
             if numel(x) < 5
                 continue;
@@ -67,7 +67,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             yMaxPlot = max(yMaxPlot, max(fhat));
 
             lgd(end+1,1) = hFill; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', allSize.caseName(ci), allSize.kD(ci)); %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('k/d=%.4g', allSize.kD(ci)); %#ok<AGROW>
         end
 
         xlim(ax, xLimUse);
@@ -76,12 +76,12 @@ for theme = reshape(plotOpts.themes, 1, [])
         end
         xlabel(ax, 'Equivalent diameter, $d_{eq}\,(\mu\mathrm{m})$', 'Interpreter', 'latex');
         ylabel(ax, 'PDF', 'Interpreter', 'latex');
-        title(ax, sprintf('Upstream-moving microbubble size distribution, Re=%g', Rei));
-        grid(ax, 'on');
+        title(ax, sprintf('Upstream-moving microbubble size distribution, Re=%g', Rei), 'FontName', 'Times New Roman', 'FontSize', 12);
+        grid(ax, 'off');
         box(ax, 'on');
 
         if ~isempty(lgd)
-            leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'eastoutside', 'Box', 'off');
+            leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'northeast', 'Box', 'off');
         else
             leg = [];
         end

@@ -156,7 +156,7 @@ xlim(axMain, xLim);
 ylim(axMain, yLim);
 xlabel(axMain, xLabel, 'Interpreter', 'latex');
 ylabel(axMain, yLabel, 'Interpreter', 'latex');
-title(axMain, titleStr);
+title(axMain, titleStr, 'FontName', 'Times New Roman', 'FontSize', 12);
 set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual');
 grid(axMain, 'on'); box(axMain, 'on');
 set(axMain, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);

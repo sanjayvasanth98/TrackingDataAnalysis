@@ -84,7 +84,7 @@ end
 
 xlabel(ax, '$k/d$', 'Interpreter', 'latex');
 ylabel(ax, yLabelStr, 'Interpreter', 'latex');
-title(ax, titleStr);
+title(ax, titleStr, 'FontName', 'Times New Roman', 'FontSize', 12);
 grid(ax, 'off');
 box(ax, 'on');
 
