@@ -54,6 +54,11 @@ if ~hasPoints
     return;
 end
 
+% Marginal histogram settings
+nBins = 40;
+histAlpha = 0.35;
+histFrac = 0.18; % fraction of figure for marginal panels
+
 for theme = reshape(plotOpts.themes, 1, [])
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
@@ -62,96 +67,128 @@ for theme = reshape(plotOpts.themes, 1, [])
         cmap = lines(max(nReCases, 1));
 
         % --- Plot 1: dimensional (mm) ---
-        f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
-        ax = axes(f);
-        hold(ax, 'on');
-
-        lgd = gobjects(0,1);
-        lgdTxt = strings(0,1);
-
-        for j = 1:nReCases
-            ci = idxRe(j);
-            xy = allLoc.inception2x_xy{ci};
-            if isempty(xy), continue; end
-
-            yPlot = yExtent_mm - xy(:,2);
-            h = scatter(ax, xy(:,1), yPlot, 34, ...
-                'Marker', 'o', ...
-                'MarkerEdgeColor', 'none', ...
-                'MarkerFaceColor', cmap(j,:));
-            lgd(end+1,1) = h; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', allLoc.caseName(ci), allLoc.kD(ci)); %#ok<AGROW>
-        end
-
-        xlim(ax, xLim);
-        ylim(ax, yLim);
-        set(ax, 'XLimMode', 'manual', 'YLimMode', 'manual', ...
-            'DataAspectRatioMode', 'auto', 'PlotBoxAspectRatioMode', 'auto');
-        xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
-        ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
-        title(ax, sprintf('Activation locations on left-moving tracks, Re=%g', Rei));
-        grid(ax, 'on'); box(ax, 'on');
-
-        if ~isempty(lgd)
-            leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'eastoutside', 'Box', 'off');
-        else
-            leg = [];
-        end
-        apply_plot_theme(ax, char(theme));
-        style_legend_for_theme(leg, char(theme));
-
-        outBase = fullfile(outDir, sprintf('Inception2x_locations_Re_%g_%s', Rei, theme));
-        save_fig_dual_safe(f, outBase, plotOpts);
-        close(f);
+        plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+            throatHeight_mm, xLim, yLim, false, nBins, histAlpha, histFrac, ...
+            '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
+            sprintf('Activation locations, Re=%g', Rei), ...
+            char(theme), ...
+            fullfile(outDir, sprintf('Inception2x_locations_Re_%g_%s', Rei, theme)), ...
+            plotOpts);
 
         % --- Plot 2: normalized by throat height (x/H, y/H) ---
-        f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
-        ax = axes(f);
-        hold(ax, 'on');
-
-        lgd = gobjects(0,1);
-        lgdTxt = strings(0,1);
-
-        for j = 1:nReCases
-            ci = idxRe(j);
-            xy = allLoc.inception2x_xy{ci};
-            if isempty(xy), continue; end
-
-            xPlot = xy(:,1) / throatHeight_mm;
-            yPlot = (yExtent_mm - xy(:,2)) / throatHeight_mm;
-            h = scatter(ax, xPlot, yPlot, 34, ...
-                'Marker', 'o', ...
-                'MarkerEdgeColor', 'none', ...
-                'MarkerFaceColor', cmap(j,:));
-            lgd(end+1,1) = h; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', allLoc.caseName(ci), allLoc.kD(ci)); %#ok<AGROW>
-        end
-
-        xlim(ax, xLimNorm);
-        ylim(ax, yLimNorm);
-        set(ax, 'XLimMode', 'manual', 'YLimMode', 'manual', ...
-            'DataAspectRatioMode', 'auto', 'PlotBoxAspectRatioMode', 'auto');
-        xlabel(ax, '$x/H$', 'Interpreter', 'latex');
-        ylabel(ax, '$y/H$', 'Interpreter', 'latex');
-        title(ax, sprintf('Activation locations on left-moving tracks, Re=%g', Rei));
-        grid(ax, 'on'); box(ax, 'on');
-
-        if ~isempty(lgd)
-            leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'eastoutside', 'Box', 'off');
-        else
-            leg = [];
-        end
-        apply_plot_theme(ax, char(theme));
-        style_legend_for_theme(leg, char(theme));
-
-        outBase = fullfile(outDir, sprintf('Inception2x_locations_normalized_Re_%g_%s', Rei, theme));
-        save_fig_dual_safe(f, outBase, plotOpts);
-        close(f);
+        plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+            throatHeight_mm, xLimNorm, yLimNorm, true, nBins, histAlpha, histFrac, ...
+            '$x/H$', '$y/H$', ...
+            sprintf('Activation locations, Re=%g', Rei), ...
+            char(theme), ...
+            fullfile(outDir, sprintf('Inception2x_locations_normalized_Re_%g_%s', Rei, theme)), ...
+            plotOpts);
     end
 end
 
 end
 
+%% ---- main plotting helper ----
+function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+    throatHeight_mm, xLim, yLim, doNormalize, nBins, histAlpha, histFrac, ...
+    xLabel, yLabel, titleStr, theme, outBase, plotOpts)
+
+f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px], 'Visible', 'on');
+
+% Layout: main scatter + top marginal + right marginal
+gap = 0.02;
+mainL = 0.10; mainB = 0.10;
+mainW = 1 - mainL - histFrac - 3*gap;
+mainH = 1 - mainB - histFrac - 3*gap;
+topL = mainL; topB = mainB + mainH + gap; topW = mainW; topH = histFrac;
+rightL = mainL + mainW + gap; rightB = mainB; rightW = histFrac; rightH = mainH;
+
+axMain  = axes(f, 'Position', [mainL  mainB  mainW  mainH]);
+axTop   = axes(f, 'Position', [topL   topB   topW   topH]);
+axRight = axes(f, 'Position', [rightL rightB rightW rightH]);
+
+hold(axMain, 'on');
+hold(axTop, 'on');
+hold(axRight, 'on');
+
+lgd = gobjects(0,1);
+lgdTxt = strings(0,1);
+
+xEdges = linspace(xLim(1), xLim(2), nBins+1);
+yEdges = linspace(yLim(1), yLim(2), nBins+1);
+
+for j = 1:nReCases
+    ci = idxRe(j);
+    xy = allLoc.inception2x_xy{ci};
+    if isempty(xy), continue; end
+
+    if doNormalize
+        xPts = xy(:,1) / throatHeight_mm;
+        yPts = (yExtent_mm - xy(:,2)) / throatHeight_mm;
+    else
+        xPts = xy(:,1);
+        yPts = yExtent_mm - xy(:,2);
+    end
+
+    h = scatter(axMain, xPts, yPts, 12, ...
+        'Marker', 'o', ...
+        'MarkerEdgeColor', 'none', ...
+        'MarkerFaceColor', cmap(j,:), ...
+        'MarkerFaceAlpha', 0.35);
+
+    lgd(end+1,1) = h; %#ok<AGROW>
+    lgdTxt(end+1,1) = sprintf('k/d=%.4g', allLoc.kD(ci)); %#ok<AGROW>
+
+    % Marginal histograms
+    nxCounts = histcounts(xPts, xEdges);
+    nyCounts = histcounts(yPts, yEdges);
+    xCenters = (xEdges(1:end-1) + xEdges(2:end)) / 2;
+    yCenters = (yEdges(1:end-1) + yEdges(2:end)) / 2;
+
+    bar(axTop, xCenters, nxCounts, 1, ...
+        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
+    barh(axRight, yCenters, nyCounts, 1, ...
+        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
+end
+
+% Main axes styling
+xlim(axMain, xLim);
+ylim(axMain, yLim);
+xlabel(axMain, xLabel, 'Interpreter', 'latex');
+ylabel(axMain, yLabel, 'Interpreter', 'latex');
+title(axMain, titleStr);
+set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual');
+grid(axMain, 'on'); box(axMain, 'on');
+set(axMain, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);
+
+% Top marginal styling
+xlim(axTop, xLim);
+set(axTop, 'XTickLabel', [], 'YTickLabel', [], 'XLimMode', 'manual');
+set(axTop, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);
+box(axTop, 'on');
+
+% Right marginal styling
+ylim(axRight, yLim);
+set(axRight, 'XTickLabel', [], 'YTickLabel', [], 'YLimMode', 'manual');
+set(axRight, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);
+box(axRight, 'on');
+
+% Legend inside main axes
+if ~isempty(lgd)
+    leg = legend(axMain, lgd, cellstr(lgdTxt), ...
+        'Location', 'northwest', 'Box', 'off', 'FontSize', 8);
+else
+    leg = [];
+end
+
+apply_plot_theme(axMain, theme);
+style_legend_for_theme(leg, theme);
+
+save_fig_dual_safe(f, outBase, plotOpts);
+close(f);
+end
+
+%% ---- theme helpers ----
 function style_legend_for_theme(leg, theme)
 if isempty(leg) || ~isgraphics(leg)
     return;

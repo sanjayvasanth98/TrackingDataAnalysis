@@ -437,6 +437,17 @@ if ~isempty(gateSummaryRows)
 end
 
 %% ---------------- PLOT 1: A/I vs k/d (per Re) ----------------
+%% ---------------- SAVE PLOT DATA (.mat) ----------------
+matDir = fullfile(resultsDir, "plot_data_mat");
+if ~isfolder(matDir), mkdir(matDir); end
+save(fullfile(matDir, "summaryRows.mat"), 'summaryRows');
+save(fullfile(matDir, "allLoc.mat"), 'allLoc');
+save(fullfile(matDir, "allSize.mat"), 'allSize');
+normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
+    't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
+save(fullfile(matDir, "normParams.mat"), 'normParams');
+fprintf("Saved plot data .mat files to: %s\n", matDir);
+
 fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kD_by_Re.txt");
 plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
 

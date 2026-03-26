@@ -95,11 +95,7 @@ if isfield(plotOpts, 'videoOverlayMaxFrames') && ~isempty(plotOpts.videoOverlayM
     maxFrames = double(plotOpts.videoOverlayMaxFrames);
 end
 if isfinite(maxFrames) && maxFrames > 0 && numel(frameIdxToRender) > maxFrames
-    step = ceil(numel(frameIdxToRender) / maxFrames);
-    frameIdxToRender = frameIdxToRender(1:step:end);
-    if frameIdxToRender(end) ~= baseFrameIdx(end)
-        frameIdxToRender(end+1,1) = baseFrameIdx(end); %#ok<AGROW>
-    end
+    frameIdxToRender = frameIdxToRender(1:maxFrames);
 end
 frameIdxToRender = unique(frameIdxToRender(:));
 

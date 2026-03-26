@@ -54,8 +54,8 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     markerFaceColor = [0 0 1];
     markerEdgeColor = [0 0 0];
-    errorBarColor = [1 0 0];
-    fitColor = [0 0 0];
+    errorBarColor = [0 0 0];
+    fitColor = [0.35 0.35 0.35];
     lgd = gobjects(0,1);
     lgdTxt = strings(0,1);
 
@@ -92,8 +92,8 @@ for theme = reshape(plotOpts.themes, 1, [])
 
         hErr = errorbar(ax, x, y, errLow, errHigh, 'o', ...
             'LineStyle', 'none', ...
-            'LineWidth', 1.5, ...
-            'MarkerSize', 8, ...
+            'LineWidth', 0.75, ...
+            'MarkerSize', 12, ...
             'CapSize', 8, ...
             'Color', errorBarColor, ...
             'MarkerFaceColor', markerFaceColor, ...
@@ -119,7 +119,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     ylabel(ax, '$A/I$', 'Interpreter', 'latex');
     title(ax, 'Activation/Injection vs k/d');
     set(ax, 'YScale', 'log');
-    grid(ax, 'on');
+    grid(ax, 'off');
     box(ax, 'on');
 
     if ~isempty(lgd)

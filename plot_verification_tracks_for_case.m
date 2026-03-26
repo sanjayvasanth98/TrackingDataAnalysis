@@ -53,9 +53,12 @@ for theme = reshape(plotOpts.themes, 1, [])
     trackColor = [0 0 1];
     activationColor = [0.9 0.15 0.1];
 
+    minSpotsForDisplay = 5;
+
     hTrack = gobjects(0,1);
     for i = 1:numel(leftIdx)
         tr = trackCatalog(leftIdx(i));
+        if numel(tr.frame) < minSpotsForDisplay, continue; end
         [xComp, yComp] = trail_composite_xy(tr, yExtent_mm, trailLength);
         if isempty(xComp)
             continue;
@@ -69,6 +72,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     hMicro = gobjects(0,1);
     for i = 1:numel(microIdx)
         tr = trackCatalog(microIdx(i));
+        if numel(tr.frame) < minSpotsForDisplay, continue; end
         [xComp, yComp] = trail_composite_xy(tr, yExtent_mm, trailLength);
         if isempty(xComp)
             continue;

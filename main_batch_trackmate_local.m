@@ -28,15 +28,15 @@ set(0,'DefaultFigureVisible', visMode(1 + isArc));
 
 % Local quick-test parsing limit (total parsed tracks per XML).
 % Keep Inf to parse all tracks; this is separate from left-moving analysis cap below.
-localParseTrackLimit = 500; % <---edit: keep Inf to avoid truncating true left-moving population
+localParseTrackLimit = Inf; % <---edit: keep Inf to avoid truncating true left-moving population
 maxTracksChoices = [localParseTrackLimit, Inf];
 maxTracksToParse = maxTracksChoices(1 + isArc);
 
 % Local quick-test limit mode: "events" caps left-moving tracks, "frames" caps GIF frames.
 % Toggle between the two depending on what you want to inspect.
 localLimitMode = "frames"; % <---edit: "events" or "frames"
-localEventLimit = 100;     % <---edit: used when localLimitMode = "events"
-localFrameLimit = 500;     % <---edit: used when localLimitMode = "frames"
+localEventLimit = 500;     % <---edit: used when localLimitMode = "events"
+localFrameLimit = 200;     % <---edit: used when localLimitMode = "frames"
 
 if strcmpi(localLimitMode, "events")
     maxLeftMovingTracks = localEventLimit;
@@ -56,14 +56,14 @@ end
 % - [1 3 6]          -> run multiple cases by index
 % - "5um"            -> run one case by name
 % - ["5um","30um"]   -> run multiple cases by name
-caseSelection = 1; % <---edit
+caseSelection = "all"; % <---edit
 
 % Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
 useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 22"; % <---edit
+resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 25"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
@@ -439,6 +439,17 @@ if ~isempty(gateSummaryRows)
     write_table_csv_compat(gateSummaryRows, gateSummaryCsv);
     fprintf("Saved: %s\n", gateSummaryCsv);
 end
+
+%% ---------------- SAVE PLOT DATA (.mat) ----------------
+matDir = fullfile(resultsDir, "plot_data_mat");
+if ~isfolder(matDir), mkdir(matDir); end
+save(fullfile(matDir, "summaryRows.mat"), 'summaryRows');
+save(fullfile(matDir, "allLoc.mat"), 'allLoc');
+save(fullfile(matDir, "allSize.mat"), 'allSize');
+normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
+    't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
+save(fullfile(matDir, "normParams.mat"), 'normParams');
+fprintf("Saved plot data .mat files to: %s\n", matDir);
 
 %% ---------------- PLOT 1: A/I vs k/d (per Re) ----------------
 fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kD_by_Re.txt");

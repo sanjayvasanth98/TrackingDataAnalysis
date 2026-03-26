@@ -72,10 +72,12 @@ for fi = 1:numel(allFrames)
     cla(ax);
     hold(ax, 'on');
 
+    minSpotsForDisplay = 5;
     nVisibleLeftMoving = 0;
     nVisibleMicroRescue = 0;
     for i = 1:numel(selectedIdx)
         tr = trackCatalog(selectedIdx(i));
+        if numel(tr.frame) < minSpotsForDisplay, continue; end
         [idxNow, xTail, yTail] = visible_tail_until_frame(tr, frameVal, trailLength);
         if isempty(idxNow)
             continue;
