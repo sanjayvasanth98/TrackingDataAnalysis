@@ -2,13 +2,13 @@
 % Batch TrackMate XML analysis (ARC + local)
 % - Computes framewise Injection (left-moving availability) and Activation/Growth events
 % - Supports one or multiple Reynolds-number sets for the same roughness ladder
-% - Plots A/I vs k/D_h, inception (2x growth) locations, Tau vs k/D_h,
+% - Plots A/I vs k/d, inception (2x growth) locations, Tau vs k/d,
 %   and upstream moving microbubble size distributions
 %
 % Output:
 %   resultsDir/
 %     Summary_tracks.csv
-%     fit_AI_vs_kDh_by_Re.txt
+%     fit_AI_vs_kD_by_Re.txt
 %     Figures_PNG_SVG/(normal|poster)/...
 
 clear; clc;
@@ -168,7 +168,7 @@ plotOpts.themes = enabled_plot_themes(plotOpts);
 
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
 % Required fields per case:
-%   name, Re, kDh, xmlFile, pixelSize, dt
+%   name, Re, kD, xmlFile, pixelSize, dt
 % If you include one Re only, everything still runs.
 % Edit case definitions below for your runs. <---edit
 
@@ -176,7 +176,7 @@ cases = struct([]);
 
 cases(1).name      = "5um";
 cases(1).Re        = 95000;
-cases(1).kDh       = 5; % <-- set your k/D_h
+cases(1).kD       = 0.030; % <-- set your k/d
 cases(1).xmlFile   = "E:\March Re 90,000 inception data\Processed images\Smooth variation 2\test_nofilter_smoothvar2_48lit.xml"; % <---edit: set your XML path
 cases(1).pixelSize = 0.00375009375;  % mm/px
 cases(1).dt        = 1/102247;
@@ -184,35 +184,35 @@ cases(1).videoFile = "E:\March Re 90,000 inception data\Processed images\Smooth 
 
 cases(2).name      = "12um";
 cases(2).Re        = 95000;
-cases(2).kDh       = 12;
+cases(2).kD       = 0.080;
 cases(2).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S100\P10S100_48lit.xml";
 cases(2).pixelSize = 0.00375009375;
 cases(2).dt        = 1/102247;
 
 cases(3).name      = "20um";
 cases(3).Re        = 95000;
-cases(3).kDh       = 20;
+cases(3).kD       = 0.141;
 cases(3).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S70\P10S70_48lit.xml";
 cases(3).pixelSize = 0.00375009375;
 cases(3).dt        = 1/102247;
 
 cases(4).name      = "30um";
 cases(4).Re        = 95000;
-cases(4).kDh       = 30;
+cases(4).kD       = 0.267;
 cases(4).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S50\P10S50_48lit.xml";
 cases(4).pixelSize = 0.00375009375;
 cases(4).dt        = 1/102247;
 
 cases(5).name      = "53um";
 cases(5).Re        = 95000;
-cases(5).kDh       = 53;
+cases(5).kD       = 0.444;
 cases(5).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S30\P10S30_48lit.xml";
 cases(5).pixelSize = 0.00375009375;
 cases(5).dt        = 1/102247;
 
 cases(6).name      = "80um";
 cases(6).Re        = 95000;
-cases(6).kDh       = 80;
+cases(6).kD       = 0.720;
 cases(6).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S20\P10S20_48lit.xml";
 cases(6).pixelSize = 0.00375009375;
 cases(6).dt        = 1/102247;
@@ -233,7 +233,7 @@ end
 % Example second Reynolds set (uncomment/edit as needed)
 % cases(7).name      = "5um";
 % cases(7).Re        = 124000;
-% cases(7).kDh       = 0.0005;
+% cases(7).kD       = 0.0005;
 % cases(7).xmlFile   = "<path_to_Re124k_case_5um.xml>";
 % cases(7).pixelSize = 0.00375009375;
 % cases(7).dt        = 1/102247;
@@ -251,7 +251,7 @@ summaryRows = table();
 allLoc = struct();
 allLoc.caseName = strings(0,1);
 allLoc.Re       = nan(0,1);
-allLoc.kDh      = nan(0,1);
+allLoc.kD      = nan(0,1);
 allLoc.pixelSize = nan(0,1);
 allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving + microbubble-rescue tracks
 
@@ -267,7 +267,7 @@ if plotOpts.makeVideoOverlayGifs && plotOpts.saveVideoOverlayGifs && ~isfolder(v
 allSize = struct();
 allSize.caseName = strings(0,1);
 allSize.Re       = nan(0,1);
-allSize.kDh      = nan(0,1);
+allSize.kD      = nan(0,1);
 allSize.size_eqd = cell(0,1);
 
 gateSummaryRows = table();
@@ -276,8 +276,8 @@ runTimer = tic;
 
 for i = 1:numel(cases)
     caseTimer = tic;
-    fprintf("\n=== Case %d/%d: %s (Re=%g, k/D_h=%.6g) ===\n", ...
-        i, numel(cases), cases(i).name, cases(i).Re, cases(i).kDh);
+    fprintf("\n=== Case %d/%d: %s (Re=%g, k/d=%.6g) ===\n", ...
+        i, numel(cases), cases(i).name, cases(i).Re, cases(i).kD);
 
     caseKey = build_case_cache_key(cases(i), maxTracksToParse, cachePolicyTag);
     idxCache = find(cacheDB.key == caseKey, 1, 'first');
@@ -349,24 +349,24 @@ for i = 1:numel(cases)
     % Accumulate inception (2x growth) locations for plotting
     allLoc.caseName(end+1,1) = string(cases(i).name);
     allLoc.Re(end+1,1)       = cases(i).Re;
-    allLoc.kDh(end+1,1)      = cases(i).kDh;
+    allLoc.kD(end+1,1)      = cases(i).kD;
     allLoc.pixelSize(end+1,1) = cases(i).pixelSize;
     allLoc.inception2x_xy{end+1,1} = choose_inception_activation_xy(metrics);
 
     % Accumulate upstream-size samples for distribution plot
     allSize.caseName(end+1,1) = string(cases(i).name);
     allSize.Re(end+1,1)       = cases(i).Re;
-    allSize.kDh(end+1,1)      = cases(i).kDh;
+    allSize.kD(end+1,1)      = cases(i).kD;
     allSize.size_eqd{end+1,1} = metrics.upstreamSize_eqd;
 
     gateRow = table( ...
-        string(cases(i).name), cases(i).Re, cases(i).kDh, ...
+        string(cases(i).name), cases(i).Re, cases(i).kD, ...
         g.nTracksTotal, g.nInjected, g.nActivated, ...
         g.nRejectedTooShort, g.nRejectedNonFinite, g.nRejectedNonMonotonicTime, ...
         g.nRejectedTopology, g.nRejectedFlow, g.nRejectedOrigin, ...
         g.nRejectedNoActivation, g.nRejectedWallBand, ...
         g.originThreshold, g.xStartMin, g.xStartMax, ...
-        'VariableNames', {'Case','Re','kDh','nTracksTotal','nInjected','nActivated', ...
+        'VariableNames', {'Case','Re','kD','nTracksTotal','nInjected','nActivated', ...
         'nRejectedTooShort','nRejectedNonFinite','nRejectedNonMonotonicTime', ...
         'nRejectedTopology','nRejectedFlow','nRejectedOrigin', ...
         'nRejectedNoActivation','nRejectedWallBand', ...
@@ -393,14 +393,14 @@ for i = 1:numel(cases)
 
     % Store per-case summary
     row = table( ...
-        string(cases(i).name), cases(i).Re, cases(i).kDh, ...
+        string(cases(i).name), cases(i).Re, cases(i).kD, ...
         metrics.nTracksTotal, nValidTracks, ...
         nStrictRecirculationTracks, nStrictActivatedTracks, ...
         metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
         strictRecirculationFrac_total, strictActivationFrac_valid, ...
         metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, A_over_I_err_low, A_over_I_err_high, ...
         tau_mean_val, tau_std_val, tau_sem, nTauVals, elapsed_case_sec, ...
-        'VariableNames', {'Case','Re','kDh','nTracksTotal','nValidTracks', ...
+        'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
         'nStrictRecirculationTracks','nStrictActivatedTracks', ...
         'strictTrackFrameExposure','strictActivationEventsTotal', ...
         'strictRecirculationFrac_total','strictActivationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
@@ -412,8 +412,8 @@ for i = 1:numel(cases)
     close all force;
 end
 
-% Sort by Re then k/D_h
-summaryRows = sortrows(summaryRows, {'Re','kDh'});
+% Sort by Re then k/d
+summaryRows = sortrows(summaryRows, {'Re','kD'});
 
 % Save summary table
 summaryCsv = fullfile(resultsDir, "Summary_tracks.csv");
@@ -421,14 +421,14 @@ write_table_csv_compat(summaryRows, summaryCsv);
 fprintf("\nSaved: %s\n", summaryCsv);
 
 if ~isempty(gateSummaryRows)
-    gateSummaryRows = sortrows(gateSummaryRows, {'Re','kDh'});
+    gateSummaryRows = sortrows(gateSummaryRows, {'Re','kD'});
     gateSummaryCsv = fullfile(resultsDir, "track_gate_summary.csv");
     write_table_csv_compat(gateSummaryRows, gateSummaryCsv);
     fprintf("Saved: %s\n", gateSummaryCsv);
 end
 
-%% ---------------- PLOT 1: A/I vs k/D_h (per Re) ----------------
-fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kDh_by_Re.txt");
+%% ---------------- PLOT 1: A/I vs k/d (per Re) ----------------
+fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kD_by_Re.txt");
 plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
 
 %% ---------------- PLOT 2: Inception (2x growth) locations ----------------
@@ -436,7 +436,7 @@ locFigOutDir = fullfile(figDir, "InceptionLocations");
 if ~isfolder(locFigOutDir), mkdir(locFigOutDir); end
 plot_inception_locations_by_re(allLoc, locFigOutDir, plotOpts);
 
-%% ---------------- PLOT 3: mean residence time Tau vs k/D_h ----------------
+%% ---------------- PLOT 3: mean residence time Tau vs k/d ----------------
 plot_tau_vs_kdh_re(summaryRows, figDir, plotOpts);
 
 %% ---------------- PLOT 4: upstream moving microbubble size distributions ----------------
@@ -511,7 +511,7 @@ frameTbl = table( ...
     'cumExposure_netLeftLegacy','cumActivationEvents_netLeftLegacy'});
 
 caseToken = sanitize_case_token(caseDef.name);
-outCsv = fullfile(resultsDir, sprintf('framewise_counts_%s_Re_%g_kDh_%g.csv', caseToken, caseDef.Re, caseDef.kDh));
+outCsv = fullfile(resultsDir, sprintf('framewise_counts_%s_Re_%g_kD_%g.csv', caseToken, caseDef.Re, caseDef.kD));
 write_table_csv_compat(frameTbl, outCsv);
 fprintf("Saved: %s\n", outCsv);
 end

@@ -67,7 +67,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             yMaxPlot = max(yMaxPlot, max(fhat));
 
             lgd(end+1,1) = hFill; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/D_h=%.4g', allSize.caseName(ci), allSize.kDh(ci)); %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', allSize.caseName(ci), allSize.kD(ci)); %#ok<AGROW>
         end
 
         xlim(ax, xLimUse);

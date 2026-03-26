@@ -101,7 +101,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     nTrackTotal = numel(unique([leftTrackIds(:); microTrackIds(:)]));
 
     title(ax, sprintf('Track diagnostics | k/Dh %.4g | Re %g | AE %d | tracks %d', ...
-        caseDef.kDh, caseDef.Re, actTotal, nTrackTotal));
+        caseDef.kD, caseDef.Re, actTotal, nTrackTotal));
     grid(ax, 'on');
     box(ax, 'on');
 
@@ -129,7 +129,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
 
-    outBase = fullfile(outDir, sprintf('TrackDiagnostics_%s_Re_%g_kDh_%g_%s', char(caseDef.name), caseDef.Re, caseDef.kDh, char(theme)));
+    outBase = fullfile(outDir, sprintf('TrackDiagnostics_%s_Re_%g_kD_%g_%s', char(caseDef.name), caseDef.Re, caseDef.kD, char(theme)));
     save_fig_dual_safe(f, outBase, plotOpts);
     close(f);
 end

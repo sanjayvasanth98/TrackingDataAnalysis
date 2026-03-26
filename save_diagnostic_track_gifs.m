@@ -27,7 +27,7 @@ if isempty(allFrames)
     return;
 end
 
-gifPath = fullfile(outDir, sprintf('%s_Re_%g_kDh_%g_all_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kDh));
+gifPath = fullfile(outDir, sprintf('%s_Re_%g_kD_%g_all_tracks.gif', char(caseDef.name), caseDef.Re, caseDef.kD));
 
 [activationXY, activationFrames, activationTrackIds] = activation_arrays(metrics);
 [leftMaskSelected, selectedLeftTrackIds] = resolve_leftmoving_selection(metrics, trackCatalog, selectedIdx);

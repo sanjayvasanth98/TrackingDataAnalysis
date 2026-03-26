@@ -29,9 +29,9 @@ for theme = reshape(plotOpts.themes, 1, [])
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
         sub = summaryTable(summaryTable.Re == Rei, :);
-        sub = sortrows(sub, 'kDh');
+        sub = sortrows(sub, 'kD');
 
-        x = sub.kDh(:);
+        x = sub.kD(:);
         y = sub.tau_mean(:);
         e = sub.tau_std(:);
 
@@ -58,9 +58,9 @@ for theme = reshape(plotOpts.themes, 1, [])
         lgdTxt(end+1,1) = sprintf('Re=%g', Rei); %#ok<AGROW>
     end
 
-    xlabel(ax, '$k/D_h$', 'Interpreter', 'latex');
+    xlabel(ax, '$k/d$', 'Interpreter', 'latex');
     ylabel(ax, '$\tau\;(\mathrm{s})$', 'Interpreter', 'latex');
-    title(ax, 'Average upstream residence time vs k/D_h');
+    title(ax, 'Average upstream residence time vs k/d');
     grid(ax, 'on');
     box(ax, 'on');
 
@@ -73,7 +73,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
 
-    outBase = fullfile(figDir, "Tau_vs_kDh_by_Re_" + theme);
+    outBase = fullfile(figDir, "Tau_vs_kD_by_Re_" + theme);
     save_fig_dual_safe(f, outBase, plotOpts);
     close(f);
 end

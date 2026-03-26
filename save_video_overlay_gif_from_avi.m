@@ -134,7 +134,7 @@ if isfield(plotOpts, 'inceptionImageSize_px') && numel(plotOpts.inceptionImageSi
     figPos = [120 120 round(sz(1)) round(sz(2))];
 end
 
-gifPath = fullfile(outDir, sprintf('%s_Re_%g_kDh_%g_video_overlay.gif', char(caseDef.name), caseDef.Re, caseDef.kDh));
+gifPath = fullfile(outDir, sprintf('%s_Re_%g_kD_%g_video_overlay.gif', char(caseDef.name), caseDef.Re, caseDef.kD));
 
 f = figure('Color', 'w', 'Position', figPos, 'Visible', 'off');
 ax = axes(f);

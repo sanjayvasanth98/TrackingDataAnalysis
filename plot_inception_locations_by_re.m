@@ -24,6 +24,10 @@ if isempty(pixelSizeVals)
 end
 
 yExtent_mm = plotOpts.inceptionImageSize_px(2) * median(pixelSizeVals);
+
+% Throat height used for normalization
+throatHeight_mm = 10;
+
 xLim = [0 5];
 if isfield(plotOpts, 'inceptionXLim_mm') && numel(plotOpts.inceptionXLim_mm) >= 2
     xLim = double(plotOpts.inceptionXLim_mm(1:2));
@@ -32,6 +36,11 @@ yLim = [0 1.2];
 if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 2
     yLim = double(plotOpts.inceptionYLim_mm(1:2));
 end
+
+% Normalized limits (x/H and y/H)
+xLimNorm = xLim / throatHeight_mm;
+xLimNorm(2) = min(xLimNorm(2), 0.5);  % restrict x/H to 0.5
+yLimNorm = yLim / throatHeight_mm;
 
 hasPoints = false;
 for i = 1:nCases
@@ -48,14 +57,14 @@ end
 for theme = reshape(plotOpts.themes, 1, [])
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
-
-        f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
-        ax = axes(f);
-        hold(ax, 'on');
-
         idxRe = find(allLoc.Re == Rei);
         nReCases = numel(idxRe);
         cmap = lines(max(nReCases, 1));
+
+        % --- Plot 1: dimensional (mm) ---
+        f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
+        ax = axes(f);
+        hold(ax, 'on');
 
         lgd = gobjects(0,1);
         lgdTxt = strings(0,1);
@@ -63,44 +72,79 @@ for theme = reshape(plotOpts.themes, 1, [])
         for j = 1:nReCases
             ci = idxRe(j);
             xy = allLoc.inception2x_xy{ci};
-            if isempty(xy)
-                continue;
-            end
+            if isempty(xy), continue; end
 
             yPlot = yExtent_mm - xy(:,2);
-
             h = scatter(ax, xy(:,1), yPlot, 34, ...
                 'Marker', 'o', ...
                 'MarkerEdgeColor', 'none', ...
                 'MarkerFaceColor', cmap(j,:));
-
             lgd(end+1,1) = h; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/D_h=%.4g', allLoc.caseName(ci), allLoc.kDh(ci)); %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', allLoc.caseName(ci), allLoc.kD(ci)); %#ok<AGROW>
         end
 
         xlim(ax, xLim);
         ylim(ax, yLim);
-        set(ax, ...
-            'XLimMode', 'manual', ...
-            'YLimMode', 'manual', ...
-            'DataAspectRatioMode', 'auto', ...
-            'PlotBoxAspectRatioMode', 'auto');
+        set(ax, 'XLimMode', 'manual', 'YLimMode', 'manual', ...
+            'DataAspectRatioMode', 'auto', 'PlotBoxAspectRatioMode', 'auto');
         xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
         ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
         title(ax, sprintf('Activation locations on left-moving tracks, Re=%g', Rei));
-        grid(ax, 'on');
-        box(ax, 'on');
+        grid(ax, 'on'); box(ax, 'on');
 
         if ~isempty(lgd)
             leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'eastoutside', 'Box', 'off');
         else
             leg = [];
         end
-
         apply_plot_theme(ax, char(theme));
         style_legend_for_theme(leg, char(theme));
 
         outBase = fullfile(outDir, sprintf('Inception2x_locations_Re_%g_%s', Rei, theme));
+        save_fig_dual_safe(f, outBase, plotOpts);
+        close(f);
+
+        % --- Plot 2: normalized by throat height (x/H, y/H) ---
+        f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
+        ax = axes(f);
+        hold(ax, 'on');
+
+        lgd = gobjects(0,1);
+        lgdTxt = strings(0,1);
+
+        for j = 1:nReCases
+            ci = idxRe(j);
+            xy = allLoc.inception2x_xy{ci};
+            if isempty(xy), continue; end
+
+            xPlot = xy(:,1) / throatHeight_mm;
+            yPlot = (yExtent_mm - xy(:,2)) / throatHeight_mm;
+            h = scatter(ax, xPlot, yPlot, 34, ...
+                'Marker', 'o', ...
+                'MarkerEdgeColor', 'none', ...
+                'MarkerFaceColor', cmap(j,:));
+            lgd(end+1,1) = h; %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', allLoc.caseName(ci), allLoc.kD(ci)); %#ok<AGROW>
+        end
+
+        xlim(ax, xLimNorm);
+        ylim(ax, yLimNorm);
+        set(ax, 'XLimMode', 'manual', 'YLimMode', 'manual', ...
+            'DataAspectRatioMode', 'auto', 'PlotBoxAspectRatioMode', 'auto');
+        xlabel(ax, '$x/H$', 'Interpreter', 'latex');
+        ylabel(ax, '$y/H$', 'Interpreter', 'latex');
+        title(ax, sprintf('Activation locations on left-moving tracks, Re=%g', Rei));
+        grid(ax, 'on'); box(ax, 'on');
+
+        if ~isempty(lgd)
+            leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'eastoutside', 'Box', 'off');
+        else
+            leg = [];
+        end
+        apply_plot_theme(ax, char(theme));
+        style_legend_for_theme(leg, char(theme));
+
+        outBase = fullfile(outDir, sprintf('Inception2x_locations_normalized_Re_%g_%s', Rei, theme));
         save_fig_dual_safe(f, outBase, plotOpts);
         close(f);
     end

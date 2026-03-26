@@ -6,7 +6,7 @@ end
 
 ReVals = unique(summaryTable.Re(:));
 if isempty(ReVals)
-    warning('No rows found in summary table. Skipping A/I vs k/D_h plot.');
+    warning('No rows found in summary table. Skipping A/I vs k/d plot.');
     return;
 end
 
@@ -15,12 +15,12 @@ fid = fopen(fitTxtFile, 'w');
 if fid < 0
     warning('Could not open fit text file: %s', fitTxtFile);
 else
-    fprintf(fid, 'Fit model by Re: log10(A/I) = a + b*(k/D_h)\n\n');
+    fprintf(fid, 'Fit model by Re: log10(A/I) = a + b*(k/d)\n\n');
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
         sub = summaryTable(summaryTable.Re == Rei, :);
-        sub = sortrows(sub, 'kDh');
-        x = sub.kDh(:);
+        sub = sortrows(sub, 'kD');
+        x = sub.kD(:);
         y = sub.A_over_I(:);
         valid = isfinite(x) & isfinite(y) & (y > 0);
         x = x(valid);
@@ -38,7 +38,7 @@ else
             fprintf(fid, 'a = %.8g\n', a);
             fprintf(fid, 'b = %.8g\n', b);
             fprintf(fid, 'R2 = %.6f\n', R2);
-            fprintf(fid, 'A/I = %.8g * 10^(%.8g * (k/D_h))\n\n', 10^a, b);
+            fprintf(fid, 'A/I = %.8g * 10^(%.8g * (k/d))\n\n', 10^a, b);
         else
             fprintf(fid, 'Re = %g\n', Rei);
             fprintf(fid, 'Not enough points for fit (need >=2).\n\n');
@@ -62,9 +62,9 @@ for theme = reshape(plotOpts.themes, 1, [])
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
         sub = summaryTable(summaryTable.Re == Rei, :);
-        sub = sortrows(sub, 'kDh');
+        sub = sortrows(sub, 'kD');
 
-        x = sub.kDh(:);
+        x = sub.kD(:);
         y = sub.A_over_I(:);
         ciLow = sub.A_over_I_ci_low(:);
         ciHigh = sub.A_over_I_ci_high(:);
@@ -115,9 +115,9 @@ for theme = reshape(plotOpts.themes, 1, [])
         end
     end
 
-    xlabel(ax, '$k/D_h$', 'Interpreter', 'latex');
+    xlabel(ax, '$k/d$', 'Interpreter', 'latex');
     ylabel(ax, '$A/I$', 'Interpreter', 'latex');
-    title(ax, 'Activation/Injection vs k/D_h');
+    title(ax, 'Activation/Injection vs k/d');
     set(ax, 'YScale', 'log');
     grid(ax, 'on');
     box(ax, 'on');
@@ -131,7 +131,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
 
-    outBase = fullfile(figDir, "AI_vs_kDh_by_Re_" + theme);
+    outBase = fullfile(figDir, "AI_vs_kD_by_Re_" + theme);
     save_fig_dual_safe(f, outBase, plotOpts);
     close(f);
 end

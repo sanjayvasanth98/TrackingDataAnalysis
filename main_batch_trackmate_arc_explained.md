@@ -26,7 +26,7 @@ At the end it writes:
 
 - `Summary_tracks.csv` (primary per-case physics table)
 - `track_gate_summary.csv` (strict legacy gating audit)
-- `framewise_counts_<case>_Re_<...>_kDh_<...>.csv` (per-frame denominator/numerator traces)
+- `framewise_counts_<case>_Re_<...>_kD_<...>.csv` (per-frame denominator/numerator traces)
 - figure outputs in `Figures_PNG_SVG/...`
 
 ## 2) High-level data flow
@@ -83,7 +83,7 @@ These are used both for computation and cache-policy hashing.
 
 Each case includes:
 
-- `name`, `Re`, `kDh`
+- `name`, `Re`, `kD`
 - `xmlFile`, `pixelSize`, `dt`
 - optional `diagnosticTrackIds` (empty means all tracks for GIF diagnostics)
 
@@ -106,14 +106,14 @@ Then it closes figures and continues.
 
 After all cases:
 
-- Sort rows by `Re`, `kDh`.
+- Sort rows by `Re`, `kD`.
 - Write:
   - `Summary_tracks.csv`
   - `track_gate_summary.csv`
 - Plot:
-  - A/I vs kDh (`plot_ai_vs_kdh_re`)
+  - A/I vs kD (`plot_ai_vs_kdh_re`)
   - Inception map (`plot_inception_locations_by_re`)
-  - Tau vs kDh (`plot_tau_vs_kdh_re`)
+  - Tau vs kD (`plot_tau_vs_kdh_re`)
   - Upstream size distributions (`plot_upstream_size_distribution_by_re`)
 - Save updated cache if anything was reparsed.
 
@@ -274,7 +274,7 @@ Outputs are stored with `_strictLegacy` suffix.
 
 Key groups:
 
-- case metadata: `Case, Re, kDh`
+- case metadata: `Case, Re, kD`
 - track counts:
   - `nTracksTotal`
   - `nValidTracks`
