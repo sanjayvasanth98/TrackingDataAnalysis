@@ -100,7 +100,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     actTotal = size(actXY, 1);
     nTrackTotal = numel(unique([leftTrackIds(:); microTrackIds(:)]));
 
-    title(ax, sprintf('Track diagnostics | k/Dh %.4g | Re %g | AE %d | tracks %d', ...
+    title(ax, sprintf('Track diagnostics | k/d %.4g | Re %g | AE %d | tracks %d', ...
         caseDef.kD, caseDef.Re, actTotal, nTrackTotal));
     grid(ax, 'on');
     box(ax, 'on');
@@ -113,7 +113,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
     if ~isempty(hMicro)
         lgdHandles(end+1,1) = hMicro(1); %#ok<AGROW>
-        lgdLabels(end+1,1) = "Microbubble start 1-120"; %#ok<AGROW>
+        lgdLabels(end+1,1) = "Microbubbles (1-120\mum)"; %#ok<AGROW>
     end
     if ~isempty(hAct)
         lgdHandles(end+1,1) = hAct; %#ok<AGROW>
