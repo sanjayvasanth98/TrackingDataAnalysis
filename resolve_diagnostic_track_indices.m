@@ -17,13 +17,20 @@ end
 
 trackIds = [trackCatalog.TRACK_ID];
 excludedMask = false(numel(trackCatalog), 1);
-if isfield(trackCatalog, 'isOriginExcludedBox')
-    for i = 1:numel(trackCatalog)
+for i = 1:numel(trackCatalog)
+    % Exclude origin-box tracks
+    if isfield(trackCatalog, 'isOriginExcludedBox')
         v = trackCatalog(i).isOriginExcludedBox;
-        if islogical(v)
-            excludedMask(i) = any(v(:));
-        elseif isnumeric(v)
-            excludedMask(i) = any(v(:) ~= 0);
+        if (islogical(v) && any(v(:))) || (isnumeric(v) && any(v(:) ~= 0))
+            excludedMask(i) = true;
+            continue;
+        end
+    end
+    % Exclude tracks that are not basic-valid (short, non-finite, etc.)
+    if isfield(trackCatalog, 'isBasicValid')
+        v = trackCatalog(i).isBasicValid;
+        if (islogical(v) && ~any(v(:))) || (isnumeric(v) && ~any(v(:) ~= 0))
+            excludedMask(i) = true;
         end
     end
 end

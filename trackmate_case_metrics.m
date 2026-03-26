@@ -63,6 +63,7 @@ gateStats.nTracksTotal = nTotal;
 gateStats.nRejectedTooShort = 0;
 gateStats.nRejectedNonFinite = 0;
 gateStats.nRejectedNonMonotonicTime = 0;
+gateStats.nRejectedExcessiveYStep = 0;
 gateStats.nRejectedOriginWindow = 0;
 gateStats.nRejectedTopology = 0;
 gateStats.nRejectedFlow = 0;
@@ -197,6 +198,10 @@ for k = 1:nTotal
     end
     if prep(k).isNonMonotonicTime
         gateStats.nRejectedNonMonotonicTime = gateStats.nRejectedNonMonotonicTime + 1;
+        continue;
+    end
+    if prep(k).isExcessiveYStep
+        gateStats.nRejectedExcessiveYStep = gateStats.nRejectedExcessiveYStep + 1;
         continue;
     end
 
@@ -484,6 +489,7 @@ tpl = struct( ...
     'isShort', false, ...
     'isNonFinite', false, ...
     'isNonMonotonicTime', false, ...
+    'isExcessiveYStep', false, ...
     'isBasicValid', false, ...
     'isLeftMoving', false, ...
     'idxJump', NaN, ...
@@ -567,6 +573,15 @@ end
 
 if prep.isShort
     return;
+end
+
+% Reject tracks with excessive per-step y-displacement (mis-linked spots)
+if qcOpts.maxStepDy_mm > 0
+    dySteps = abs(diff(prep.y));
+    if any(dySteps > qcOpts.maxStepDy_mm)
+        prep.isExcessiveYStep = true;
+        return;
+    end
 end
 
 prep.isBasicValid = true;
@@ -1369,6 +1384,7 @@ qcOpts.wallBandYLimits_mm = [];
 qcOpts.excludeOriginBoxEnabled = false;
 qcOpts.excludeOriginBoxX_mm = [0 0.5];
 qcOpts.excludeOriginBoxY_mm = [0 1.2];
+qcOpts.maxStepDy_mm = 0.1;
 end
 
 function flowOpts = default_flow_opts()
