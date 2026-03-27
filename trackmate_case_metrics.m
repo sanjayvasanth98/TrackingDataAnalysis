@@ -320,8 +320,8 @@ metrics = pack_metrics();
 
         strictTrackFrameExposure = sum(strictFrameVisible);
         strictActivationEventsTotal = sum(strictFrameActEvents);
-        A_over_I = strictActivationEventsTotal / max(strictTrackFrameExposure, 1);
-        [A_over_I_ci_low, A_over_I_ci_high] = wilson_ci(strictActivationEventsTotal, strictTrackFrameExposure, 0.95);
+        A_over_I = strictActivationEventsTotal / max(nStrictPrimaryTracks, 1);
+        [A_over_I_ci_low, A_over_I_ci_high] = wilson_ci(strictActivationEventsTotal, nStrictPrimaryTracks, 0.95);
 
         nNetLeftTracks = numel(netLeftTrackIds);
         netLeftActTrackIdsFinite = netLeftActivationEventTrackIds(isfinite(netLeftActivationEventTrackIds));
@@ -331,9 +331,9 @@ metrics = pack_metrics();
         end
         netLeftTrackFrameExposure = sum(netLeftFrameVisible);
         netLeftActivationEventsTotal = sum(netLeftFrameActEvents);
-        A_over_I_netLeftLegacy = netLeftActivationEventsTotal / max(netLeftTrackFrameExposure, 1);
+        A_over_I_netLeftLegacy = netLeftActivationEventsTotal / max(nNetLeftTracks, 1);
         [A_over_I_ci_low_netLeftLegacy, A_over_I_ci_high_netLeftLegacy] = ...
-            wilson_ci(netLeftActivationEventsTotal, netLeftTrackFrameExposure, 0.95);
+            wilson_ci(netLeftActivationEventsTotal, nNetLeftTracks, 0.95);
 
         microTrackIdsFinite = microRescueTrackIds(isfinite(microRescueTrackIds));
         nMicroRescueTracks = numel(unique(microTrackIdsFinite));

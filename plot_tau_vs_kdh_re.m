@@ -57,7 +57,7 @@ for r = 1:numel(ReVals)
 
     x = sub.kD(:);
     y = sub.tau_mean(:) * yScale;
-    e = sub.tau_std(:) * yScale;
+    e = sub.tau_sem(:) * yScale;  % SEM: uncertainty in the mean
 
     valid = isfinite(x) & isfinite(y);
     x = x(valid);
@@ -69,8 +69,9 @@ for r = 1:numel(ReVals)
     end
 
     e(~isfinite(e)) = 0;
+    eLow = min(e, y);  % clip lower error bar at zero (tau >= 0)
 
-    h = errorbar(ax, x, y, e, 'o', ...
+    h = errorbar(ax, x, y, eLow, e, 'o', ...
         'LineStyle', 'none', ...
         'LineWidth', 0.75, ...
         'MarkerSize', 12, ...

@@ -201,6 +201,7 @@ cases(2).kD       = 0.080;
 cases(2).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S100\P10S100_48lit.xml";
 cases(2).pixelSize = 0.00375009375;
 cases(2).dt        = 1/102247;
+cases(2).videoFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\P10S100 2000.avi";
 
 cases(3).name      = "20um";
 cases(3).Re        = 95000;
@@ -208,6 +209,7 @@ cases(3).kD       = 0.141;
 cases(3).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S70\P10S70_48lit.xml";
 cases(3).pixelSize = 0.00375009375;
 cases(3).dt        = 1/102247;
+cases(3).videoFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\P10S70 2000.avi";
 
 cases(4).name      = "30um";
 cases(4).Re        = 95000;
@@ -215,6 +217,7 @@ cases(4).kD       = 0.267;
 cases(4).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S50\P10S50_48lit.xml";
 cases(4).pixelSize = 0.00375009375;
 cases(4).dt        = 1/102247;
+cases(4).videoFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\P10S50 2000.avi";
 
 cases(5).name      = "53um";
 cases(5).Re        = 95000;
@@ -222,6 +225,7 @@ cases(5).kD       = 0.444;
 cases(5).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S30\P10S30_48lit.xml";
 cases(5).pixelSize = 0.00375009375;
 cases(5).dt        = 1/102247;
+cases(5).videoFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\P10S30 2000.avi";
 
 cases(6).name      = "80um";
 cases(6).Re        = 95000;
@@ -229,6 +233,7 @@ cases(6).kD       = 0.720;
 cases(6).xmlFile   = "E:\March Re 90,000 inception data\Processed images\P10S20\P10S20_48lit.xml";
 cases(6).pixelSize = 0.00375009375;
 cases(6).dt        = 1/102247;
+cases(6).videoFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\P10S20 2000.avi";
 
 for ci = 1:numel(cases)
     cases(ci).diagnosticTrackIds = []; % empty = all parsed tracks in this case; otherwise list TRACK_IDs
@@ -404,19 +409,28 @@ for i = 1:numel(cases)
     elapsed_case_sec = toc(caseTimer);
     fprintf('Case elapsed: %.2f s (%s)\n', elapsed_case_sec, format_elapsed_hms(elapsed_case_sec));
 
+    % Microbubble (green track) activation events
+    nMicroAE = 0;
+    if isfield(metrics, 'microbubbleActivationEvent_frame_nonLeft') && ~isempty(metrics.microbubbleActivationEvent_frame_nonLeft)
+        nMicroAE = numel(metrics.microbubbleActivationEvent_frame_nonLeft);
+    end
+    nTotalAE = metrics.strictActivationEventsTotal + nMicroAE;
+
     % Store per-case summary
     row = table( ...
         string(cases(i).name), cases(i).Re, cases(i).kD, ...
         metrics.nTracksTotal, nValidTracks, ...
         nStrictRecirculationTracks, nStrictActivatedTracks, ...
         metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
+        nMicroAE, nTotalAE, ...
         strictRecirculationFrac_total, strictActivationFrac_valid, ...
         metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, A_over_I_err_low, A_over_I_err_high, ...
         tau_mean_val, tau_std_val, tau_sem, nTauVals, elapsed_case_sec, ...
         'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
-        'nStrictRecirculationTracks','nStrictActivatedTracks', ...
-        'strictTrackFrameExposure','strictActivationEventsTotal', ...
-        'strictRecirculationFrac_total','strictActivationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
+        'nLeftMovingTracks','nLeftMovingActivated', ...
+        'leftMovingFrameExposure','AE_leftMoving', ...
+        'AE_microbubble','AE_total', ...
+        'leftMovingFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
         'tau_mean','tau_std','tau_sem','nTau','elapsed_case_sec'});
 
     summaryRows = [summaryRows; row]; %#ok<AGROW>
