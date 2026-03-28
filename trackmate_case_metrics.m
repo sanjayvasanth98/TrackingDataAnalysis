@@ -167,7 +167,7 @@ for k = 1:nTotal
 
     if nUse >= 1
         areaUse = prep(k).areaVals(1:nUse);
-        eqd = sqrt(4 .* areaUse ./ pi);
+        eqd = sqrt(4 .* areaUse ./ pi) * activationOpts.pixelSize; % px -> mm
         eqd = eqd(isfinite(eqd) & eqd > 0);
         if ~isempty(eqd)
             netLeftUpstreamSize_eqd = [netLeftUpstreamSize_eqd; eqd(:)]; %#ok<AGROW>
@@ -242,7 +242,7 @@ for k = 1:nTotal
     end
     if nUse >= 1
         areaUse = prep(k).areaVals(1:nUse);
-        eqd = sqrt(4 .* areaUse ./ pi);
+        eqd = sqrt(4 .* areaUse ./ pi) * activationOpts.pixelSize; % px -> mm
         eqd = eqd(isfinite(eqd) & eqd > 0);
         if ~isempty(eqd)
             strictUpstreamSize_eqd = [strictUpstreamSize_eqd; eqd(:)]; %#ok<AGROW>

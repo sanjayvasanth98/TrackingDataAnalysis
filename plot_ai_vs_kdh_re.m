@@ -118,7 +118,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     xlabel(ax, '$k/d$', 'Interpreter', 'latex');
     ylabel(ax, '$A/I$', 'Interpreter', 'latex');
     title(ax, 'Activation/Injection vs k/d', 'FontName', 'Times New Roman', 'FontSize', 12);
-    set(ax, 'YScale', 'log');
+    set(ax, 'YScale', 'linear');
     grid(ax, 'off');
     box(ax, 'on');
 

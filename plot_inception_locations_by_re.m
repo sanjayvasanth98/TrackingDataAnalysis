@@ -28,7 +28,7 @@ yExtent_mm = plotOpts.inceptionImageSize_px(2) * median(pixelSizeVals);
 % Throat height used for normalization
 throatHeight_mm = 10;
 
-xLim = [0 5];
+xLim = [0 4.8];
 if isfield(plotOpts, 'inceptionXLim_mm') && numel(plotOpts.inceptionXLim_mm) >= 2
     xLim = double(plotOpts.inceptionXLim_mm(1:2));
 end

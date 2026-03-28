@@ -39,7 +39,7 @@ end
 
 yExtent_mm = plotOpts.inceptionImageSize_px(2) * caseDef.pixelSize;
 trailLength = max(1, round(plotOpts.diagnosticGifTrailLength));
-xLim = [0 5];
+xLim = [0 4.8];
 yLim = [0 1.2];
 if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 2
     yLim = double(plotOpts.inceptionYLim_mm(1:2));
@@ -113,7 +113,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     lgdLabels = strings(0,1);
     if ~isempty(hTrack)
         lgdHandles(end+1,1) = hTrack(1); %#ok<AGROW>
-        lgdLabels(end+1,1) = "Left moving"; %#ok<AGROW>
+        lgdLabels(end+1,1) = "Upstream tracks"; %#ok<AGROW>
     end
     if ~isempty(hMicro)
         lgdHandles(end+1,1) = hMicro(1); %#ok<AGROW>

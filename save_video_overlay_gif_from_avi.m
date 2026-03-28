@@ -132,8 +132,9 @@ end
 
 gifPath = fullfile(outDir, sprintf('%s_Re_%g_kD_%g_video_overlay.gif', char(caseDef.name), caseDef.Re, caseDef.kD));
 
-f = figure('Color', 'w', 'Position', figPos, 'Visible', 'off');
+f = figure('Color', 'k', 'Position', figPos, 'Visible', 'off');
 ax = axes(f);
+set(ax, 'Color', 'k', 'XColor', 'w', 'YColor', 'w');
 savedFrames = 0;
 for ii = 1:numel(frameIdxToRender)
     frameIdx = frameIdxToRender(ii);
@@ -205,6 +206,16 @@ for ii = 1:numel(frameIdxToRender)
             'MarkerEdgeColor', 'none');
     end
 
+    % Legend proxy handles
+    hBlue  = plot(ax, NaN, NaN, '-', 'Color', [0 0 1], 'LineWidth', 1.0);
+    hGreen = plot(ax, NaN, NaN, '-', 'Color', [0 0.60 0.10], 'LineWidth', 1.0);
+    hRed   = plot(ax, NaN, NaN, 'o', 'MarkerFaceColor', [0.9 0.15 0.1], 'MarkerEdgeColor', 'none', 'MarkerSize', 6);
+    leg = legend(ax, [hRed, hBlue, hGreen], ...
+        {'Activation', 'Upstream tracks', 'Microbubbles (1-120\mum)'}, ...
+        'Location', 'northwest', 'Box', 'off', ...
+        'FontName', 'Times New Roman', 'FontSize', 8, ...
+        'TextColor', 'w');
+
     xlim(ax, xLim);
     ylim(ax, yLim);
     set(ax, ...
@@ -215,11 +226,13 @@ for ii = 1:numel(frameIdxToRender)
         'XTickMode', 'manual', ...
         'YTickMode', 'manual', ...
         'DataAspectRatioMode', 'auto', ...
-        'PlotBoxAspectRatioMode', 'auto');
-    xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
-    ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
-    grid(ax, 'on');
+        'PlotBoxAspectRatioMode', 'auto', ...
+        'Color', 'k', 'XColor', 'w', 'YColor', 'w');
+    xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'w');
+    ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'w');
+    grid(ax, 'off');
     box(ax, 'on');
+    set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
 
     drawnow;
     fr = getframe(f);

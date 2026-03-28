@@ -31,7 +31,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             pooledX = [];
             for j = 1:numel(idxRe)
                 xCase = allSize.size_eqd{idxRe(j)};
-                xCase = xCase(isfinite(xCase) & xCase > 0) / 1000;
+                xCase = xCase(isfinite(xCase) & xCase > 0) * 1000; % mm -> um
                 if ~isempty(xCase)
                     pooledX = [pooledX; xCase(:)]; %#ok<AGROW>
                 end
@@ -51,7 +51,18 @@ for theme = reshape(plotOpts.themes, 1, [])
         for j = 1:numel(idxRe)
             ci = idxRe(j);
             x = allSize.size_eqd{ci};
-            x = x(isfinite(x) & x > 0) / 1000; % to um
+            x = x(isfinite(x) & x > 0) * 1000; % mm -> um
+
+            if numel(x) < 5
+                continue;
+            end
+
+            % Remove extreme outliers (keep 1st-99th percentile)
+            pLo = percentile_linear(x, 1);
+            pHi = percentile_linear(x, 99);
+            if isfinite(pLo) && isfinite(pHi) && pHi > pLo
+                x = x(x >= pLo & x <= pHi);
+            end
 
             if numel(x) < 5
                 continue;

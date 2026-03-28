@@ -56,7 +56,7 @@ if ~isempty(activationTrackIds)
     end
 end
 
-xLim = [0 5];
+xLim = [0 4.8];
 yLim = [0 1.2];
 if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 2
     yLim = double(plotOpts.inceptionYLim_mm(1:2));
@@ -143,7 +143,7 @@ for fi = 1:numel(allFrames)
     hRed   = plot(ax, NaN, NaN, 'o', 'MarkerFaceColor', [0.9 0.15 0.1], 'MarkerEdgeColor', 'none', 'MarkerSize', 6);
     hGray  = plot(ax, NaN, NaN, '-', 'Color', [0.55 0.55 0.55], 'LineWidth', 1.0);
     legend(ax, [hBlue, hGreen, hRed, hGray], ...
-        {'Left-moving', 'Microbubbles (1-120\mum)', 'Activation event', 'Other tracks'}, ...
+        {'Upstream tracks', 'Microbubbles (1-120\mum)', 'Activation event', 'Other tracks'}, ...
         'Location', 'northwest', 'Box', 'off', ...
         'FontName', 'Times New Roman', 'FontSize', 8);
 
@@ -158,7 +158,7 @@ for fi = 1:numel(allFrames)
         'YTickMode', 'manual', ...
         'DataAspectRatioMode', 'auto', ...
         'PlotBoxAspectRatioMode', 'auto');
-    grid(ax, 'on');
+    grid(ax, 'off');
     box(ax, 'on');
     xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex');
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex');
