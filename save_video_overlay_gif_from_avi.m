@@ -228,7 +228,7 @@ for ii = 1:numel(frameIdxToRender)
         {'Activation', 'Upstream tracks', 'Microbubbles (1-120\mum)'}, ...
         'Location', 'northwest', 'Box', 'off', ...
         'FontName', 'Times New Roman', 'FontSize', 8, ...
-        'TextColor', 'w');
+        'TextColor', 'k');
 
     xlim(ax, xLim);
     ylim(ax, yLim);
@@ -241,9 +241,9 @@ for ii = 1:numel(frameIdxToRender)
         'YTickMode', 'manual', ...
         'DataAspectRatioMode', 'auto', ...
         'PlotBoxAspectRatioMode', 'auto', ...
-        'Color', 'k', 'XColor', 'w', 'YColor', 'w');
-    xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'w');
-    ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'w');
+        'Color', 'w', 'XColor', 'k', 'YColor', 'k');
+    xlabel(ax, '$x\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'k');
+    ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'k');
     grid(ax, 'off');
     box(ax, 'on');
     set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
