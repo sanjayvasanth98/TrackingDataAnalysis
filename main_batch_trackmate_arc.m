@@ -35,8 +35,8 @@ maxTracksToParse = maxTracksChoices(1 + isArc);
 % Local quick-test limit mode: "events" caps left-moving tracks, "frames" caps GIF frames.
 % Toggle between the two depending on what you want to inspect.
 localLimitMode = "frames"; % <---edit: "events" or "frames"
-localEventLimit = 100;     % <---edit: used when localLimitMode = "events"
-localFrameLimit = 500;     % <---edit: used when localLimitMode = "frames"
+localEventLimit = 500;     % <---edit: used when localLimitMode = "events"
+localFrameLimit = 200;     % <---edit: used when localLimitMode = "frames"
 
 if strcmpi(localLimitMode, "events")
     maxLeftMovingTracks = localEventLimit;
@@ -187,9 +187,10 @@ cases = struct([]);
 cases(1).name      = "5um";
 cases(1).Re        = 95000;
 cases(1).kD       = 0.030; % <-- set your k/d
-cases(1).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/smoothvar2_48lit.xml"; % <-- set XML path
+cases(1).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/test_nofilter_smoothvar2_48lit.xml"; % <-- set XML path
 cases(1).pixelSize = 0.00375009375;  % mm/px
 cases(1).dt        = 1/102247;
+cases(1).videoFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/videos/Smooth variation 2000.avi";
 
 cases(2).name      = "12um";
 cases(2).Re        = 95000;
@@ -197,6 +198,7 @@ cases(2).kD       = 0.080;
 cases(2).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S100_48lit.xml";
 cases(2).pixelSize = 0.00375009375;
 cases(2).dt        = 1/102247;
+cases(2).videoFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/videos/P10S100 2000.avi";
 
 cases(3).name      = "20um";
 cases(3).Re        = 95000;
@@ -204,6 +206,7 @@ cases(3).kD       = 0.141;
 cases(3).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S70_48lit.xml";
 cases(3).pixelSize = 0.00375009375;
 cases(3).dt        = 1/102247;
+cases(3).videoFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/videos/P10S70 2000.avi";
 
 cases(4).name      = "30um";
 cases(4).Re        = 95000;
@@ -211,6 +214,7 @@ cases(4).kD       = 0.267;
 cases(4).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S50_48lit.xml";
 cases(4).pixelSize = 0.00375009375;
 cases(4).dt        = 1/102247;
+cases(4).videoFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/videos/P10S50 2000.avi";
 
 cases(5).name      = "53um";
 cases(5).Re        = 95000;
@@ -218,6 +222,7 @@ cases(5).kD       = 0.444;
 cases(5).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S30_48lit.xml";
 cases(5).pixelSize = 0.00375009375;
 cases(5).dt        = 1/102247;
+cases(5).videoFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/videos/P10S30 2000.avi";
 
 cases(6).name      = "80um";
 cases(6).Re        = 95000;
@@ -225,6 +230,7 @@ cases(6).kD       = 0.720;
 cases(6).xmlFile   = "/home/kbsanjayvasanth/Tracking dataanlaysis/xml_files/P10S20_48lit.xml";
 cases(6).pixelSize = 0.00375009375;
 cases(6).dt        = 1/102247;
+cases(6).videoFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/videos/P10S20 2000.avi";
 
 for ci = 1:numel(cases)
     cases(ci).diagnosticTrackIds = []; % empty = all parsed tracks in this case; otherwise list TRACK_IDs
