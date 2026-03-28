@@ -57,20 +57,19 @@ end
 % Marginal histogram settings
 nBins = 40;
 histAlpha = 0.35;
-histFrac = 0.18; % fraction of figure for marginal panels
+histFrac = 0.12; % fraction of figure for marginal panels
 
 for theme = reshape(plotOpts.themes, 1, [])
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
         idxRe = find(allLoc.Re == Rei);
         nReCases = numel(idxRe);
-        cmap = lines(max(nReCases, 1));
+        cmap = inception_colormap(nReCases);
 
         % --- Plot 1: dimensional (mm) ---
         plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
             throatHeight_mm, xLim, yLim, false, nBins, histAlpha, histFrac, ...
             '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
-            sprintf('Activation locations, Re=%g', Rei), ...
             char(theme), ...
             fullfile(outDir, sprintf('Inception2x_locations_Re_%g_%s', Rei, theme)), ...
             plotOpts);
@@ -79,7 +78,6 @@ for theme = reshape(plotOpts.themes, 1, [])
         plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
             throatHeight_mm, xLimNorm, yLimNorm, true, nBins, histAlpha, histFrac, ...
             '$x/H$', '$y/H$', ...
-            sprintf('Activation locations, Re=%g', Rei), ...
             char(theme), ...
             fullfile(outDir, sprintf('Inception2x_locations_normalized_Re_%g_%s', Rei, theme)), ...
             plotOpts);
@@ -91,7 +89,7 @@ end
 %% ---- main plotting helper ----
 function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
     throatHeight_mm, xLim, yLim, doNormalize, nBins, histAlpha, histFrac, ...
-    xLabel, yLabel, titleStr, theme, outBase, plotOpts)
+    xLabel, yLabel, theme, outBase, plotOpts)
 
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px], 'Visible', 'on');
 
@@ -130,25 +128,34 @@ for j = 1:nReCases
         yPts = yExtent_mm - xy(:,2);
     end
 
-    h = scatter(axMain, xPts, yPts, 12, ...
+    h = scatter(axMain, xPts, yPts, 6, ...
         'Marker', 'o', ...
         'MarkerEdgeColor', 'none', ...
         'MarkerFaceColor', cmap(j,:), ...
-        'MarkerFaceAlpha', 0.35);
+        'MarkerFaceAlpha', 0.15);
 
     lgd(end+1,1) = h; %#ok<AGROW>
     lgdTxt(end+1,1) = sprintf('k/d=%.4g', allLoc.kD(ci)); %#ok<AGROW>
 
+    % 2D KDE density contour overlay
+    if numel(xPts) >= 10
+        nGrid = 80;
+        xGrid = linspace(xLim(1), xLim(2), nGrid);
+        yGrid = linspace(yLim(1), yLim(2), nGrid);
+        [Xg, Yg] = meshgrid(xGrid, yGrid);
+        density = kde2d_simple(xPts, yPts, Xg, Yg);
+        contour(axMain, Xg, Yg, density, 3, ...
+            'LineColor', cmap(j,:), 'LineWidth', 0.6);
+    end
+
     % Marginal histograms
     nxCounts = histcounts(xPts, xEdges);
     nyCounts = histcounts(yPts, yEdges);
-    xCenters = (xEdges(1:end-1) + xEdges(2:end)) / 2;
-    yCenters = (yEdges(1:end-1) + yEdges(2:end)) / 2;
 
-    bar(axTop, xCenters, nxCounts, 1, ...
-        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
-    barh(axRight, yCenters, nyCounts, 1, ...
-        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
+    stairs(axTop, xEdges, [nxCounts, nxCounts(end)], '-', ...
+        'Color', cmap(j,:), 'LineWidth', 1.2);
+    stairs(axRight, [nyCounts, nyCounts(end)], yEdges, '-', ...
+        'Color', cmap(j,:), 'LineWidth', 1.2);
 end
 
 % Main axes styling
@@ -156,22 +163,18 @@ xlim(axMain, xLim);
 ylim(axMain, yLim);
 xlabel(axMain, xLabel, 'Interpreter', 'latex');
 ylabel(axMain, yLabel, 'Interpreter', 'latex');
-title(axMain, titleStr, 'FontName', 'Times New Roman', 'FontSize', 12);
 set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual');
-grid(axMain, 'on'); box(axMain, 'on');
-set(axMain, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);
+grid(axMain, 'off'); box(axMain, 'on');
 
 % Top marginal styling
 xlim(axTop, xLim);
 set(axTop, 'XTickLabel', [], 'YTickLabel', [], 'XLimMode', 'manual');
-set(axTop, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);
-box(axTop, 'on');
+grid(axTop, 'off'); box(axTop, 'on');
 
 % Right marginal styling
 ylim(axRight, yLim);
 set(axRight, 'XTickLabel', [], 'YTickLabel', [], 'YLimMode', 'manual');
-set(axRight, 'GridColor', [0.75 0.75 0.75], 'GridAlpha', 0.4);
-box(axRight, 'on');
+grid(axRight, 'off'); box(axRight, 'on');
 
 % Legend inside main axes
 if ~isempty(lgd)
@@ -200,5 +203,68 @@ if strcmp(theme, 'poster')
 else
     leg.TextColor = [0 0 0];
     leg.Color = 'none';
+end
+end
+
+%% ---- distinct colormap for up to 6 cases ----
+function cmap = inception_colormap(n)
+% Hand-picked colors with good visual separation
+colors = [ ...
+    0.85  0.20  0.15;  % red
+    0.00  0.45  0.75;  % blue
+    0.20  0.65  0.15;  % green
+    0.75  0.40  0.85;  % purple
+    0.95  0.55  0.05;  % orange
+    0.00  0.75  0.75;  % teal
+    ];
+if n <= size(colors, 1)
+    cmap = colors(1:n, :);
+else
+    cmap = lines(n);
+end
+end
+
+%% ---- simple 2D kernel density estimator ----
+function density = kde2d_simple(x, y, Xg, Yg)
+% Gaussian KDE on a grid using Silverman bandwidth per axis
+x = x(:); y = y(:);
+n = numel(x);
+
+hx = silverman_bw(x);
+hy = silverman_bw(y);
+
+density = zeros(size(Xg));
+for i = 1:n
+    dx = (Xg - x(i)) / hx;
+    dy = (Yg - y(i)) / hy;
+    density = density + exp(-0.5 * (dx.^2 + dy.^2));
+end
+density = density / (n * 2 * pi * hx * hy);
+end
+
+function h = silverman_bw(x)
+n = numel(x);
+s = std(x, 0);
+iqrVal = prctile_safe(x, 75) - prctile_safe(x, 25);
+scale = min(s, iqrVal / 1.34);
+if ~(isfinite(scale) && scale > 0)
+    scale = max(s, iqrVal / 1.34);
+end
+if ~(isfinite(scale) && scale > 0)
+    scale = 1;
+end
+h = 0.9 * scale * n^(-1/5);
+end
+
+function q = prctile_safe(x, p)
+x = sort(x(isfinite(x)));
+n = numel(x);
+if n == 0, q = NaN; return; end
+idx = 1 + (n - 1) * p / 100;
+i0 = floor(idx); i1 = ceil(idx);
+if i0 == i1
+    q = x(i0);
+else
+    q = x(i0) + (idx - i0) * (x(i1) - x(i0));
 end
 end
