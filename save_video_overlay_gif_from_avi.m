@@ -38,10 +38,24 @@ if isempty(leftIdx) && isempty(microIdx)
 end
 
 [actXY, actFrames, actTrackIds] = activation_events_left_and_micro(metrics);
+minSpotsForActivation = 5;
 if ~isempty(actTrackIds)
     finiteIds = isfinite(actTrackIds);
     if any(finiteIds)
         keepIds = unique([leftTrackIds(:); microTrackIds(:)]);
+        % Only keep activation events from tracks with enough spots
+        longEnoughIds = nan(0,1);
+        allDrawIdx = unique([leftIdx(:); microIdx(:)]);
+        for ti = 1:numel(allDrawIdx)
+            tr = trackCatalog(allDrawIdx(ti));
+            if numel(tr.frame) >= minSpotsForActivation
+                tid = get_track_id(tr);
+                if isfinite(tid)
+                    longEnoughIds(end+1,1) = tid; %#ok<AGROW>
+                end
+            end
+        end
+        keepIds = intersect(keepIds, longEnoughIds);
         keepAct = ismember(actTrackIds, keepIds);
         actXY = actXY(keepAct, :);
         actFrames = actFrames(keepAct);
@@ -132,9 +146,9 @@ end
 
 gifPath = fullfile(outDir, sprintf('%s_Re_%g_kD_%g_video_overlay.gif', char(caseDef.name), caseDef.Re, caseDef.kD));
 
-f = figure('Color', 'k', 'Position', figPos, 'Visible', 'off');
+f = figure('Color', 'w', 'Position', figPos, 'Visible', 'off');
 ax = axes(f);
-set(ax, 'Color', 'k', 'XColor', 'w', 'YColor', 'w');
+set(ax, 'Color', 'w', 'XColor', 'k', 'YColor', 'k');
 savedFrames = 0;
 for ii = 1:numel(frameIdxToRender)
     frameIdx = frameIdxToRender(ii);

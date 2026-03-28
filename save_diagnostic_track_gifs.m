@@ -45,10 +45,23 @@ if ~any(leftMaskSelected) && ~any(microMaskSelected)
     return;
 end
 microBlueState = false(numel(selectedIdx), 1);
+minSpotsForActivation = 5;
 if ~isempty(activationTrackIds)
     finiteIds = isfinite(activationTrackIds);
     if any(finiteIds)
+        % Only keep activation events from tracks with enough spots
         keepIds = unique([selectedLeftTrackIds(:); selectedMicroTrackIds(:)]);
+        longEnoughIds = nan(0,1);
+        for ti = 1:numel(selectedIdx)
+            tr = trackCatalog(selectedIdx(ti));
+            if numel(tr.frame) >= minSpotsForActivation
+                tid = get_track_id(tr);
+                if isfinite(tid)
+                    longEnoughIds(end+1,1) = tid; %#ok<AGROW>
+                end
+            end
+        end
+        keepIds = intersect(keepIds, longEnoughIds);
         keepAct = ismember(activationTrackIds, keepIds);
         activationXY = activationXY(keepAct, :);
         activationFrames = activationFrames(keepAct);

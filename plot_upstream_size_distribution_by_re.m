@@ -90,6 +90,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         title(ax, sprintf('Upstream-moving microbubble size distribution, Re=%g', Rei), 'FontName', 'Times New Roman', 'FontSize', 12);
         grid(ax, 'off');
         box(ax, 'on');
+        set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
 
         if ~isempty(lgd)
             leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'northeast', 'Box', 'off');

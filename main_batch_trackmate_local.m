@@ -63,7 +63,7 @@ useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 25"; % <---edit
+resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 27"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
@@ -175,7 +175,7 @@ plotOpts.videoOverlayMarkerSize = 15; % <---edit
 plotOpts.videoOverlayXLim_mm = [0 4.8]; % <---edit
 plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
-plotOpts.inceptionXLim_mm = [0 5]; % <---edit
+plotOpts.inceptionXLim_mm = [0 4.8]; % <---edit
 plotOpts.inceptionYLim_mm = [0 1.2]; % <---edit
 plotOpts.themes = enabled_plot_themes(plotOpts);
 

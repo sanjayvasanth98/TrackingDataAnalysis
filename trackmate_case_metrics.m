@@ -1375,7 +1375,7 @@ end
 
 function qcOpts = default_qc_opts()
 qcOpts = struct();
-qcOpts.minTrackSpots = 2;
+qcOpts.minTrackSpots = 4;
 qcOpts.maxTrackGaps = 1;
 qcOpts.maxLeftMovingTracks = Inf;
 qcOpts.rejectSplitMergeComplex = true;

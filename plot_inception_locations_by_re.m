@@ -55,8 +55,9 @@ if ~hasPoints
 end
 
 % Marginal histogram settings
-nBins = 40;
-histAlpha = 0.35;
+nBinsX = 50;
+nBinsY = 40;
+histAlpha = 0.40;
 histFrac = 0.12; % fraction of figure for marginal panels
 
 for theme = reshape(plotOpts.themes, 1, [])
@@ -94,10 +95,10 @@ function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px], 'Visible', 'on');
 
 % Layout: main scatter + top marginal + right marginal
-gap = 0.02;
-mainL = 0.10; mainB = 0.10;
-mainW = 1 - mainL - histFrac - 3*gap;
-mainH = 1 - mainB - histFrac - 3*gap;
+gap = 0.01;
+mainL = 0.08; mainB = 0.14;
+mainW = 1 - mainL - histFrac - 2*gap - 0.01;
+mainH = 1 - mainB - histFrac - 2*gap - 0.01;
 topL = mainL; topB = mainB + mainH + gap; topW = mainW; topH = histFrac;
 rightL = mainL + mainW + gap; rightB = mainB; rightW = histFrac; rightH = mainH;
 
@@ -112,8 +113,8 @@ hold(axRight, 'on');
 lgd = gobjects(0,1);
 lgdTxt = strings(0,1);
 
-xEdges = linspace(xLim(1), xLim(2), nBins+1);
-yEdges = linspace(yLim(1), yLim(2), nBins+1);
+xEdges = linspace(xLim(1), xLim(2), nBinsX+1);
+yEdges = linspace(yLim(1), yLim(2), nBinsY+1);
 
 for j = 1:nReCases
     ci = idxRe(j);
@@ -128,11 +129,11 @@ for j = 1:nReCases
         yPts = yExtent_mm - xy(:,2);
     end
 
-    h = scatter(axMain, xPts, yPts, 6, ...
+    h = scatter(axMain, xPts, yPts, 12, ...
         'Marker', 'o', ...
         'MarkerEdgeColor', 'none', ...
         'MarkerFaceColor', cmap(j,:), ...
-        'MarkerFaceAlpha', 0.15);
+        'MarkerFaceAlpha', 0.50);
 
     lgd(end+1,1) = h; %#ok<AGROW>
     lgdTxt(end+1,1) = sprintf('k/d=%.4g', allLoc.kD(ci)); %#ok<AGROW>
@@ -144,18 +145,20 @@ for j = 1:nReCases
         yGrid = linspace(yLim(1), yLim(2), nGrid);
         [Xg, Yg] = meshgrid(xGrid, yGrid);
         density = kde2d_simple(xPts, yPts, Xg, Yg);
-        contour(axMain, Xg, Yg, density, 3, ...
-            'LineColor', cmap(j,:), 'LineWidth', 0.6);
+        contour(axMain, Xg, Yg, density, 1, ...
+            'LineColor', cmap(j,:), 'LineWidth', 0.9);
     end
 
     % Marginal histograms
     nxCounts = histcounts(xPts, xEdges);
     nyCounts = histcounts(yPts, yEdges);
+    xCenters = (xEdges(1:end-1) + xEdges(2:end)) / 2;
+    yCenters = (yEdges(1:end-1) + yEdges(2:end)) / 2;
 
-    stairs(axTop, xEdges, [nxCounts, nxCounts(end)], '-', ...
-        'Color', cmap(j,:), 'LineWidth', 1.2);
-    stairs(axRight, [nyCounts, nyCounts(end)], yEdges, '-', ...
-        'Color', cmap(j,:), 'LineWidth', 1.2);
+    bar(axTop, xCenters, nxCounts, 1, ...
+        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
+    barh(axRight, yCenters, nyCounts, 1, ...
+        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
 end
 
 % Main axes styling
@@ -163,17 +166,17 @@ xlim(axMain, xLim);
 ylim(axMain, yLim);
 xlabel(axMain, xLabel, 'Interpreter', 'latex');
 ylabel(axMain, yLabel, 'Interpreter', 'latex');
-set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual');
+set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual', 'FontName', 'Times New Roman');
 grid(axMain, 'off'); box(axMain, 'on');
 
 % Top marginal styling
 xlim(axTop, xLim);
-set(axTop, 'XTickLabel', [], 'YTickLabel', [], 'XLimMode', 'manual');
+set(axTop, 'XTickLabel', [], 'XLimMode', 'manual', 'FontName', 'Times New Roman');
 grid(axTop, 'off'); box(axTop, 'on');
 
 % Right marginal styling
 ylim(axRight, yLim);
-set(axRight, 'XTickLabel', [], 'YTickLabel', [], 'YLimMode', 'manual');
+set(axRight, 'YTickLabel', [], 'YLimMode', 'manual', 'FontName', 'Times New Roman');
 grid(axRight, 'off'); box(axRight, 'on');
 
 % Legend inside main axes
