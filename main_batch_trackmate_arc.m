@@ -59,6 +59,12 @@ caseSelection = "all"; % <---edit
 useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
+% ----------- ROI DATA (unwanted area + wall mask) ----------------
+% Set to the ROI_throat.mat saved by Testing/ROI_and_throatloader.m.
+% Upload this file to ARC alongside the XML files. Leave as "" to disable.
+
+roiFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/ROI_throat.mat";  % <---edit: ARC path
+
 % Where to save all results
 resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results4"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
@@ -256,7 +262,7 @@ end
 %% ----------- ROI DATA (unwanted area + wall mask) ----------------
 % Set to the ROI_throat.mat saved by Testing/ROI_and_throatloader.m.
 % Upload this file to ARC alongside the XML files. Leave as "" to disable.
-roiFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/ROI_throat.mat";  % <---edit: ARC path
+
 
 if isstring(roiFile) && strlength(roiFile) > 0 && isfile(roiFile)
     R = load(roiFile);
