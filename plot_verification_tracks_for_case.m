@@ -55,14 +55,18 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     minSpotsForDisplay = 5;
 
+    hasROI = isfield(plotOpts, 'roiData') && isfield(plotOpts.roiData, 'unwantedTrackMask');
+
     hTrack = gobjects(0,1);
     for i = 1:numel(leftIdx)
         tr = trackCatalog(leftIdx(i));
         if numel(tr.frame) < minSpotsForDisplay, continue; end
         [xComp, yComp] = trail_composite_xy(tr, yExtent_mm, trailLength);
-        if isempty(xComp)
-            continue;
+        if isempty(xComp), continue; end
+        if hasROI
+            [xComp, yComp] = filter_trail_roi(xComp, yComp, yExtent_mm, plotOpts.roiData);
         end
+        if isempty(xComp), continue; end
         hTrack(end+1,1) = plot(ax, xComp, yComp, '-', ...
             'Color', trackColor, ...
             'LineWidth', 1.6); %#ok<AGROW>
@@ -74,15 +78,24 @@ for theme = reshape(plotOpts.themes, 1, [])
         tr = trackCatalog(microIdx(i));
         if numel(tr.frame) < minSpotsForDisplay, continue; end
         [xComp, yComp] = trail_composite_xy(tr, yExtent_mm, trailLength);
-        if isempty(xComp)
-            continue;
+        if isempty(xComp), continue; end
+        if hasROI
+            [xComp, yComp] = filter_trail_roi(xComp, yComp, yExtent_mm, plotOpts.roiData);
         end
+        if isempty(xComp), continue; end
         hMicro(end+1,1) = plot(ax, xComp, yComp, '-', ...
             'Color', microTrackColor, ...
             'LineWidth', 1.6); %#ok<AGROW>
     end
 
     hAct = gobjects(0,1);
+    if ~isempty(actXY) && hasROI
+        keep = false(size(actXY, 1), 1);
+        for ai = 1:size(actXY, 1)
+            keep(ai) = ~pt_in_roi_mask(actXY(ai,1), actXY(ai,2), plotOpts.roiData);
+        end
+        actXY = actXY(keep, :);
+    end
     if ~isempty(actXY)
         yAct = yExtent_mm - actXY(:,2);
         hAct = scatter(ax, actXY(:,1), yAct, 36, ...
@@ -328,4 +341,34 @@ else
     leg.TextColor = [0 0 0];
     leg.Color = 'none';
 end
+end
+
+function [x, y] = filter_trail_roi(x, y, yExtent_mm, roiData)
+% Remove trail points that fall inside the unwanted area mask.
+mask = roiData.unwantedTrackMask;
+ps = roiData.maskPixelSize;
+[nRows, nCols] = size(mask);
+keep = true(size(x));
+for i = 1:numel(x)
+    if isnan(x(i)) || isnan(y(i)), continue; end  % preserve NaN separators
+    c = round(x(i) / ps);
+    r = round((yExtent_mm - y(i)) / ps);
+    if isfinite(c) && isfinite(r) && c >= 1 && c <= nCols && r >= 1 && r <= nRows
+        if mask(r, c)
+            keep(i) = false;
+        end
+    end
+end
+x = x(keep);
+y = y(keep);
+end
+
+function result = pt_in_roi_mask(x_mm, y_mm_image, roiData)
+% Check single point (x in mm, y in image mm coords) against mask.
+mask = roiData.unwantedTrackMask;
+ps = roiData.maskPixelSize;
+[nRows, nCols] = size(mask);
+c = round(x_mm / ps);
+r = round(y_mm_image / ps);
+result = isfinite(c) && isfinite(r) && c >= 1 && c <= nCols && r >= 1 && r <= nRows && mask(r, c);
 end

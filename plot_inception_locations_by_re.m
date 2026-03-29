@@ -123,10 +123,23 @@ lgdTxt = strings(0,1);
 xEdges = linspace(xLim(1), xLim(2), nBinsX+1);
 yEdges = linspace(yLim(1), yLim(2), nBinsY+1);
 
+% --- Draw wall region if ROI data provided ---
+hasROI = isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData);
+if hasROI
+    draw_wall_patch(axMain, plotOpts.roiData, yExtent_mm, throatHeight_mm, ...
+        xLim, yLim, doNormalize, theme);
+end
+
 for j = 1:nReCases
     ci = idxRe(j);
     xy = allLoc.inception2x_xy{ci};
     if isempty(xy), continue; end
+
+    % Filter out points in unwanted track area
+    if hasROI && isfield(plotOpts.roiData, 'unwantedTrackMask')
+        xy = filter_unwanted_points(xy, plotOpts.roiData, yExtent_mm);
+        if isempty(xy), continue; end
+    end
 
     if doNormalize
         xPts = xy(:,1) / throatHeight_mm;
@@ -287,4 +300,79 @@ if i0 == i1
 else
     q = x(i0) + (idx - i0) * (x(i1) - x(i0));
 end
+end
+
+%% ---- wall patch drawing ----
+function draw_wall_patch(ax, roiData, yExtent_mm, throatHeight_mm, ...
+    xLim, yLim, doNormalize, theme)
+if ~isfield(roiData, 'wallMask'), return; end
+wallMask = roiData.wallMask;
+ps = roiData.maskPixelSize;
+
+% For each column, find the topmost wall pixel (wall surface)
+wallCols = find(any(wallMask, 1));
+if isempty(wallCols), return; end
+
+wallTopRow = zeros(size(wallCols));
+for i = 1:numel(wallCols)
+    wallTopRow(i) = find(wallMask(:, wallCols(i)), 1, 'first');
+end
+
+% Convert pixel to mm then to plot coords (y flipped)
+wallX_mm = wallCols(:) * ps;
+wallYSurface_mm = yExtent_mm - wallTopRow(:) * ps;  % plot y (flipped)
+wallYBottom = yLim(1);  % bottom of plot
+
+if doNormalize
+    wallX = wallX_mm / throatHeight_mm;
+    wallYSurface = wallYSurface_mm / throatHeight_mm;
+    wallYBottom = wallYBottom / throatHeight_mm;
+else
+    wallX = wallX_mm;
+    wallYSurface = wallYSurface_mm;
+end
+
+% Clip to x-axis limits
+inRange = wallX >= xLim(1) & wallX <= xLim(2);
+wallX = wallX(inRange);
+wallYSurface = wallYSurface(inRange);
+if isempty(wallX), return; end
+
+% Build closed polygon: surface left→right, then bottom right→left
+patchX = [wallX; flipud(wallX)];
+patchY = [wallYSurface; repmat(wallYBottom, numel(wallX), 1)];
+
+if strcmp(theme, 'poster')
+    wallColor = [0.35 0.35 0.35];
+else
+    wallColor = [0.80 0.80 0.80];
+end
+
+patch(ax, patchX, patchY, wallColor, ...
+    'EdgeColor', 'none', 'FaceAlpha', 0.6, ...
+    'HandleVisibility', 'off');
+end
+
+%% ---- filter points in unwanted track area ----
+function xy = filter_unwanted_points(xy, roiData, yExtent_mm)
+mask = roiData.unwantedTrackMask;
+ps = roiData.maskPixelSize;
+[nRows, nCols] = size(mask);
+
+% Convert mm coordinates to pixel indices
+% xy(:,1) = x_mm, xy(:,2) = y_mm (image coords, not flipped)
+col_px = round(xy(:,1) / ps);
+row_px = round(xy(:,2) / ps);
+
+% Clamp to valid pixel range
+col_px = max(1, min(col_px, nCols));
+row_px = max(1, min(row_px, nRows));
+
+% Check which points fall inside the unwanted mask
+inUnwanted = false(size(xy, 1), 1);
+for i = 1:size(xy, 1)
+    inUnwanted(i) = mask(row_px(i), col_px(i));
+end
+
+xy(inUnwanted, :) = [];
 end

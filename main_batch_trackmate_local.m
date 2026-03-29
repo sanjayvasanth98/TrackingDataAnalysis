@@ -256,6 +256,27 @@ end
 % cases(7).pixelSize = 0.00375009375;
 % cases(7).dt        = 1/102247;
 
+%% ----------- ROI DATA (unwanted area + wall mask) ----------------
+% Set to the ROI_throat.mat saved by Testing/ROI_and_throatloader.m.
+% Leave as "" to disable all ROI-based filtering and overlays.
+roiFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\Smooth variation 2000\ROI_throat.mat";  % <---edit
+
+if isstring(roiFile) && strlength(roiFile) > 0 && isfile(roiFile)
+    R = load(roiFile);
+    roiData = struct();
+    roiData.wallMask            = R.ROI_throat.wallMask;
+    roiData.unwantedTrackMask   = R.ROI_throat.unwantedTrackMask;
+    roiData.throat_xy_px        = R.ROI_throat.throat_xy_px;
+    roiData.maskPixelSize       = cases(1).pixelSize;  % same calibration for all cases
+    qcOpts.unwantedAreaMask           = roiData.unwantedTrackMask;
+    qcOpts.unwantedAreaMaskPixelSize  = roiData.maskPixelSize;
+    plotOpts.roiData = roiData;
+    fprintf('Loaded ROI data: unwanted mask=%d px, wall mask=%d px\n', ...
+        sum(roiData.unwantedTrackMask(:)), sum(roiData.wallMask(:)));
+elseif isstring(roiFile) && strlength(roiFile) > 0
+    warning('ROI file not found: %s — mask filtering disabled.', roiFile);
+end
+
 [cases, selectedCaseIdx, totalCaseCount] = select_cases(cases, caseSelection);
 selectedLabels = strings(numel(cases), 1);
 for si = 1:numel(cases)

@@ -29,6 +29,20 @@ for i = 1:nCases
         allLoc.caseName(i), allLoc.Re(i), allLoc.kD(i), allLoc.pixelSize(i), nPts);
 end
 
+%% Load ROI data (wall mask, unwanted track mask, throat location)
+roiFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\Smooth variation 2000\ROI_throat.mat";
+R = load(roiFile);
+fprintf('Loaded ROI data from: %s\n', roiFile);
+fprintf('  Throat at px: (%.1f, %.1f)\n', R.x_throat, R.y_throat);
+fprintf('  Wall mask: %d pixels\n', sum(R.wallMask(:)));
+fprintf('  Unwanted track mask: %d pixels\n', sum(R.unwantedTrackMask(:)));
+
+roiData = struct();
+roiData.wallMask = R.wallMask;
+roiData.unwantedTrackMask = R.unwantedTrackMask;
+roiData.throat_xy_px = R.ROI_throat.throat_xy_px;
+roiData.maskPixelSize = median(allLoc.pixelSize);  % same calibration
+
 %% Plot options (mirror main code — edit here to test changes)
 set(0, 'DefaultFigureVisible', 'on');
 plotOpts = struct();
@@ -41,6 +55,7 @@ plotOpts.keepFiguresOpen = true;
 plotOpts.inceptionImageSize_px = [1280 320];
 plotOpts.inceptionXLim_mm = [0 4.8];
 plotOpts.inceptionYLim_mm = [0 1.2];
+plotOpts.roiData = roiData;
 
 %% Generate plot
 fprintf('\nGenerating inception location plots...\n');

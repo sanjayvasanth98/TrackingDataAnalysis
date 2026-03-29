@@ -178,6 +178,12 @@ for ii = 1:numel(frameIdxToRender)
         if isempty(xTail)
             continue;
         end
+        if isfield(plotOpts, 'roiData') && isfield(plotOpts.roiData, 'unwantedTrackMask')
+            [xTail, yTailPlot] = filter_trail_roi(xTail, yTailPlot, yExtent_mm, plotOpts.roiData);
+        end
+        if isempty(xTail)
+            continue;
+        end
 
         if drawStrictMask(t)
             cLine = [0 0 1];
@@ -211,6 +217,10 @@ for ii = 1:numel(frameIdxToRender)
         end
         alpha = exp(log(0.5) * (age / fadeHalfLifeFrames));
         if alpha < 0.04
+            continue;
+        end
+        if isfield(plotOpts, 'roiData') && isfield(plotOpts.roiData, 'unwantedTrackMask') && ...
+                pt_in_roi_mask(actXY(a,1), actXY(a,2), plotOpts.roiData)
             continue;
         end
         cAct = alpha * [0.9 0.15 0.1] + (1 - alpha) * [1 1 1];
@@ -629,4 +639,34 @@ if all(recent < 0)
 elseif all(recent > 0)
     motionSignal = 1;
 end
+end
+
+function [x, y] = filter_trail_roi(x, y, yExtent_mm, roiData)
+% Remove trail points that fall inside the unwanted area mask.
+% x, y are in plot coordinates (y is flipped). y_mm_image = yExtent_mm - y.
+mask = roiData.unwantedTrackMask;
+ps = roiData.maskPixelSize;
+[nRows, nCols] = size(mask);
+keep = true(size(x));
+for i = 1:numel(x)
+    c = round(x(i) / ps);
+    r = round((yExtent_mm - y(i)) / ps);
+    if isfinite(c) && isfinite(r) && c >= 1 && c <= nCols && r >= 1 && r <= nRows
+        if mask(r, c)
+            keep(i) = false;
+        end
+    end
+end
+x = x(keep);
+y = y(keep);
+end
+
+function result = pt_in_roi_mask(x_mm, y_mm_image, roiData)
+% Check if a single point (x in mm, y in image mm coords) is in the mask.
+mask = roiData.unwantedTrackMask;
+ps = roiData.maskPixelSize;
+[nRows, nCols] = size(mask);
+c = round(x_mm / ps);
+r = round(y_mm_image / ps);
+result = isfinite(c) && isfinite(r) && c >= 1 && c <= nCols && r >= 1 && r <= nRows && mask(r, c);
 end

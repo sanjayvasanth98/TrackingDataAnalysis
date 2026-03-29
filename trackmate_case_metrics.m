@@ -71,6 +71,7 @@ gateStats.nRejectedOrigin = 0;
 gateStats.nRejectedNoActivation = 0;
 gateStats.nRejectedWallBand = 0;
 gateStats.nRejectedProximityMerge = 0;
+gateStats.nRejectedUnwantedArea = 0;
 gateStats.nInjected = 0;
 gateStats.nActivated = 0;
 gateStats.originThreshold = NaN;
@@ -143,6 +144,9 @@ for k = 1:nTotal
     end
     netLeftMemberMask(k) = isNetLeftMember;
     if ~isNetLeftMember
+        continue;
+    end
+    if prep(k).isUnwantedArea
         continue;
     end
     if isfinite(qcOpts.maxLeftMovingTracks) && qcOpts.maxLeftMovingTracks >= 0 ...
@@ -223,6 +227,11 @@ for k = 1:nTotal
         end
     end
 
+    if prep(k).isUnwantedArea
+        gateStats.nRejectedUnwantedArea = gateStats.nRejectedUnwantedArea + 1;
+        continue;
+    end
+
     gateStats.nInjected = gateStats.nInjected + 1;
     trackCatalog(k).isStrictPrimary = true;
 
@@ -279,6 +288,9 @@ if activationOpts.includeMicrobubbleActivationRescue
             continue;
         end
         if activationOpts.microbubbleRequireOutsideStrictPrimary && is_true_field(trackCatalog(k), 'isStrictPrimary')
+            continue;
+        end
+        if prep(k).isUnwantedArea
             continue;
         end
 
@@ -499,7 +511,8 @@ tpl = struct( ...
     'actY', NaN, ...
     'actFrame', NaN, ...
     'actSeedArea', NaN, ...
-    'isProximityRejected', false);
+    'isProximityRejected', false, ...
+    'isUnwantedArea', false);
 end
 
 function tpl = make_catalog_template()
@@ -601,6 +614,12 @@ if ~isempty(idxJump)
         prep.actFrame = prep.frame(actIdx);
         prep.actSeedArea = estimate_activation_seed_area(prep.areaVals, idxJump, activationOpts);
     end
+end
+
+% Check if any spot falls inside the unwanted track area mask.
+if ~isempty(qcOpts.unwantedAreaMask) && qcOpts.unwantedAreaMaskPixelSize > 0
+    prep.isUnwantedArea = any_spot_in_mask(prep.x, prep.y, ...
+        qcOpts.unwantedAreaMask, qcOpts.unwantedAreaMaskPixelSize);
 end
 end
 
@@ -1385,6 +1404,8 @@ qcOpts.excludeOriginBoxEnabled = false;
 qcOpts.excludeOriginBoxX_mm = [0 0.5];
 qcOpts.excludeOriginBoxY_mm = [0 1.2];
 qcOpts.maxStepDy_mm = 0.1;
+qcOpts.unwantedAreaMask = [];
+qcOpts.unwantedAreaMaskPixelSize = 0;
 end
 
 function flowOpts = default_flow_opts()
@@ -1455,4 +1476,20 @@ radius = z * sqrt((pHat * (1 - pHat) / n) + (z2 / (4 * n^2))) / denom;
 
 ciLow = max(0, center - radius);
 ciHigh = min(1, center + radius);
+end
+
+function result = any_spot_in_mask(x_mm, y_mm, mask, pixelSize)
+% Return true if ANY spot position (x,y in image mm coords) falls inside mask.
+[nRows, nCols] = size(mask);
+result = false;
+for i = 1:numel(x_mm)
+    c = round(x_mm(i) / pixelSize);
+    r = round(y_mm(i) / pixelSize);
+    if isfinite(c) && isfinite(r) && c >= 1 && c <= nCols && r >= 1 && r <= nRows
+        if mask(r, c)
+            result = true;
+            return;
+        end
+    end
+end
 end
