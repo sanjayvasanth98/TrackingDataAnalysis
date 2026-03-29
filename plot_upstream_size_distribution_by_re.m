@@ -87,7 +87,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         end
         xlabel(ax, 'Equivalent diameter, $d_{eq}\,(\mu\mathrm{m})$', 'Interpreter', 'latex');
         ylabel(ax, 'PDF', 'Interpreter', 'latex');
-        title(ax, sprintf('Upstream-moving microbubble size distribution, Re=%g', Rei), 'FontName', 'Times New Roman', 'FontSize', 12);
+        title(ax, '');
         grid(ax, 'off');
         box(ax, 'on');
         set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
