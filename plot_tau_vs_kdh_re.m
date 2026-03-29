@@ -100,7 +100,9 @@ style_legend_for_theme(leg, char(theme));
 
 outBase = fullfile(figDir, outName);
 save_fig_dual_safe(f, outBase, plotOpts);
-close(f);
+if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
+    close(f);
+end
 end
 
 %% ---- theme helpers ----

@@ -133,7 +133,9 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     outBase = fullfile(figDir, "AI_vs_kD_by_Re_" + theme);
     save_fig_dual_safe(f, outBase, plotOpts);
-    close(f);
+    if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
+        close(f);
+    end
 end
 
 fprintf('Saved fit info: %s\n', fitTxtFile);

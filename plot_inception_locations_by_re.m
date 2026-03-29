@@ -95,12 +95,19 @@ function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
 
 % Layout: main scatter + top marginal + right marginal
-gap = 0.03;
+% Use separate gaps because figure aspect ratio is very wide (1280x320),
+% so the same normalized gap is much larger horizontally than vertically.
+figW = plotOpts.inceptionImageSize_px(1);
+figH = plotOpts.inceptionImageSize_px(2);
+gapPx = 10;  % uniform physical gap in pixels
+gapX = gapPx / figW;
+gapY = gapPx / figH;
+padR = 0.01; padT = 0.01;
 mainL = 0.08; mainB = 0.18;
-mainW = 1 - mainL - histFrac - 2*gap - 0.01;
-mainH = 1 - mainB - histFrac - 2*gap - 0.01;
-topL = mainL; topB = mainB + mainH + gap; topW = mainW; topH = histFrac;
-rightL = mainL + mainW + gap; rightB = mainB; rightW = histFrac; rightH = mainH;
+mainW = 1 - mainL - histFrac - gapX - padR;
+mainH = 1 - mainB - histFrac - gapY - padT;
+topL = mainL; topB = mainB + mainH + gapY; topW = mainW; topH = histFrac;
+rightL = mainL + mainW + gapX; rightB = mainB; rightW = histFrac; rightH = mainH;
 
 axMain  = axes(f, 'Position', [mainL  mainB  mainW  mainH]);
 axTop   = axes(f, 'Position', [topL   topB   topW   topH]);
@@ -146,7 +153,7 @@ for j = 1:nReCases
         [Xg, Yg] = meshgrid(xGrid, yGrid);
         density = kde2d_simple(xPts, yPts, Xg, Yg);
         contour(axMain, Xg, Yg, density, 1, ...
-            'LineColor', cmap(j,:), 'LineWidth', 0.9);
+            'LineColor', cmap(j,:), 'LineWidth', 2.0);
     end
 
     % Marginal histograms
@@ -172,10 +179,6 @@ grid(axMain, 'off'); box(axMain, 'on');
 % Top marginal styling
 xlim(axTop, xLim);
 set(axTop, 'XTickLabel', [], 'XLimMode', 'manual', 'FontName', 'Times New Roman');
-% Remove the 0 tick so it doesn't overlap with main plot's top y-tick
-topYTicks = get(axTop, 'YTick');
-topYTicks(topYTicks == 0) = [];
-set(axTop, 'YTick', topYTicks);
 grid(axTop, 'off'); box(axTop, 'on');
 
 % Right marginal styling
@@ -203,7 +206,9 @@ set(axRight, 'YTickLabel', []);
 style_legend_for_theme(leg, theme);
 
 save_fig_dual_safe(f, outBase, plotOpts);
-close(f);
+if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
+    close(f);
+end
 end
 
 %% ---- theme helpers ----

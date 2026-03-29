@@ -103,7 +103,9 @@ for theme = reshape(plotOpts.themes, 1, [])
 
         outBase = fullfile(outDir, sprintf('UpstreamSizeDist_Re_%g_%s', Rei, theme));
         save_fig_dual_safe(f, outBase, plotOpts);
-        close(f);
+        if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
+            close(f);
+        end
     end
 end
 
