@@ -108,7 +108,7 @@ for theme = reshape(plotOpts.themes, 1, [])
 
             xFit = linspace(min(x), max(x), 200).';
             yFit = 10.^(a + b*xFit);
-            hFit = semilogy(ax, xFit, yFit, '--', 'LineWidth', 1.8, 'Color', fitColor);
+            hFit = plot(ax, xFit, yFit, '--', 'LineWidth', 1.8, 'Color', fitColor);
             lgd(end+1,1) = hFit; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('Fit, Re=%g', Rei); %#ok<AGROW>
 

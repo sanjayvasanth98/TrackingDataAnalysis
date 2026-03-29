@@ -60,7 +60,7 @@ useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
 % Where to save all results
-resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results1"; % <---edit
+resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results4"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
@@ -110,7 +110,7 @@ flowOpts.netLeftBandRescueRequireActXInBand = false; % <---edit: if true, activa
 flowOpts.netLeftBandRescueBypassOriginGate = true; % <---edit: let rescued tracks pass even if they do not satisfy right-origin gate
 
 qcOpts = struct();
-qcOpts.minTrackSpots = 2;
+qcOpts.minTrackSpots = 4;
 qcOpts.maxTrackGaps = 1;
 qcOpts.maxLeftMovingTracks = maxLeftMovingTracks;
 qcOpts.rejectSplitMergeComplex = false; % <---edit: include breakup/split/merge tracks if they satisfy left-moving/counterflow gates

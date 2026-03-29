@@ -28,6 +28,5 @@ ax.XLabel.Color = textColor;
 ax.YLabel.Color = textColor;
 
 set(ax,'GridAlpha',0.25,'MinorGridAlpha',0.12);
-grid(ax,'on');
 box(ax,'on');
 end

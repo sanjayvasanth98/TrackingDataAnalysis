@@ -92,7 +92,7 @@ function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
     throatHeight_mm, xLim, yLim, doNormalize, nBinsX, nBinsY, histAlpha, histFrac, ...
     xLabel, yLabel, theme, outBase, plotOpts)
 
-f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px], 'Visible', 'on');
+f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
 
 % Layout: main scatter + top marginal + right marginal
 gap = 0.01;
@@ -182,12 +182,16 @@ grid(axRight, 'off'); box(axRight, 'on');
 % Legend inside main axes
 if ~isempty(lgd)
     leg = legend(axMain, lgd, cellstr(lgdTxt), ...
-        'Location', 'northwest', 'Box', 'off', 'FontSize', 8);
+        'Location', 'northwest', 'Box', 'off', 'FontName', 'Times New Roman', 'FontSize', 8);
 else
     leg = [];
 end
 
 apply_plot_theme(axMain, theme);
+apply_plot_theme(axTop, theme);
+apply_plot_theme(axRight, theme);
+set(axTop, 'XTickLabel', []);
+set(axRight, 'YTickLabel', []);
 style_legend_for_theme(leg, theme);
 
 save_fig_dual_safe(f, outBase, plotOpts);

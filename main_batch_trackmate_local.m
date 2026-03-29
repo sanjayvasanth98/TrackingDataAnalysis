@@ -113,7 +113,7 @@ flowOpts.netLeftBandRescueRequireActXInBand = false; % <---edit: if true, activa
 flowOpts.netLeftBandRescueBypassOriginGate = true; % <---edit: let rescued tracks pass even if they do not satisfy right-origin gate
 
 qcOpts = struct();
-qcOpts.minTrackSpots = 2;
+qcOpts.minTrackSpots = 4;
 qcOpts.maxTrackGaps = 1;
 qcOpts.maxLeftMovingTracks = maxLeftMovingTracks;
 qcOpts.rejectSplitMergeComplex = false; % <---edit: include breakup/split/merge tracks if they satisfy left-moving/counterflow gates
