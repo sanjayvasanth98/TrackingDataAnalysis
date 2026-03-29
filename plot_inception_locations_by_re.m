@@ -95,8 +95,8 @@ function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
 
 % Layout: main scatter + top marginal + right marginal
-gap = 0.01;
-mainL = 0.08; mainB = 0.14;
+gap = 0.03;
+mainL = 0.08; mainB = 0.18;
 mainW = 1 - mainL - histFrac - 2*gap - 0.01;
 mainH = 1 - mainB - histFrac - 2*gap - 0.01;
 topL = mainL; topB = mainB + mainH + gap; topW = mainW; topH = histFrac;
@@ -172,11 +172,19 @@ grid(axMain, 'off'); box(axMain, 'on');
 % Top marginal styling
 xlim(axTop, xLim);
 set(axTop, 'XTickLabel', [], 'XLimMode', 'manual', 'FontName', 'Times New Roman');
+% Remove the 0 tick so it doesn't overlap with main plot's top y-tick
+topYTicks = get(axTop, 'YTick');
+topYTicks(topYTicks == 0) = [];
+set(axTop, 'YTick', topYTicks);
 grid(axTop, 'off'); box(axTop, 'on');
 
 % Right marginal styling
 ylim(axRight, yLim);
 set(axRight, 'YTickLabel', [], 'YLimMode', 'manual', 'FontName', 'Times New Roman');
+% Remove the 0 tick so it doesn't overlap with main plot's right x-tick
+rightXTicks = get(axRight, 'XTick');
+rightXTicks(rightXTicks == 0) = [];
+set(axRight, 'XTick', rightXTicks);
 grid(axRight, 'off'); box(axRight, 'on');
 
 % Legend inside main axes
