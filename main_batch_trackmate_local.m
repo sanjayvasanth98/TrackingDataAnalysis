@@ -278,6 +278,20 @@ elseif isstring(roiFile) && strlength(roiFile) > 0
     warning('ROI file not found: %s — mask filtering disabled.', roiFile);
 end
 
+%% ---- Collapse analysis options -----------------------------------------
+% See analyze_collapse_events.m for full signal definition.
+collapseOpts.minTrackSpots            = 3;    % <---edit: min spots for a valid track
+collapseOpts.collapseMinPeakArea_px2  = 50;   % <---edit: min peak area to qualify (px^2)
+collapseOpts.collapseTruncationFactor = 0.6;  % <---edit: final/peak area ratio above which track is flagged as truncated (not a collapse)
+collapseOpts.fftNDomFreqs             = 5;    % number of dominant FFT peaks to report
+if exist('roiData','var') && isstruct(roiData) && isfield(roiData,'unwantedTrackMask')
+    collapseOpts.roiUnwantedMask = roiData.unwantedTrackMask;
+    collapseOpts.roiPixelSize    = cases(1).pixelSize;
+else
+    collapseOpts.roiUnwantedMask = [];
+    collapseOpts.roiPixelSize    = 0;
+end
+
 [cases, selectedCaseIdx, totalCaseCount] = select_cases(cases, caseSelection);
 selectedLabels = strings(numel(cases), 1);
 for si = 1:numel(cases)
@@ -305,6 +319,13 @@ if plotOpts.saveDiagnosticGifs && ~isfolder(gifOutDir), mkdir(gifOutDir); end
 
 videoGifOutDir = fullfile(resultsDir, "video overlay gifs");
 if plotOpts.makeVideoOverlayGifs && plotOpts.saveVideoOverlayGifs && ~isfolder(videoGifOutDir), mkdir(videoGifOutDir); end
+
+allCollapse = struct();
+allCollapse.caseName = {};
+allCollapse.kD       = [];
+allCollapse.Re       = [];
+allCollapse.dt       = [];
+allCollapse.data     = {};
 
 allSize = struct();
 allSize.caseName = strings(0,1);
@@ -397,6 +418,14 @@ for i = 1:numel(cases)
     allLoc.nInjected(end+1,1)  = g.nInjected;
     allLoc.inception2x_xy{end+1,1} = choose_inception_activation_xy(metrics);
 
+    % Collapse frequency analysis (all tracks, no direction filter)
+    collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
+    allCollapse.caseName{end+1} = char(cases(i).name);
+    allCollapse.kD(end+1)       = cases(i).kD;
+    allCollapse.Re(end+1)       = cases(i).Re;
+    allCollapse.dt(end+1)       = cases(i).dt;
+    allCollapse.data{end+1}     = collapseResult;
+
     % Accumulate upstream-size samples for distribution plot
     allSize.caseName(end+1,1) = string(cases(i).name);
     allSize.Re(end+1,1)       = cases(i).Re;
@@ -486,6 +515,7 @@ if ~isfolder(matDir), mkdir(matDir); end
 save(fullfile(matDir, "activation_summary_by_case.mat"), 'summaryRows');
 save(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');
 save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
+save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
     't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
@@ -510,6 +540,13 @@ plot_tau_vs_kdh_re(summaryRows, figDir, plotOpts);
 distFigOutDir = fullfile(figDir, "UpstreamSizeDistributions");
 if ~isfolder(distFigOutDir), mkdir(distFigOutDir); end
 plot_upstream_size_distribution_by_re(allSize, distFigOutDir, binSize_phys, plotOpts);
+
+%% ---------------- PLOT 5 & 6: Collapse frequency analysis ----------------
+collapseFigDir = fullfile(figDir, "CollapseAnalysis");
+if ~isfolder(collapseFigDir), mkdir(collapseFigDir); end
+plot_collapse_rate_vs_frame(allCollapse, collapseFigDir, plotOpts);
+plot_collapse_power_spectrum(allCollapse, collapseFigDir, plotOpts);
+write_collapse_analysis_csv(allCollapse, fullfile(resultsDir, "collapse_analysis.csv"));
 
 if useMatCache && cacheUpdated
     save(cacheFile, 'cacheDB', '-v7.3');
