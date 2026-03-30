@@ -260,9 +260,7 @@ end
 % cases(7).dt        = 1/102247;
 
 %% ----------- ROI DATA (unwanted area + wall mask) ----------------
-% Set to the ROI_throat.mat saved by Testing/ROI_and_throatloader.m.
-% Upload this file to ARC alongside the XML files. Leave as "" to disable.
-
+% roiFile is defined near the top of this script — edit it there.
 
 if isstring(roiFile) && strlength(roiFile) > 0 && isfile(roiFile)
     R = load(roiFile);
