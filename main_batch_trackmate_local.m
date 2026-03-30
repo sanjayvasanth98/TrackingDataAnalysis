@@ -63,7 +63,7 @@ useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 27"; % <---edit
+resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 29 local"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
