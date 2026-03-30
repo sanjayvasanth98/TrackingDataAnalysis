@@ -292,6 +292,17 @@ else
     collapseOpts.roiPixelSize    = 0;
 end
 
+%% ---- Void fraction analysis options ------------------------------------
+if exist('roiData','var') && isstruct(roiData) && isfield(roiData,'unwantedTrackMask')
+    voidFracOpts.roiUnwantedMask  = roiData.unwantedTrackMask;
+    voidFracOpts.roiPixelSize     = cases(1).pixelSize;
+    voidFracOpts.cameraPixelSize  = cases(1).pixelSize;
+else
+    voidFracOpts.roiUnwantedMask  = [];
+    voidFracOpts.roiPixelSize     = 0;
+    voidFracOpts.cameraPixelSize  = cases(1).pixelSize;
+end
+
 [cases, selectedCaseIdx, totalCaseCount] = select_cases(cases, caseSelection);
 selectedLabels = strings(numel(cases), 1);
 for si = 1:numel(cases)
@@ -326,6 +337,12 @@ allCollapse.kD       = [];
 allCollapse.Re       = [];
 allCollapse.dt       = [];
 allCollapse.data     = {};
+
+allVoidFrac = struct();
+allVoidFrac.caseName = {};
+allVoidFrac.kD       = [];
+allVoidFrac.Re       = [];
+allVoidFrac.data     = {};
 
 allSize = struct();
 allSize.caseName = strings(0,1);
@@ -426,6 +443,14 @@ for i = 1:numel(cases)
     allCollapse.dt(end+1)       = cases(i).dt;
     allCollapse.data{end+1}     = collapseResult;
 
+    % Void fraction analysis (all detected spots, no filter)
+    voidFracOpts.cameraPixelSize = cases(i).pixelSize;
+    vfResult = analyze_void_fraction(out, voidFracOpts);
+    allVoidFrac.caseName{end+1} = char(cases(i).name);
+    allVoidFrac.kD(end+1)       = cases(i).kD;
+    allVoidFrac.Re(end+1)       = cases(i).Re;
+    allVoidFrac.data{end+1}     = vfResult;
+
     % Accumulate upstream-size samples for distribution plot
     allSize.caseName(end+1,1) = string(cases(i).name);
     allSize.Re(end+1,1)       = cases(i).Re;
@@ -517,6 +542,7 @@ save(fullfile(matDir, "activation_summary_by_case.mat"), 'summaryRows');
 save(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');
 save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
+save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
     't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
@@ -547,6 +573,9 @@ if ~isfolder(collapseFigDir), mkdir(collapseFigDir); end
 plot_collapse_rate_vs_frame(allCollapse, collapseFigDir, plotOpts);
 plot_collapse_power_spectrum(allCollapse, collapseFigDir, plotOpts);
 write_collapse_analysis_csv(allCollapse, fullfile(resultsDir, "collapse_analysis.csv"));
+
+%% ---------------- PLOT 7: Void fraction vs k/d ----------------
+plot_void_fraction_vs_kd(allVoidFrac, figDir, plotOpts);
 
 if useMatCache && cacheUpdated
     save(cacheFile, 'cacheDB', '-v7.3');
