@@ -142,6 +142,17 @@ for j = 1:nReCases
         if isempty(xy), continue; end
     end
 
+    % Subsample to maxActivationsPerCase for visual fairness
+    maxAct = 250;
+    if isfield(plotOpts, 'maxActivationsPerCase') && isfinite(plotOpts.maxActivationsPerCase)
+        maxAct = plotOpts.maxActivationsPerCase;
+    end
+    if size(xy, 1) > maxAct
+        rng(42 + j, 'twister');
+        idx = sort(randperm(size(xy, 1), maxAct));
+        xy = xy(idx, :);
+    end
+
     if doNormalize
         xPts = xy(:,1) / throatHeight_mm;
         yPts = (yExtent_mm - xy(:,2)) / throatHeight_mm;

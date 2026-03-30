@@ -164,7 +164,7 @@ plotOpts.savePNG = true; % <---edit
 plotOpts.saveSVG = false; % <---edit
 plotOpts.makeTrackDiagnostics = true; % <---edit
 plotOpts.saveDiagnosticGifs = true; % <---edit
-plotOpts.makeVideoOverlayGifs = false; % <---edit: overlay tracks on source AVI and export GIF
+plotOpts.makeVideoOverlayGifs = true; % <---edit: overlay tracks on source AVI and export GIF
 plotOpts.saveVideoOverlayGifs = true; % <---edit
 plotOpts.diagnosticGifTrailLength = 10;
 plotOpts.diagnosticGifDelayTime = 0.08;
@@ -180,6 +180,7 @@ plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
 plotOpts.inceptionXLim_mm = [0 5]; % <---edit
 plotOpts.inceptionYLim_mm = [0 1.2]; % <---edit
+plotOpts.maxActivationsPerCase = 250; % cap activation points shown per case in inception plot
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
@@ -289,10 +290,12 @@ fprintf('Selected %d/%d case(s): %s\n', numel(cases), totalCaseCount, strjoin(ce
 summaryRows = table();
 
 allLoc = struct();
-allLoc.caseName = strings(0,1);
-allLoc.Re       = nan(0,1);
-allLoc.kD      = nan(0,1);
-allLoc.pixelSize = nan(0,1);
+allLoc.caseName   = strings(0,1);
+allLoc.Re         = nan(0,1);
+allLoc.kD         = nan(0,1);
+allLoc.pixelSize  = nan(0,1);
+allLoc.nActivated = nan(0,1);
+allLoc.nInjected  = nan(0,1);
 allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving + microbubble-rescue tracks
 
 trackFigOutDir = fullfile(figDir, "TrackDiagnostics");
@@ -387,10 +390,12 @@ for i = 1:numel(cases)
     end
 
     % Accumulate inception (2x growth) locations for plotting
-    allLoc.caseName(end+1,1) = string(cases(i).name);
-    allLoc.Re(end+1,1)       = cases(i).Re;
-    allLoc.kD(end+1,1)      = cases(i).kD;
-    allLoc.pixelSize(end+1,1) = cases(i).pixelSize;
+    allLoc.caseName(end+1,1)   = string(cases(i).name);
+    allLoc.Re(end+1,1)         = cases(i).Re;
+    allLoc.kD(end+1,1)         = cases(i).kD;
+    allLoc.pixelSize(end+1,1)  = cases(i).pixelSize;
+    allLoc.nActivated(end+1,1) = g.nActivated;
+    allLoc.nInjected(end+1,1)  = g.nInjected;
     allLoc.inception2x_xy{end+1,1} = choose_inception_activation_xy(metrics);
 
     % Accumulate upstream-size samples for distribution plot
@@ -495,6 +500,9 @@ plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
 locFigOutDir = fullfile(figDir, "InceptionLocations");
 if ~isfolder(locFigOutDir), mkdir(locFigOutDir); end
 plot_inception_locations_by_re(allLoc, locFigOutDir, plotOpts);
+
+%% ---------------- PLOT 2b: A/I based on capped activations ----------------
+plot_ai_vs_kd_capped(allLoc, figDir, plotOpts);
 
 %% ---------------- PLOT 3: mean residence time Tau vs k/d ----------------
 plot_tau_vs_kdh_re(summaryRows, figDir, plotOpts);
