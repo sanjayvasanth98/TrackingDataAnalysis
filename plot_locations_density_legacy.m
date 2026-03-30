@@ -42,7 +42,7 @@ themes = {'normal','poster'};
 for ti = 1:numel(themes)
     theme = themes{ti};
 
-    f = figure('Color','w','Position',[80 80 1500 850]);
+    f = figure('Color','w','Position',[80 80 1700 950]);
 
     for ci = 1:nCases
         subplot(2,3,ci);
@@ -61,8 +61,8 @@ for ti = 1:numel(themes)
 
         imagesc(ax, xE, yE, N.'); % transpose for axis alignment
         set(ax,'YDir','normal');
-        axis(ax,'tight');
-        axis(ax,'equal');
+        xlim(ax, [xE(1) xE(end)]);
+        ylim(ax, [yE(1) yE(end)]);
 
         xlabel(ax,'x (phys)');
         ylabel(ax,'y (phys)');

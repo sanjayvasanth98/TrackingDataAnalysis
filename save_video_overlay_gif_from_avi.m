@@ -257,7 +257,7 @@ for ii = 1:numel(frameIdxToRender)
     ylabel(ax, '$y\;(\mathrm{mm})$', 'Interpreter', 'latex', 'Color', 'k');
     grid(ax, 'off');
     box(ax, 'on');
-    set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
+    set(ax, 'LooseInset', max(get(ax, 'LooseInset'), get(ax, 'TightInset')));
 
     prepare_figure_for_export(f);
     fr = getframe(f);

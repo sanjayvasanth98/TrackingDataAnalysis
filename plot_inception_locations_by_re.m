@@ -59,6 +59,7 @@ nBinsX = 50;
 nBinsY = 40;
 histAlpha = 0.40;
 histFrac = 0.12; % fraction of figure for marginal panels
+plotVariants = resolve_inception_plot_variants(plotOpts);
 
 for theme = reshape(plotOpts.themes, 1, [])
     for r = 1:numel(ReVals)
@@ -66,22 +67,25 @@ for theme = reshape(plotOpts.themes, 1, [])
         idxRe = find(allLoc.Re == Rei);
         nReCases = numel(idxRe);
         cmap = inception_colormap(nReCases);
+        for vi = 1:numel(plotVariants)
+            variant = plotVariants(vi);
 
-        % --- Plot 1: dimensional (mm) ---
-        plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
-            throatHeight_mm, xLim, yLim, false, nBinsX, nBinsY, histAlpha, histFrac, ...
-            '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
-            char(theme), ...
-            fullfile(outDir, sprintf('Inception2x_locations_Re_%g_%s', Rei, theme)), ...
-            plotOpts);
+            % --- Plot 1: dimensional (mm) ---
+            plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+                throatHeight_mm, xLim, yLim, false, nBinsX, nBinsY, histAlpha, histFrac, ...
+                '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
+                char(theme), ...
+                fullfile(outDir, sprintf('Inception2x_locations%s_Re_%g_%s', variant.fileSuffix, Rei, theme)), ...
+                plotOpts, variant.maxAct);
 
-        % --- Plot 2: normalized by throat height (x/H, y/H) ---
-        plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
-            throatHeight_mm, xLimNorm, yLimNorm, true, nBinsX, nBinsY, histAlpha, histFrac, ...
-            '$x/H$', '$y/H$', ...
-            char(theme), ...
-            fullfile(outDir, sprintf('Inception2x_locations_normalized_Re_%g_%s', Rei, theme)), ...
-            plotOpts);
+            % --- Plot 2: normalized by throat height (x/H, y/H) ---
+            plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+                throatHeight_mm, xLimNorm, yLimNorm, true, nBinsX, nBinsY, histAlpha, histFrac, ...
+                '$x/H$', '$y/H$', ...
+                char(theme), ...
+                fullfile(outDir, sprintf('Inception2x_locations_normalized%s_Re_%g_%s', variant.fileSuffix, Rei, theme)), ...
+                plotOpts, variant.maxAct);
+        end
     end
 end
 
@@ -90,7 +94,7 @@ end
 %% ---- main plotting helper ----
 function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
     throatHeight_mm, xLim, yLim, doNormalize, nBinsX, nBinsY, histAlpha, histFrac, ...
-    xLabel, yLabel, theme, outBase, plotOpts)
+    xLabel, yLabel, theme, outBase, plotOpts, maxAct)
 
 fontName = resolve_plot_font_name();
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
@@ -143,11 +147,10 @@ for j = 1:nReCases
     end
 
     % Subsample to maxActivationsPerCase for visual fairness
-    maxAct = 250;
-    if isfield(plotOpts, 'maxActivationsPerCase') && isfinite(plotOpts.maxActivationsPerCase)
-        maxAct = plotOpts.maxActivationsPerCase;
+    if nargin < 19 || isempty(maxAct)
+        maxAct = Inf;
     end
-    if size(xy, 1) > maxAct
+    if isfinite(maxAct) && size(xy, 1) > maxAct
         rng(42 + j, 'twister');
         idx = sort(randperm(size(xy, 1), maxAct));
         xy = xy(idx, :);
@@ -237,6 +240,39 @@ end
 end
 
 %% ---- theme helpers ----
+function plotVariants = resolve_inception_plot_variants(plotOpts)
+plotVariants = struct('fileSuffix', {}, 'maxAct', {});
+
+makeCapped = true;
+if isfield(plotOpts, 'makeCappedActivationInceptionPlots')
+    makeCapped = logical(plotOpts.makeCappedActivationInceptionPlots);
+end
+
+makeAll = false;
+if isfield(plotOpts, 'makeAllActivationInceptionPlots')
+    makeAll = logical(plotOpts.makeAllActivationInceptionPlots);
+end
+
+maxAct = Inf;
+if isfield(plotOpts, 'maxActivationsPerCase') && isfinite(plotOpts.maxActivationsPerCase)
+    maxAct = plotOpts.maxActivationsPerCase;
+end
+
+if makeCapped
+    plotVariants(end+1).fileSuffix = ''; %#ok<AGROW>
+    plotVariants(end).maxAct = maxAct;
+end
+
+if makeAll
+    plotVariants(end+1).fileSuffix = '_allactivations'; %#ok<AGROW>
+    plotVariants(end).maxAct = Inf;
+end
+
+if isempty(plotVariants)
+    plotVariants = struct('fileSuffix', '', 'maxAct', maxAct);
+end
+end
+
 function style_legend_for_theme(leg, theme)
 if isempty(leg) || ~isgraphics(leg)
     return;

@@ -90,7 +90,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         title(ax, '');
         grid(ax, 'off');
         box(ax, 'on');
-        set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
+        set(ax, 'LooseInset', max(get(ax, 'LooseInset'), get(ax, 'TightInset')));
 
         if ~isempty(lgd)
             leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'northeast', 'Box', 'off');

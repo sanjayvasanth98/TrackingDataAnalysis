@@ -71,6 +71,6 @@ for ci = 1:nCases
 end
 
 T = cell2table(rows, 'VariableNames', header);
-writetable(T, csvFile);
+write_table_csv_compat(T, csvFile);
 fprintf('Saved collapse analysis CSV: %s\n', csvFile);
 end

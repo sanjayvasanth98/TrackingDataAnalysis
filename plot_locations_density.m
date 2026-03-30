@@ -36,7 +36,7 @@ plotOneSet("Activated locations (density)",         allLoc.act_xy, "ActLocations
         for theme = ["normal","poster"]
             f = figure('Color','w','Position',[80 80 1400 800]);
 
-            t = tiledlayout(f, 2, 3, 'TileSpacing','compact', 'Padding','compact');
+            t = tiledlayout(f, 2, 3, 'TileSpacing','loose', 'Padding','loose');
             title(t, figTitle);
 
             for ci = 1:nCases
@@ -60,8 +60,8 @@ plotOneSet("Activated locations (density)",         allLoc.act_xy, "ActLocations
                 % Display as image (density)
                 imagesc(ax, xC, yC, N.'); % transpose so axes align
                 set(ax,'YDir','normal');
-                axis(ax,'tight');
-                axis(ax,'equal');
+                xlim(ax, [xC(1) xC(end)]);
+                ylim(ax, [yC(1) yC(end)]);
 
                 xlabel(ax, 'x (phys)');
                 ylabel(ax, 'y (phys)');

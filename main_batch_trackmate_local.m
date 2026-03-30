@@ -177,7 +177,9 @@ plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
 plotOpts.inceptionXLim_mm = [0 4.8]; % <---edit
 plotOpts.inceptionYLim_mm = [0 1.2]; % <---edit
-plotOpts.maxActivationsPerCase = 250; % cap activation points shown per case in inception plot
+plotOpts.maxActivationsPerCase = 250; % cap activation points shown per case in capped inception plot
+plotOpts.makeCappedActivationInceptionPlots = true; % <---edit
+plotOpts.makeAllActivationInceptionPlots = true; % <---edit
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------

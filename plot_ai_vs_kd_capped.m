@@ -84,7 +84,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
 
     xlabel(ax, '$k/d$', 'Interpreter', 'latex');
-    ylabel(ax, sprintf('$A_{\\mathrm{cap}}/I$\\;(cap$\\,{=}\\,%d$)', maxAct), 'Interpreter', 'latex');
+    ylabel(ax, sprintf('A_{cap}/I (cap = %d)', maxAct), 'Interpreter', 'tex');
     title(ax, '');
     set(ax, 'YScale', 'linear', 'FontName', fontName);
     grid(ax, 'off');
