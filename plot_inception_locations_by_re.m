@@ -92,6 +92,7 @@ function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
     throatHeight_mm, xLim, yLim, doNormalize, nBinsX, nBinsY, histAlpha, histFrac, ...
     xLabel, yLabel, theme, outBase, plotOpts)
 
+fontName = resolve_plot_font_name();
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
 
 % Layout: main scatter + top marginal + right marginal
@@ -186,17 +187,17 @@ xlim(axMain, xLim);
 ylim(axMain, yLim);
 xlabel(axMain, xLabel, 'Interpreter', 'latex');
 ylabel(axMain, yLabel, 'Interpreter', 'latex');
-set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual', 'FontName', 'Times New Roman');
+set(axMain, 'XLimMode', 'manual', 'YLimMode', 'manual', 'FontName', fontName);
 grid(axMain, 'off'); box(axMain, 'on');
 
 % Top marginal styling
 xlim(axTop, xLim);
-set(axTop, 'XTickLabel', [], 'XLimMode', 'manual', 'FontName', 'Times New Roman');
+set(axTop, 'XTickLabel', [], 'XLimMode', 'manual', 'FontName', fontName);
 grid(axTop, 'off'); box(axTop, 'on');
 
 % Right marginal styling
 ylim(axRight, yLim);
-set(axRight, 'YTickLabel', [], 'YLimMode', 'manual', 'FontName', 'Times New Roman');
+set(axRight, 'YTickLabel', [], 'YLimMode', 'manual', 'FontName', fontName);
 % Remove the 0 tick so it doesn't overlap with main plot's right x-tick
 rightXTicks = get(axRight, 'XTick');
 rightXTicks(rightXTicks == 0) = [];
@@ -206,7 +207,7 @@ grid(axRight, 'off'); box(axRight, 'on');
 % Legend inside main axes
 if ~isempty(lgd)
     leg = legend(axMain, lgd, cellstr(lgdTxt), ...
-        'Location', 'northwest', 'Box', 'off', 'FontName', 'Times New Roman', 'FontSize', 8);
+        'Location', 'northwest', 'Box', 'off', 'FontName', fontName, 'FontSize', 8);
 else
     leg = [];
 end

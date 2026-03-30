@@ -40,6 +40,7 @@ end
 function plot_tau_panel(summaryTable, ReVals, figDir, theme, plotOpts, ...
     yScale, yLabelStr, titleStr, outName)
 
+fontName = resolve_plot_font_name();
 f = figure('Color', 'w', 'Position', [120 120 1000 700]);
 ax = axes(f);
 hold(ax, 'on');
@@ -85,7 +86,7 @@ end
 
 xlabel(ax, '$k/d$', 'Interpreter', 'latex');
 ylabel(ax, yLabelStr, 'Interpreter', 'latex');
-title(ax, titleStr, 'FontName', 'Times New Roman', 'FontSize', 12);
+title(ax, titleStr, 'FontName', fontName, 'FontSize', 12);
 grid(ax, 'off');
 box(ax, 'on');
 

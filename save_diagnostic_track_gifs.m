@@ -76,6 +76,7 @@ if isfield(plotOpts, 'inceptionYLim_mm') && numel(plotOpts.inceptionYLim_mm) >= 
 end
 xTicks = fixed_ticks(xLim(1), xLim(2), 0.5);
 yTicks = fixed_ticks(yLim(1), yLim(2), 0.2);
+fontName = resolve_plot_font_name();
 
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px], 'Visible', 'off');
 ax = axes(f);
@@ -158,7 +159,7 @@ for fi = 1:numel(allFrames)
     legend(ax, [hBlue, hGreen, hRed, hGray], ...
         {'Upstream tracks', 'Microbubbles (1-120\mum)', 'Activation event', 'Other tracks'}, ...
         'Location', 'northwest', 'Box', 'off', ...
-        'FontName', 'Times New Roman', 'FontSize', 8);
+        'FontName', fontName, 'FontSize', 8);
 
     xlim(ax, xLim);
     ylim(ax, yLim);
@@ -181,7 +182,7 @@ for fi = 1:numel(allFrames)
         nVisibleLeftMoving, nVisibleMicroRescue, nActThisFrame, numel(activationFrames)));
     apply_plot_theme(ax, 'normal');
 
-    drawnow;
+    prepare_figure_for_export(f);
     frame = getframe(f);
     [imInd, map] = rgb2ind(frame2im(frame), 256);
     if fi == 1

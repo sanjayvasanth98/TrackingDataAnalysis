@@ -48,6 +48,7 @@ else
 end
 
 for theme = reshape(plotOpts.themes, 1, [])
+    fontName = resolve_plot_font_name();
     f = figure('Color', 'w', 'Position', [100 100 1000 700]);
     ax = axes(f);
     hold(ax, 'on');
@@ -117,7 +118,7 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     xlabel(ax, '$k/d$', 'Interpreter', 'latex');
     ylabel(ax, '$A/I$', 'Interpreter', 'latex');
-    title(ax, 'Activation/Injection vs k/d', 'FontName', 'Times New Roman', 'FontSize', 12);
+    title(ax, 'Activation/Injection vs k/d', 'FontName', fontName, 'FontSize', 12);
     set(ax, 'YScale', 'linear');
     grid(ax, 'off');
     box(ax, 'on');

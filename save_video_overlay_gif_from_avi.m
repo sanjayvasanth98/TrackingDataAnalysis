@@ -145,6 +145,7 @@ if isfield(plotOpts, 'inceptionImageSize_px') && numel(plotOpts.inceptionImageSi
 end
 
 gifPath = fullfile(outDir, sprintf('%s_Re_%g_kD_%g_video_overlay.gif', char(caseDef.name), caseDef.Re, caseDef.kD));
+fontName = resolve_plot_font_name();
 
 f = figure('Color', 'w', 'Position', figPos, 'Visible', 'off');
 ax = axes(f);
@@ -237,7 +238,7 @@ for ii = 1:numel(frameIdxToRender)
     leg = legend(ax, [hRed, hBlue, hGreen], ...
         {'Activation', 'Upstream tracks', 'Microbubbles (1-120\mum)'}, ...
         'Location', 'northwest', 'Box', 'off', ...
-        'FontName', 'Times New Roman', 'FontSize', 8, ...
+        'FontName', fontName, 'FontSize', 8, ...
         'TextColor', 'k');
 
     xlim(ax, xLim);
@@ -258,7 +259,7 @@ for ii = 1:numel(frameIdxToRender)
     box(ax, 'on');
     set(ax, 'LooseInset', max(get(ax, 'TightInset'), 0.02));
 
-    drawnow;
+    prepare_figure_for_export(f);
     fr = getframe(f);
     rgb = frame2im(fr);
     if size(rgb,3) < 3

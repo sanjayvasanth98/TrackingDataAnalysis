@@ -6,7 +6,8 @@ if nargin < 2 || isempty(theme)
 end
 theme = lower(char(string(theme)));
 
-set(ax, 'LineWidth', 1.2, 'FontSize', 14, 'FontName', 'Times New Roman');
+fontName = resolve_plot_font_name();
+set(ax, 'LineWidth', 1.2, 'FontSize', 14, 'FontName', fontName);
 fig = ancestor(ax, 'figure');
 
 if strcmp(theme,'normal')
@@ -23,9 +24,18 @@ else
     textColor = [1 1 1];
 end
 
-ax.Title.Color = textColor;
-ax.XLabel.Color = textColor;
-ax.YLabel.Color = textColor;
+if isgraphics(ax.Title)
+    ax.Title.Color = textColor;
+    ax.Title.FontName = fontName;
+end
+if isgraphics(ax.XLabel)
+    ax.XLabel.Color = textColor;
+    ax.XLabel.FontName = fontName;
+end
+if isgraphics(ax.YLabel)
+    ax.YLabel.Color = textColor;
+    ax.YLabel.FontName = fontName;
+end
 
 set(ax,'GridAlpha',0.25,'MinorGridAlpha',0.12);
 box(ax,'on');

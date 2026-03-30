@@ -23,13 +23,15 @@ if ~isempty(outDir) && ~exist(outDir,'dir')
     mkdir(outDir);
 end
 
+prepare_figure_for_export(figHandle);
+
 if opts.savePNG
     % PNG 600 dpi
     try
-        print(figHandle, pngPath, '-dpng', '-r600');
+        exportgraphics(figHandle, pngPath, 'Resolution', 600);
     catch ME
         try
-            exportgraphics(figHandle, pngPath, 'Resolution', 600);
+            print(figHandle, pngPath, '-dpng', '-r600', '-opengl');
         catch ME2
             warning('PNG save failed for %s: %s | fallback: %s', outBase, ME.message, ME2.message);
         end
@@ -37,14 +39,19 @@ if opts.savePNG
 end
 
 if opts.saveSVG
-    % SVG: try print, else saveas
+    % SVG: try exportgraphics, then print, else saveas
     try
-        print(figHandle, svgPath, '-dsvg');
-    catch
+        exportgraphics(figHandle, svgPath, 'ContentType', 'vector');
+    catch ME
         try
-            saveas(figHandle, svgPath);
-        catch ME
-            warning('SVG save failed for %s: %s', outBase, ME.message);
+            print(figHandle, svgPath, '-dsvg');
+        catch ME2
+            try
+                saveas(figHandle, svgPath);
+            catch ME3
+                warning('SVG save failed for %s: %s | fallback: %s | saveas: %s', ...
+                    outBase, ME.message, ME2.message, ME3.message);
+            end
         end
     end
 end
