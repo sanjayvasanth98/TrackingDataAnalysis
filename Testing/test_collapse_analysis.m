@@ -1,17 +1,18 @@
 %% test_collapse_analysis.m
-% Standalone test for the collapse-frequency analysis pipeline.
+% Standalone test for the collapse analysis pipeline.
 % Loads saved .mat data from a completed main run and re-runs:
-%   - plot_collapse_rate_vs_frame
-%   - plot_collapse_power_spectrum
+%   - plot_collapse_rate_vs_frame  (cumulative count vs time)
+%   - plot_collapse_rate_vs_kd     (collapse rate vs k/d)
+%   - plot_collapse_size_distribution (peak diameter KDE)
 %   - write_collapse_analysis_csv
 %
-% Edit plotOpts and collapseOpts below to experiment, then reflect
+% Edit plotOpts below to experiment, then reflect
 % any changes back to main_batch_trackmate_local.m.
 
 clear; clc;
 
 %% Paths — edit matDir to point to your latest results run
-matDir   = "E:\March Re 90,000 inception data\Processed images\results\results 27\plot_data_mat";
+matDir   = "E:\March Re 90,000 inception data\Processed images\results\results 30 local\plot_data_mat";
 outDir   = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'CollapseAnalysis');
 csvOut   = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'collapse_analysis.csv');
 if ~isfolder(outDir), mkdir(outDir); end
@@ -23,6 +24,12 @@ S = load(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 allCollapse = S.allCollapse;
 nCases = numel(allCollapse.caseName);
 fprintf('Loaded %d cases from collapse_analysis_by_case.mat\n\n', nCases);
+
+% Backward compat: add pixelSize if missing from old .mat files
+if ~isfield(allCollapse, 'pixelSize')
+    allCollapse.pixelSize = repmat(0.00375009375, 1, nCases);
+    fprintf('(pixelSize not in .mat — using default 0.00375 mm/px)\n\n');
+end
 
 %% Print per-case summary
 fprintf('%-12s  %6s  %8s  %10s  %10s  %12s  %12s\n', ...
@@ -42,10 +49,13 @@ for ci = 1:nCases
         cd.nQualified, ...
         cd.ratePerFrame, ...
         cd.ratePerSec);
-    if ~isempty(cd.domFreqs_Hz)
-        fprintf('  Dominant frequencies (Hz): ');
-        fprintf('%.1f  ', cd.domFreqs_Hz);
-        fprintf('\n');
+    if cd.nQualified > 0
+        pa = cd.peakArea_px2(:);
+        pa = pa(isfinite(pa) & pa > 0);
+        if ~isempty(pa)
+            fprintf('  Peak area (px2): mean=%.1f  median=%.1f  std=%.1f\n', ...
+                mean(pa), median(pa), std(pa));
+        end
     end
 end
 fprintf('\n');
@@ -61,11 +71,14 @@ plotOpts.themes   = "normal";
 plotOpts.keepFiguresOpen = true;
 
 %% Re-run plots
-fprintf('Generating collapse rate vs frame plot...\n');
+fprintf('Generating cumulative collapse count vs time plot...\n');
 plot_collapse_rate_vs_frame(allCollapse, outDir, plotOpts);
 
-fprintf('Generating collapse power spectrum plot...\n');
-plot_collapse_power_spectrum(allCollapse, outDir, plotOpts);
+fprintf('Generating collapse rate vs k/d plot...\n');
+plot_collapse_rate_vs_kd(allCollapse, outDir, plotOpts);
+
+fprintf('Generating collapse size distribution plot...\n');
+plot_collapse_size_distribution(allCollapse, outDir, plotOpts);
 
 fprintf('Writing CSV...\n');
 write_collapse_analysis_csv(allCollapse, csvOut);

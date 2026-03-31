@@ -306,6 +306,11 @@ else
     voidFracOpts.cameraPixelSize  = cases(1).pixelSize;
 end
 
+%% ---- Breakup analysis options ------------------------------------------
+breakupOpts.aspectRatioMin       = 4.0;    % <---edit: parent ellipse aspect ratio threshold
+breakupOpts.childAreaMin_px2     = 100.0;  % <---edit: min child spot area (px^2)
+breakupOpts.dRoughnessSpacing_mm = 0.384;  % <---edit: roughness spacing d (mm) for gamma normalisation
+
 [cases, selectedCaseIdx, totalCaseCount] = select_cases(cases, caseSelection);
 selectedLabels = strings(numel(cases), 1);
 for si = 1:numel(cases)
@@ -339,6 +344,7 @@ allCollapse.caseName = {};
 allCollapse.kD       = [];
 allCollapse.Re       = [];
 allCollapse.dt       = [];
+allCollapse.pixelSize = [];
 allCollapse.data     = {};
 
 allVoidFrac = struct();
@@ -346,6 +352,8 @@ allVoidFrac.caseName = {};
 allVoidFrac.kD       = [];
 allVoidFrac.Re       = [];
 allVoidFrac.data     = {};
+
+allBreakup = repmat(struct('caseName', "", 'kD', 0, 'events', []), 0, 1);
 
 allSize = struct();
 allSize.caseName = strings(0,1);
@@ -444,6 +452,7 @@ for i = 1:numel(cases)
     allCollapse.kD(end+1)       = cases(i).kD;
     allCollapse.Re(end+1)       = cases(i).Re;
     allCollapse.dt(end+1)       = cases(i).dt;
+    allCollapse.pixelSize(end+1) = cases(i).pixelSize;
     allCollapse.data{end+1}     = collapseResult;
 
     % Void fraction analysis (all detected spots, no filter)
@@ -453,6 +462,17 @@ for i = 1:numel(cases)
     allVoidFrac.kD(end+1)       = cases(i).kD;
     allVoidFrac.Re(end+1)       = cases(i).Re;
     allVoidFrac.data{end+1}     = vfResult;
+
+    % Breakup event analysis (elongated-parent split events)
+    roiArg = [];
+    if exist('roiData','var') && isstruct(roiData), roiArg = roiData; end
+    bkEvents = analyze_breakup_events(cases(i).xmlFile, cases(i).pixelSize, ...
+        'roiData',                roiArg, ...
+        'aspectRatioMin',         breakupOpts.aspectRatioMin, ...
+        'childAreaMin_px2',       breakupOpts.childAreaMin_px2, ...
+        'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm);
+    allBreakup(end+1,1) = struct('caseName', string(cases(i).name), ...
+        'kD', cases(i).kD, 'events', bkEvents);
 
     % Accumulate upstream-size samples for distribution plot
     allSize.caseName(end+1,1) = string(cases(i).name);
@@ -546,6 +566,7 @@ save(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');
 save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
+save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
     't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
@@ -574,11 +595,18 @@ plot_upstream_size_distribution_by_re(allSize, distFigOutDir, binSize_phys, plot
 collapseFigDir = fullfile(figDir, "CollapseAnalysis");
 if ~isfolder(collapseFigDir), mkdir(collapseFigDir); end
 plot_collapse_rate_vs_frame(allCollapse, collapseFigDir, plotOpts);
-plot_collapse_power_spectrum(allCollapse, collapseFigDir, plotOpts);
+plot_collapse_rate_vs_kd(allCollapse, figDir, plotOpts);
+plot_collapse_size_distribution(allCollapse, collapseFigDir, plotOpts);
 write_collapse_analysis_csv(allCollapse, fullfile(resultsDir, "collapse_analysis.csv"));
 
 %% ---------------- PLOT 7: Void fraction vs k/d ----------------
 plot_void_fraction_vs_kd(allVoidFrac, figDir, plotOpts);
+
+%% ---------------- PLOT 8: Breakup gamma vs d_child/d_parent ----------------
+breakupFigDir = fullfile(figDir, "BreakupAnalysis");
+if ~isfolder(breakupFigDir), mkdir(breakupFigDir); end
+plot_breakup_gamma_vs_dratio(allBreakup, breakupFigDir, plotOpts);
+write_breakup_analysis_xlsx(allBreakup, fullfile(resultsDir, "breakup_events.xlsx"));
 
 if useMatCache && cacheUpdated
     save(cacheFile, 'cacheDB', '-v7.3');

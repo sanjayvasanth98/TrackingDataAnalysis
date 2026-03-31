@@ -1,9 +1,10 @@
 function plot_collapse_rate_vs_frame(allCollapse, figDir, plotOpts)
-%PLOT_COLLAPSE_RATE_VS_FRAME  Per-frame collapse-count time series, all cases.
+%PLOT_COLLAPSE_RATE_VS_FRAME  Cumulative collapse count vs time, all cases.
 %
-%   Thin raw count line + thick smoothed line per case, all on one axes.
-%   X-axis: time in milliseconds.  Y-axis: collapses per frame.
-%   Smoothing: moving average over ~2.5% of total frames (min 5 frames).
+%   One thick line per case showing cumulative collapse events over time.
+%   Slope = instantaneous collapse rate.  A linear curve means constant
+%   rate; curvature reveals temporal acceleration or deceleration.
+%   X-axis: time in milliseconds.  Y-axis: cumulative collapse count.
 
 if nargin < 3 || ~isfield(plotOpts,'themes') || isempty(plotOpts.themes)
     plotOpts.themes = "normal";
@@ -32,22 +33,10 @@ for theme = reshape(plotOpts.themes, 1, [])
 
         dt      = allCollapse.dt(ci);
         tAxis   = (double(cd.frameAxis) - double(cd.frameAxis(1))) * dt * 1000;  % ms
-        counts  = double(cd.collapseCount);
+        cumCount = cumsum(double(cd.collapseCount));
         col     = cmap(ci,:);
 
-        % Smoothed with moving average
-        winLen   = max(5, round(0.025 * numel(counts)));
-        kernel   = ones(winLen,1) / winLen;
-        smoothed = conv(counts, kernel, 'same');
-
-        % Raw: thin, lightened color
-        rawColor = col + (1 - col) * 0.55;
-        plot(ax, tAxis, counts, '-', ...
-            'Color', rawColor, 'LineWidth', 0.7, ...
-            'HandleVisibility','off');
-
-        % Smoothed: thick solid
-        h = plot(ax, tAxis, smoothed, '-', ...
+        h = plot(ax, tAxis, cumCount, '-', ...
             'Color', col, 'LineWidth', 2.2);
 
         lgd(end+1,1)    = h; %#ok<AGROW>
@@ -56,7 +45,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
 
     xlabel(ax, 'Time (ms)', 'Interpreter','latex');
-    ylabel(ax, 'Collapse events per frame', 'Interpreter','latex');
+    ylabel(ax, 'Cumulative collapse count, $\sum N_c$', 'Interpreter','latex');
     title(ax,'');
     grid(ax,'off');
     box(ax,'on');
@@ -81,7 +70,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         close(f);
     end
 end
-fprintf('Saved collapse rate plot to: %s\n', figDir);
+fprintf('Saved collapse cumulative count plot to: %s\n', figDir);
 end
 
 

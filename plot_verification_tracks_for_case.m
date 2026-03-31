@@ -130,7 +130,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
     if ~isempty(hMicro)
         lgdHandles(end+1,1) = hMicro(1); %#ok<AGROW>
-        lgdLabels(end+1,1) = "Microbubbles (1-120\mum)"; %#ok<AGROW>
+        lgdLabels(end+1,1) = "Other microbubbles"; %#ok<AGROW>
     end
     if ~isempty(hAct)
         lgdHandles(end+1,1) = hAct; %#ok<AGROW>

@@ -1,11 +1,7 @@
 function write_collapse_analysis_csv(allCollapse, csvFile)
-%WRITE_COLLAPSE_ANALYSIS_CSV  Save per-case collapse rate summary and dominant
-%   FFT frequencies to a CSV file.  One row per case.
+%WRITE_COLLAPSE_ANALYSIS_CSV  Per-case collapse summary to CSV.
 %
-%   Columns: Case, Re, kD, dt_s, frameRate_Hz,
-%            nTotal, nQualified, nTruncated, nROIRejected,
-%            ratePerFrame, ratePerSec,
-%            domFreq1_Hz, domFreq1_power, ..., domFreqN_Hz, domFreqN_power
+%   One row per case with event counts, rates, and peak-area statistics.
 
 nCases = numel(allCollapse.caseName);
 if nCases == 0
@@ -13,64 +9,74 @@ if nCases == 0
     return;
 end
 
-% Maximum number of dominant frequencies reported across all cases
-nDomMax = 0;
+hasPixelSize = isfield(allCollapse, 'pixelSize') && numel(allCollapse.pixelSize) >= nCases;
+
+headers = {'Case','Re','kD','dt_s','frameRate_Hz', ...
+    'nTotal','nQualified','nTruncated','nROIRejected', ...
+    'ratePerFrame','ratePerSec', ...
+    'peakArea_mean_px2','peakArea_median_px2','peakArea_std_px2'};
+if hasPixelSize
+    headers = [headers, {'peakDiam_mean_um','peakDiam_median_um'}];
+end
+
+nCols = numel(headers);
+rows  = cell(nCases, nCols);
+
 for ci = 1:nCases
     cd = allCollapse.data{ci};
-    if ~isempty(cd) && isfield(cd,'domFreqs_Hz')
-        nDomMax = max(nDomMax, numel(cd.domFreqs_Hz));
-    end
-end
-
-% Build header
-header = {'Case','Re','kD','dt_s','frameRate_Hz', ...
-    'nTotal','nQualified','nTruncated','nROIRejected', ...
-    'ratePerFrame','ratePerSec'};
-for j = 1:nDomMax
-    header{end+1} = sprintf('domFreq%d_Hz',  j); %#ok<AGROW>
-    header{end+1} = sprintf('domFreq%d_power', j); %#ok<AGROW>
-end
-
-% Build rows
-rows = cell(nCases, numel(header));
-for ci = 1:nCases
-    cd  = allCollapse.data{ci};
-    dt  = allCollapse.dt(ci);
-    fsHz = 1 / max(dt, eps);
 
     if isempty(cd)
-        cd = struct('nTotal',0,'nQualified',0,'nTruncated',0,'nROIRejected',0, ...
-            'ratePerFrame',NaN,'ratePerSec',NaN, ...
-            'domFreqs_Hz',nan(0,1),'domFreqPowers',nan(0,1));
+        rows(ci,:) = [{allCollapse.caseName{ci}}, ...
+            num2cell([allCollapse.Re(ci), allCollapse.kD(ci)]), ...
+            repmat({NaN}, 1, nCols - 3)];
+        continue;
     end
 
-    col = 1;
-    rows{ci,col} = allCollapse.caseName{ci}; col=col+1;
-    rows{ci,col} = allCollapse.Re(ci);       col=col+1;
-    rows{ci,col} = allCollapse.kD(ci);       col=col+1;
-    rows{ci,col} = dt;                        col=col+1;
-    rows{ci,col} = fsHz;                      col=col+1;
-    rows{ci,col} = cd.nTotal;                 col=col+1;
-    rows{ci,col} = cd.nQualified;             col=col+1;
-    rows{ci,col} = cd.nTruncated;             col=col+1;
-    rows{ci,col} = cd.nROIRejected;           col=col+1;
-    rows{ci,col} = cd.ratePerFrame;           col=col+1;
-    rows{ci,col} = cd.ratePerSec;             col=col+1;
+    dt_s = allCollapse.dt(ci);
+    frameRate = 1 / max(dt_s, eps);
 
-    domF = cd.domFreqs_Hz(:);
-    domP = cd.domFreqPowers(:);
-    for j = 1:nDomMax
-        if j <= numel(domF)
-            rows{ci,col} = domF(j); col=col+1;
-            rows{ci,col} = domP(j); col=col+1;
+    % Peak-area statistics
+    pa = cd.peakArea_px2(:);
+    pa = pa(isfinite(pa) & pa > 0);
+    if isempty(pa)
+        paMean = NaN; paMedian = NaN; paStd = NaN;
+        dMean  = NaN; dMedian  = NaN;
+    else
+        paMean   = mean(pa);
+        paMedian = median(pa);
+        paStd    = std(pa);
+        if hasPixelSize
+            d_eq    = 2 * sqrt(pa / pi) * allCollapse.pixelSize(ci) * 1000; % um
+            dMean   = mean(d_eq);
+            dMedian = median(d_eq);
         else
-            rows{ci,col} = NaN; col=col+1;
-            rows{ci,col} = NaN; col=col+1;
+            dMean  = NaN;
+            dMedian = NaN;
         end
     end
+
+    baseRow = { ...
+        allCollapse.caseName{ci}, ...
+        allCollapse.Re(ci), ...
+        allCollapse.kD(ci), ...
+        dt_s, ...
+        frameRate, ...
+        cd.nTotal, ...
+        cd.nQualified, ...
+        cd.nTruncated, ...
+        cd.nROIRejected, ...
+        cd.ratePerFrame, ...
+        cd.ratePerSec, ...
+        paMean, paMedian, paStd};
+
+    if hasPixelSize
+        baseRow = [baseRow, {dMean, dMedian}]; %#ok<AGROW>
+    end
+
+    rows(ci,:) = baseRow;
 end
 
-T = cell2table(rows, 'VariableNames', header);
+T = cell2table(rows, 'VariableNames', headers);
 write_table_csv_compat(T, csvFile);
 fprintf('Saved collapse analysis CSV: %s\n', csvFile);
 end
