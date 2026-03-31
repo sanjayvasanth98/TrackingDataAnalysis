@@ -1,4 +1,4 @@
-function plot_breakup_gamma_vs_dratio(breakupData, figDir, plotOpts)
+function plot_breakup_gamma_vs_dratio(breakupData, figDir, plotOpts, arLabel)
 % PLOT_BREAKUP_GAMMA_VS_DRATIO
 %   Scatter of gamma = (x_child - x_parent)/d_roughness vs d_child/d_parent.
 %   One scatter point per child-parent pair, 50% transparent markers.
@@ -11,9 +11,15 @@ function plot_breakup_gamma_vs_dratio(breakupData, figDir, plotOpts)
 %     .caseName  string
 %     .kD        double
 %     .events    struct array from analyze_breakup_events
+%
+%   arLabel (optional): string appended to output filename, e.g. 'AR1p5'.
+%     Also shown in the title for identification.
 
 if nargin < 3 || ~isfield(plotOpts, 'themes') || isempty(plotOpts.themes)
     plotOpts.themes = "normal";
+end
+if nargin < 4 || isempty(arLabel)
+    arLabel = "";
 end
 
 nCases = numel(breakupData);
@@ -113,7 +119,12 @@ for theme = reshape(plotOpts.themes, 1, [])
     xlabel(ax, '$d_\mathrm{child}/d_\mathrm{parent}$', 'Interpreter', 'latex');
     ylabel(ax, '$\gamma = (x_\mathrm{child} - x_\mathrm{parent})\,/\,d$', ...
         'Interpreter', 'latex');
-    title(ax, '');
+    if arLabel ~= ""
+        title(ax, sprintf('Parent AR $\\geq$ %s', strrep(char(arLabel), 'AR', '')), ...
+            'Interpreter', 'latex');
+    else
+        title(ax, '');
+    end
     grid(ax, 'off');
     box(ax, 'on');
 
@@ -127,7 +138,11 @@ for theme = reshape(plotOpts.themes, 1, [])
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
 
-    outBase = fullfile(figDir, "Breakup_gamma_vs_dRatio_" + theme);
+    if arLabel ~= ""
+        outBase = fullfile(figDir, "Breakup_gamma_vs_dRatio_" + arLabel + "_" + theme);
+    else
+        outBase = fullfile(figDir, "Breakup_gamma_vs_dRatio_" + theme);
+    end
     save_fig_dual_safe(f, outBase, plotOpts);
     if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
         close(f);

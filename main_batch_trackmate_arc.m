@@ -307,7 +307,8 @@ else
 end
 
 %% ---- Breakup analysis options ------------------------------------------
-breakupOpts.aspectRatioMin       = 4.0;    % <---edit: parent ellipse aspect ratio threshold
+breakupOpts.aspectRatioMin       = 1.5;    % <---edit: parent ellipse aspect ratio threshold (lowest AR of interest; post-filtered per threshold below)
+breakupOpts.arThresholds         = [1.5, 2.0, 3.0, 4.0]; % <---edit: AR thresholds for separate plots & .mat files
 breakupOpts.childAreaMin_px2     = 100.0;  % <---edit: min child spot area (px^2)
 breakupOpts.dRoughnessSpacing_mm = 0.384;  % <---edit: roughness spacing d (mm) for gamma normalisation
 
@@ -566,7 +567,7 @@ save(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');
 save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
-save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
+% breakup_analysis_by_case.mat saved later with per-AR-threshold variants
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
     't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
@@ -605,8 +606,18 @@ plot_void_fraction_vs_kd(allVoidFrac, figDir, plotOpts);
 %% ---------------- PLOT 8: Breakup gamma vs d_child/d_parent ----------------
 breakupFigDir = fullfile(figDir, "BreakupAnalysis");
 if ~isfolder(breakupFigDir), mkdir(breakupFigDir); end
-plot_breakup_gamma_vs_dratio(allBreakup, breakupFigDir, plotOpts);
+
+% Save the full (AR >= 1.5) dataset and produce per-threshold plots & .mat files
+save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
 write_breakup_analysis_xlsx(allBreakup, fullfile(resultsDir, "breakup_events.xlsx"));
+
+for arThr = breakupOpts.arThresholds
+    arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));  % e.g. AR1p5
+    filteredBreakup = filter_breakup_by_ar(allBreakup, arThr);
+    plot_breakup_gamma_vs_dratio(filteredBreakup, breakupFigDir, plotOpts, arTag);
+    save(fullfile(matDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filteredBreakup');
+    fprintf('  Breakup %s: saved .mat + plots\n', arTag);
+end
 
 if useMatCache && cacheUpdated
     save(cacheFile, 'cacheDB', '-v7.3');

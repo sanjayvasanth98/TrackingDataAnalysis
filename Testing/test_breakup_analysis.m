@@ -1,7 +1,7 @@
 %% test_breakup_analysis.m
 % Standalone test for the breakup analysis pipeline.
 % Loads saved .mat data from a completed main run and re-runs:
-%   - plot_breakup_gamma_vs_dratio
+%   - plot_breakup_gamma_vs_dratio  (per AR threshold: 1.5, 2.0, 4.0)
 %   - write_breakup_analysis_xlsx
 %
 % Edit matDir below to point to the latest results run.
@@ -22,7 +22,7 @@ allBreakup = S.allBreakup;
 nCases = numel(allBreakup);
 fprintf('Loaded %d cases from breakup_analysis_by_case.mat\n\n', nCases);
 
-%% Print per-case summary
+%% Print per-case summary (all events, lowest AR)
 fprintf('%-12s  %6s  %10s\n', 'Case', 'k/d', 'N events');
 fprintf('%s\n', repmat('-', 1, 34));
 for ci = 1:nCases
@@ -42,11 +42,24 @@ plotOpts.saveSVG            = false;
 plotOpts.themes             = "normal";
 plotOpts.keepFiguresOpen    = true;
 
-%% Re-run plot
-fprintf('Generating breakup gamma vs dRatio plot...\n');
-plot_breakup_gamma_vs_dratio(allBreakup, outDir, plotOpts);
+%% AR thresholds — same as main batch
+arThresholds = [1.5, 2.0, 3.0, 4.0];
 
-%% Write XLSX
+%% Re-run plots for each AR threshold
+for arThr = arThresholds
+    arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));
+    filteredBreakup = filter_breakup_by_ar(allBreakup, arThr);
+
+    nTotal = 0;
+    for ci = 1:numel(filteredBreakup)
+        nTotal = nTotal + numel(filteredBreakup(ci).events);
+    end
+    fprintf('Generating breakup plot for %s (%d events total)...\n', arTag, nTotal);
+
+    plot_breakup_gamma_vs_dratio(filteredBreakup, outDir, plotOpts, arTag);
+end
+
+%% Write XLSX (full dataset)
 fprintf('Writing XLSX...\n');
 write_breakup_analysis_xlsx(allBreakup, xlsxOut);
 
