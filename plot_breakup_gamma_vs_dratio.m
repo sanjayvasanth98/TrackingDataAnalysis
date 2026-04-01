@@ -2,10 +2,9 @@ function plot_breakup_gamma_vs_dratio(breakupData, figDir, plotOpts, arLabel)
 % PLOT_BREAKUP_GAMMA_VS_DRATIO
 %   Scatter of gamma = (x_child - x_parent)/d_roughness vs d_child/d_parent.
 %   One scatter point per child-parent pair, 50% transparent markers.
-%   Per-case coloured mean line (log-spaced bins, no markers).
+%   Per-case coloured mean line (linear bins, no markers).
 %   Zero-line reference at gamma=0.
-%   Square axes.  X plotted as log10(dRatio) with 10^n tick labels.
-%   Y centred at 0 with symmetric limits.
+%   Linear x-axis.  Y centred at 0 with symmetric limits.
 %
 %   breakupData: struct array, one element per case, with fields:
 %     .caseName  string
@@ -42,16 +41,10 @@ if isempty(allDRatio)
     return;
 end
 
-% X-axis in log10 space (linear axis, labels as 10^n).
-logDR = log10(max(allDRatio, 1e-6));       % guard against log(0)
-xMinExp = floor(min(logDR));               % e.g. -2
-xMaxExp = ceil(max(logDR));                % e.g.  0
-if xMaxExp <= xMinExp, xMaxExp = xMinExp + 1; end
-xLimLog = [xMinExp, xMaxExp];
-
-% Tick positions and labels: 10^-2, 10^-1, 10^0 ...
-xTicks   = xMinExp:xMaxExp;
-xTickLbl = arrayfun(@(e) sprintf('10^{%d}', e), xTicks, 'UniformOutput', false);
+% X-axis: linear scale with tight limits around the data.
+xPad = 0.05 * (max(allDRatio) - min(allDRatio));
+if xPad == 0, xPad = 0.5; end
+xLim = [max(0, min(allDRatio) - xPad), max(allDRatio) + xPad];
 
 % Y-axis: symmetric about 0.
 yAbsMax = ceil(max(abs(allGamma)));
@@ -61,11 +54,11 @@ yLimPlot = [-yAbsMax, yAbsMax];
 % Per-case colour (using lines colourmap).
 cmap = lines(max(nCases, 1));
 
-% Number of bins for the mean line (equally spaced in log10 space).
+% Number of bins for the mean line (equally spaced in log space).
 nBins = 8;
 
 for theme = reshape(plotOpts.themes, 1, [])
-    f = figure('Color', 'w', 'Position', [100 100 700 700]);
+    f = figure('Color', 'w', 'Position', [100 100 1100 700]);
     ax = axes(f);
     hold(ax, 'on');
 
@@ -78,59 +71,50 @@ for theme = reshape(plotOpts.themes, 1, [])
 
         dRatio   = [ev.dRatio].';
         gamma    = [ev.gamma].';
-        logDRci  = log10(max(dRatio, 1e-6));
         col      = cmap(ci, :);
 
-        % --- Scatter (50% transparent) ---
-        scatter(ax, logDRci, gamma, 40, col, 'filled', ...
+        % --- Scatter (50% transparent) — used for legend ---
+        hPt = scatter(ax, dRatio, gamma, 40, col, 'filled', ...
             'MarkerFaceAlpha', 0.50, ...
-            'MarkerEdgeColor', 'none', ...
-            'HandleVisibility', 'off');
+            'MarkerEdgeColor', 'none');
+        lgd(end+1,1)    = hPt; %#ok<AGROW>
+        lgdTxt(end+1,1) = sprintf('k/d = %.2f', breakupData(ci).kD); %#ok<AGROW>
 
-        % --- Binned mean line (equally spaced in log10 space, no markers) ---
-        binEdges  = linspace(xLimLog(1), xLimLog(2), nBins + 1);
+        % --- Binned mean line (equally spaced in linear space, no markers) ---
+        binEdges  = linspace(xLim(1), xLim(2), nBins + 1);
         binCentre = 0.5 * (binEdges(1:end-1) + binEdges(2:end));
         meanGamma = nan(nBins, 1);
         for b = 1:nBins
-            inBin = logDRci >= binEdges(b) & logDRci < binEdges(b+1);
+            inBin = dRatio >= binEdges(b) & dRatio < binEdges(b+1);
             if sum(inBin) >= 1
                 meanGamma(b) = mean(gamma(inBin));
             end
         end
         hasData = isfinite(meanGamma);
         if sum(hasData) >= 2
-            hLine = plot(ax, binCentre(hasData), meanGamma(hasData), '-', ...
+            plot(ax, binCentre(hasData), meanGamma(hasData), '-', ...
                 'Color', col, ...
-                'LineWidth', 2.0);
-            lgd(end+1,1)    = hLine; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('k/d = %.2f', breakupData(ci).kD); %#ok<AGROW>
+                'LineWidth', 2.0, ...
+                'HandleVisibility', 'off');
         end
     end
 
     % Zero reference line.
-    plot(ax, xLimLog, [0 0], '--', 'Color', [0.5 0.5 0.5], ...
+    plot(ax, xLim, [0 0], '--', 'Color', [0.5 0.5 0.5], ...
         'LineWidth', 1.2, 'HandleVisibility', 'off');
 
-    xlim(ax, xLimLog);
+    xlim(ax, xLim);
     ylim(ax, yLimPlot);
-    set(ax, 'XTick', xTicks, 'XTickLabel', xTickLbl, 'TickLabelInterpreter', 'tex');
-    pbaspect(ax, [1 1 1]);
 
     xlabel(ax, '$d_\mathrm{child}/d_\mathrm{parent}$', 'Interpreter', 'latex');
     ylabel(ax, '$\gamma = (x_\mathrm{child} - x_\mathrm{parent})\,/\,d$', ...
         'Interpreter', 'latex');
-    if arLabel ~= ""
-        title(ax, sprintf('Parent AR $\\geq$ %s', strrep(char(arLabel), 'AR', '')), ...
-            'Interpreter', 'latex');
-    else
-        title(ax, '');
-    end
     grid(ax, 'off');
     box(ax, 'on');
 
     if ~isempty(lgd)
         leg = legend(ax, lgd, cellstr(lgdTxt), ...
-            'Location', 'southoutside', 'NumColumns', 2, 'Box', 'off');
+            'Location', 'northeast', 'Box', 'off');
     else
         leg = [];
     end

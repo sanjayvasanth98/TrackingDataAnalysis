@@ -57,8 +57,13 @@ for arThr = arThresholds
     fprintf('Generating breakup plot for %s (%d events total)...\n', arTag, nTotal);
 
     plot_breakup_gamma_vs_dratio(filteredBreakup, outDir, plotOpts, arTag);
+    save_square_copy(gcf, outDir, "Breakup_gamma_vs_dRatio_" + arTag + "_normal", plotOpts);
+
     plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, outDir, plotOpts, arTag, outDir);
+    save_square_copy(gcf, outDir, "Breakup_gamma_beeswarm_kD_" + arTag + "_normal", plotOpts);
+
     plot_breakup_gamma_scatter_vs_ar(filteredBreakup, outDir, plotOpts, arTag, outDir);
+    save_square_copy(gcf, outDir, "Breakup_gamma_scatter_AR_" + arTag + "_normal", plotOpts);
 end
 
 %% Write XLSX (full dataset)
@@ -66,3 +71,16 @@ fprintf('Writing XLSX...\n');
 write_breakup_analysis_xlsx(allBreakup, xlsxOut);
 
 fprintf('\nDone. Output in:\n  %s\n  %s\n', outDir, xlsxOut);
+
+
+%% ========================================================================
+function save_square_copy(fig, outDir, baseName, plotOpts)
+%SAVE_SQUARE_COPY  Resize an open figure to square and save a second copy.
+%   The rectangle version is already saved by the plot function.
+%   This creates an additional _square version.
+    origPos = fig.Position;
+    fig.Position = [100 100 700 700];
+    drawnow;
+    save_fig_dual_safe(fig, fullfile(outDir, baseName + "_square"), plotOpts);
+    fig.Position = origPos;   % restore rectangle for display
+end
