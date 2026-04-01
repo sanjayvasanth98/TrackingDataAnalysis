@@ -57,6 +57,8 @@ for arThr = arThresholds
     fprintf('Generating breakup plot for %s (%d events total)...\n', arTag, nTotal);
 
     plot_breakup_gamma_vs_dratio(filteredBreakup, outDir, plotOpts, arTag);
+    plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, outDir, plotOpts, arTag, outDir);
+    plot_breakup_gamma_scatter_vs_ar(filteredBreakup, outDir, plotOpts, arTag, outDir);
 end
 
 %% Write XLSX (full dataset)

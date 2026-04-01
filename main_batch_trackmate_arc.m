@@ -615,6 +615,8 @@ for arThr = breakupOpts.arThresholds
     arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));  % e.g. AR1p5
     filteredBreakup = filter_breakup_by_ar(allBreakup, arThr);
     plot_breakup_gamma_vs_dratio(filteredBreakup, breakupFigDir, plotOpts, arTag);
+    plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, breakupFigDir, plotOpts, arTag, matDir);
+    plot_breakup_gamma_scatter_vs_ar(filteredBreakup, breakupFigDir, plotOpts, arTag, matDir);
     save(fullfile(matDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filteredBreakup');
     fprintf('  Breakup %s: saved .mat + plots\n', arTag);
 end
