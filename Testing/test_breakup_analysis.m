@@ -1,7 +1,7 @@
 %% test_breakup_analysis.m
 % Standalone test for the breakup analysis pipeline.
 % Loads saved .mat data from a completed main run and re-runs:
-%   - plot_breakup_gamma_vs_dratio  (per AR threshold: 1.5, 2.0, 4.0)
+%   - breakup plots (saved as square-format outputs only)
 %   - write_breakup_analysis_xlsx
 %
 % Edit matDir below to point to the latest results run.
@@ -37,8 +37,8 @@ set(0, 'DefaultFigureVisible', 'on');
 plotOpts = struct();
 plotOpts.enableNormalTheme  = true;
 plotOpts.enablePosterTheme  = false;
-plotOpts.savePNG            = true;
-plotOpts.saveSVG            = false;
+plotOpts.savePNG            = false; % suppress default rectangular saves
+plotOpts.saveSVG            = false; % square copies are saved manually below
 plotOpts.themes             = "normal";
 plotOpts.keepFiguresOpen    = true;
 
@@ -57,13 +57,13 @@ for arThr = arThresholds
     fprintf('Generating breakup plot for %s (%d events total)...\n', arTag, nTotal);
 
     plot_breakup_gamma_vs_dratio(filteredBreakup, outDir, plotOpts, arTag);
-    save_square_copy(gcf, outDir, "Breakup_gamma_vs_dRatio_" + arTag + "_normal", plotOpts);
+    save_square_only(gcf, outDir, "Breakup_gamma_vs_dRatio_" + arTag + "_normal", plotOpts);
 
     plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, outDir, plotOpts, arTag, outDir);
-    save_square_copy(gcf, outDir, "Breakup_gamma_beeswarm_kD_" + arTag + "_normal", plotOpts);
+    save_square_only(gcf, outDir, "Breakup_gamma_beeswarm_kD_" + arTag + "_normal", plotOpts);
 
     plot_breakup_gamma_scatter_vs_ar(filteredBreakup, outDir, plotOpts, arTag, outDir);
-    save_square_copy(gcf, outDir, "Breakup_gamma_scatter_AR_" + arTag + "_normal", plotOpts);
+    save_square_only(gcf, outDir, "Breakup_gamma_scatter_AR_" + arTag + "_normal", plotOpts);
 end
 
 %% Write XLSX (full dataset)
@@ -74,13 +74,15 @@ fprintf('\nDone. Output in:\n  %s\n  %s\n', outDir, xlsxOut);
 
 
 %% ========================================================================
-function save_square_copy(fig, outDir, baseName, plotOpts)
-%SAVE_SQUARE_COPY  Resize an open figure to square and save a second copy.
-%   The rectangle version is already saved by the plot function.
-%   This creates an additional _square version.
+function save_square_only(fig, outDir, baseName, plotOpts)
+%SAVE_SQUARE_ONLY  Resize an open figure to square and save only that version.
     origPos = fig.Position;
     fig.Position = [100 100 700 700];
     drawnow;
-    save_fig_dual_safe(fig, fullfile(outDir, baseName + "_square"), plotOpts);
-    fig.Position = origPos;   % restore rectangle for display
+    squarePlotOpts = plotOpts;
+    if ~isfield(squarePlotOpts, 'savePNG') || ~squarePlotOpts.savePNG
+        squarePlotOpts.savePNG = true;
+    end
+    save_fig_dual_safe(fig, fullfile(outDir, baseName + "_square"), squarePlotOpts);
+    fig.Position = origPos;
 end

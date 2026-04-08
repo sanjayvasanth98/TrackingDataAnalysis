@@ -58,6 +58,15 @@ end
 % - ["5um","30um"]   -> run multiple cases by name
 caseSelection = "all"; % <---edit
 
+% Multi-XML chunk auto-detection:
+% Keep cases(i).xmlFile pointed at the base XML path or folder path. If it
+% points to a folder, the folder name is used as the XML stem. If sibling
+% files named <stem>_1.xml, <stem>_2.xml, ... exist, those numbered XMLs
+% are used as the chunk set for that case. If no numbered chunk XMLs
+% exist, the unnumbered base XML is used as the single combined input.
+% Combined results stay in resultsDir; per-chunk results are written under
+% resultsDir/results individual/chunk_N/.
+
 % Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
 useMatCache = true; % <---edit
 forceReparse = false; % <---edit
@@ -185,6 +194,13 @@ plotOpts.themes = enabled_plot_themes(plotOpts);
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
 % Required fields per case:
 %   name, Re, kD, xmlFile, pixelSize, dt
+%   xmlFile may be a base XML path or a folder path. If it points to a
+%   folder, the folder name is used as the XML stem for chunk detection.
+% Optional:
+%   videoFile = base AVI path or folder path. If it points to a folder,
+%   the folder name is used as the video stem. If sibling files named
+%   <stem>_1.avi, <stem>_2.avi, ... exist, chunk overlay GIFs use those
+%   per chunk.
 % If you include one Re only, everything still runs.
 % Edit case definitions below for your runs. <---edit
 
@@ -366,6 +382,16 @@ allSize.kD      = nan(0,1);
 allSize.size_eqd = cell(0,1);
 
 gateSummaryRows = table();
+
+% Chunk accumulators (cell arrays indexed by chunk number)
+chunkSummaryRows    = {};
+chunkAllLoc         = {};
+chunkAllCollapse    = {};
+chunkAllVoidFrac    = {};
+chunkAllBreakup     = {};
+chunkAllSize        = {};
+chunkGateSummaryRows = {};
+
 cachePolicyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts);
 runTimer = tic;
 
@@ -374,43 +400,27 @@ for i = 1:numel(cases)
     fprintf("\n=== Case %d/%d: %s (Re=%g, k/d=%.6g) ===\n", ...
         i, numel(cases), cases(i).name, cases(i).Re, cases(i).kD);
 
-    caseKey = build_case_cache_key(cases(i), maxTracksToParse, cachePolicyTag);
-    idxCache = find(cacheDB.key == caseKey, 1, 'first');
-    useCacheEntry = false;
-
-    if useMatCache && ~forceReparse && ~isempty(idxCache)
-        cachedOut = cacheDB.out{idxCache};
-        if is_cache_entry_compatible(cachedOut, parserOpts)
-            out = cachedOut;
-            useCacheEntry = true;
-            fprintf("Using cache entry %d/%d\n", idxCache, numel(cacheDB.key));
-        else
-            fprintf("Cache entry %d/%d incompatible with parser policy/version. Reparsing XML.\n", ...
-                idxCache, numel(cacheDB.key));
-        end
+    [xmlFiles_i, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
+        cases(i), maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
+        cacheDB, cacheUpdated, cachePolicyTag, ~isArc);
+    nXmlChunks_i = numel(xmlFiles_i);
+    hasIndividualChunks = nXmlChunks_i > 1;
+    if hasIndividualChunks
+        fprintf("  Found %d XML chunks for combined analysis.\n", nXmlChunks_i);
     end
 
-    if ~useCacheEntry
-        % Parse XML (NO plotting inside)
-        out = analyze_trackmate_xml_arc( ...
-            cases(i).xmlFile, ...
-            pixelSize = cases(i).pixelSize, ...
-            dt        = cases(i).dt, ...
-            maxTracks = maxTracksToParse, ...
-            parseROI  = false, ...
-            verbose   = ~isArc, ...
-            makePlots = false, ...
-            parseTrackedSpotsOnly = parserOpts.parseTrackedSpotsOnly, ...
-            parseFilteredTracksOnly = parserOpts.parseFilteredTracksOnly);
-
-        if useMatCache
-            if isempty(idxCache)
-                cacheDB.key(end+1,1) = caseKey;
-                cacheDB.out{end+1,1} = out;
-            else
-                cacheDB.out{idxCache,1} = out;
+    out = merge_parsed_outputs(outChunks, xmlFiles_i);
+    chunkInfo = out.meta.chunkInfo;
+    chunkVideoFiles_i = {};
+    if plotOpts.makeVideoOverlayGifs
+        chunkVideoFiles_i = detect_chunk_video_files(cases(i).videoFile);
+        if hasIndividualChunks
+            if isempty(chunkVideoFiles_i)
+                fprintf("  Video overlay: no chunk AVI files found for this multi-XML case.\n");
+            elseif numel(chunkVideoFiles_i) ~= nXmlChunks_i
+                fprintf("  Video overlay: found %d AVI chunk(s) for %d XML chunk(s); exporting first %d chunk overlay GIF(s).\n", ...
+                    numel(chunkVideoFiles_i), nXmlChunks_i, min(numel(chunkVideoFiles_i), nXmlChunks_i));
             end
-            cacheUpdated = true;
         end
     end
 
@@ -470,11 +480,15 @@ for i = 1:numel(cases)
     % Breakup event analysis (elongated-parent split events)
     roiArg = [];
     if exist('roiData','var') && isstruct(roiData), roiArg = roiData; end
-    bkEvents = analyze_breakup_events(cases(i).xmlFile, cases(i).pixelSize, ...
-        'roiData',                roiArg, ...
-        'aspectRatioMin',         breakupOpts.aspectRatioMin, ...
-        'childAreaMin_px2',       breakupOpts.childAreaMin_px2, ...
-        'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm);
+    breakupEventsByChunk = cell(nXmlChunks_i, 1);
+    for c = 1:nXmlChunks_i
+        breakupEventsByChunk{c} = analyze_breakup_events(xmlFiles_i{c}, cases(i).pixelSize, ...
+            'roiData',                roiArg, ...
+            'aspectRatioMin',         breakupOpts.aspectRatioMin, ...
+            'childAreaMin_px2',       breakupOpts.childAreaMin_px2, ...
+            'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm);
+    end
+    bkEvents = combine_breakup_event_chunks(breakupEventsByChunk, chunkInfo);
     allBreakup(end+1,1) = struct('caseName', string(cases(i).name), ...
         'kD', cases(i).kD, 'events', bkEvents);
 
@@ -509,7 +523,7 @@ for i = 1:numel(cases)
         save_diagnostic_track_gifs(cases(i), metrics, gifOutDir, plotOpts);
     end
 
-    if plotOpts.makeVideoOverlayGifs
+    if plotOpts.makeVideoOverlayGifs && ~hasIndividualChunks
         save_video_overlay_gif_from_avi(cases(i), metrics, videoGifOutDir, plotOpts);
     end
 
@@ -541,6 +555,132 @@ for i = 1:numel(cases)
         'tau_mean','tau_std','tau_sem','nTau','elapsed_case_sec'});
 
     summaryRows = [summaryRows; row]; %#ok<AGROW>
+
+    % ---- Individual per-XML chunk analysis for this case -----------------
+    if hasIndividualChunks
+        for c = 1:nXmlChunks_i
+            outChunk = outChunks{c};
+            if isempty(outChunk.trajectories), continue; end
+
+            % Initialise chunk accumulator on first use
+            if numel(chunkSummaryRows) < c || isempty(chunkSummaryRows{c})
+                chunkSummaryRows{c}    = table();
+                chunkAllLoc{c}         = struct('caseName',strings(0,1),'Re',nan(0,1),'kD',nan(0,1), ...
+                                                'pixelSize',nan(0,1),'nActivated',nan(0,1),'nInjected',nan(0,1), ...
+                                                'inception2x_xy',{cell(0,1)});
+                chunkAllCollapse{c}    = struct('caseName',{{}},'kD',[],'Re',[],'dt',[],'pixelSize',[],'data',{{}});
+                chunkAllVoidFrac{c}    = struct('caseName',{{}},'kD',[],'Re',[],'data',{{}});
+                chunkAllBreakup{c}     = repmat(struct('caseName',"", 'kD',0, 'events',[]), 0, 1);
+                chunkAllSize{c}        = struct('caseName',strings(0,1),'Re',nan(0,1),'kD',nan(0,1),'size_eqd',{cell(0,1)});
+                chunkGateSummaryRows{c} = table();
+            end
+
+            % Metrics for this chunk
+            activationOpts.pixelSize = cases(i).pixelSize;
+            mc = trackmate_case_metrics(outChunk, qcOpts, flowOpts, activationOpts);
+            gc = mc.gateStats;
+
+            % Inception locations
+            chunkAllLoc{c}.caseName(end+1,1)   = string(cases(i).name);
+            chunkAllLoc{c}.Re(end+1,1)         = cases(i).Re;
+            chunkAllLoc{c}.kD(end+1,1)         = cases(i).kD;
+            chunkAllLoc{c}.pixelSize(end+1,1)  = cases(i).pixelSize;
+            chunkAllLoc{c}.nActivated(end+1,1) = gc.nActivated;
+            chunkAllLoc{c}.nInjected(end+1,1)  = gc.nInjected;
+            chunkAllLoc{c}.inception2x_xy{end+1,1} = choose_inception_activation_xy(mc);
+
+            % Collapse
+            collapseChunk = analyze_collapse_events(outChunk, cases(i).pixelSize, cases(i).dt, collapseOpts);
+            chunkAllCollapse{c}.caseName{end+1} = char(cases(i).name);
+            chunkAllCollapse{c}.kD(end+1)       = cases(i).kD;
+            chunkAllCollapse{c}.Re(end+1)       = cases(i).Re;
+            chunkAllCollapse{c}.dt(end+1)       = cases(i).dt;
+            chunkAllCollapse{c}.pixelSize(end+1) = cases(i).pixelSize;
+            chunkAllCollapse{c}.data{end+1}     = collapseChunk;
+
+            % Void fraction
+            voidFracOpts.cameraPixelSize = cases(i).pixelSize;
+            vfChunk = analyze_void_fraction(outChunk, voidFracOpts);
+            chunkAllVoidFrac{c}.caseName{end+1} = char(cases(i).name);
+            chunkAllVoidFrac{c}.kD(end+1)       = cases(i).kD;
+            chunkAllVoidFrac{c}.Re(end+1)       = cases(i).Re;
+            chunkAllVoidFrac{c}.data{end+1}     = vfChunk;
+
+            % Breakup
+            bkChunk = breakupEventsByChunk{c};
+            chunkAllBreakup{c}(end+1,1) = struct('caseName', string(cases(i).name), ...
+                'kD', cases(i).kD, 'events', bkChunk);
+
+            % Upstream size
+            chunkAllSize{c}.caseName(end+1,1) = string(cases(i).name);
+            chunkAllSize{c}.Re(end+1,1)       = cases(i).Re;
+            chunkAllSize{c}.kD(end+1,1)       = cases(i).kD;
+            chunkAllSize{c}.size_eqd{end+1,1} = mc.upstreamSize_eqd;
+
+            % Gate summary
+            chunkGateRow = table( ...
+                string(cases(i).name), cases(i).Re, cases(i).kD, ...
+                gc.nTracksTotal, gc.nInjected, gc.nActivated, ...
+                gc.nRejectedTooShort, gc.nRejectedNonFinite, gc.nRejectedNonMonotonicTime, ...
+                gc.nRejectedTopology, gc.nRejectedFlow, gc.nRejectedOrigin, ...
+                gc.nRejectedNoActivation, gc.nRejectedWallBand, ...
+                gc.originThreshold, gc.xStartMin, gc.xStartMax, ...
+                'VariableNames', {'Case','Re','kD','nTracksTotal','nInjected','nActivated', ...
+                'nRejectedTooShort','nRejectedNonFinite','nRejectedNonMonotonicTime', ...
+                'nRejectedTopology','nRejectedFlow','nRejectedOrigin', ...
+                'nRejectedNoActivation','nRejectedWallBand', ...
+                'originThreshold','xStartMin','xStartMax'});
+            chunkGateSummaryRows{c} = [chunkGateSummaryRows{c}; chunkGateRow]; %#ok<AGROW>
+
+            % Per-case framewise CSV for this chunk
+            chunkCaseDir = fullfile(resultsDir, "results individual", sprintf("chunk_%d", c));
+            if ~isfolder(chunkCaseDir), mkdir(chunkCaseDir); end
+            write_framewise_case_csv(chunkCaseDir, cases(i), mc);
+
+            % Chunk-specific video overlay GIF (if matching AVI exists)
+            if plotOpts.makeVideoOverlayGifs && c <= numel(chunkVideoFiles_i)
+                chunkVideoDir = fullfile(chunkCaseDir, "video overlay gifs");
+                chunkCaseDef = cases(i);
+                chunkCaseDef.videoFile = string(chunkVideoFiles_i{c});
+                save_video_overlay_gif_from_avi(chunkCaseDef, mc, chunkVideoDir, plotOpts, ...
+                    videoFileOverride = chunkVideoFiles_i{c});
+            end
+
+            % Summary row for this chunk
+            nVc = mc.nBasicValidTracks;
+            nSRc = mc.nStrictPrimaryTracks;
+            nSAc = mc.nStrictActivatedTracks;
+            sRFc = nSRc / max(mc.nTracksTotal, 1);
+            sAFc = nSAc / max(nVc, 1);
+            tMc = mc.tau_mean; tSc = mc.tau_std; nTc = numel(mc.tau_values);
+            aiElc = mc.A_over_I - mc.A_over_I_ci_low;
+            aiEhc = mc.A_over_I_ci_high - mc.A_over_I;
+            tSEMc = NaN; if nTc > 1, tSEMc = tSc / sqrt(nTc); end
+            nMcAE = 0;
+            if isfield(mc, 'microbubbleActivationEvent_frame_nonLeft') && ~isempty(mc.microbubbleActivationEvent_frame_nonLeft)
+                nMcAE = numel(mc.microbubbleActivationEvent_frame_nonLeft);
+            end
+            nTotAEc = mc.strictActivationEventsTotal + nMcAE;
+
+            chunkRow = table( ...
+                string(cases(i).name), cases(i).Re, cases(i).kD, ...
+                mc.nTracksTotal, nVc, nSRc, nSAc, ...
+                mc.strictTrackFrameExposure, mc.strictActivationEventsTotal, ...
+                nMcAE, nTotAEc, sRFc, sAFc, ...
+                mc.A_over_I, mc.A_over_I_ci_low, mc.A_over_I_ci_high, aiElc, aiEhc, ...
+                tMc, tSc, tSEMc, nTc, 0, ...
+                'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
+                'nLeftMovingTracks','nLeftMovingActivated', ...
+                'leftMovingFrameExposure','AE_leftMoving', ...
+                'AE_microbubble','AE_total', ...
+                'leftMovingFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
+                'tau_mean','tau_std','tau_sem','nTau','elapsed_case_sec'});
+            chunkSummaryRows{c} = [chunkSummaryRows{c}; chunkRow]; %#ok<AGROW>
+
+            fprintf('  Chunk %d/%d (%s): I=%d, A=%d, A/I=%.4f\n', ...
+                c, nXmlChunks_i, xmlFiles_i{c}, gc.nInjected, gc.nActivated, mc.A_over_I);
+        end
+    end
 
     % Close any accidental figures
     close all force;
@@ -622,6 +762,87 @@ for arThr = breakupOpts.arThresholds
     plot_breakup_gamma_scatter_vs_ar(filteredBreakup, breakupFigDir, plotOpts, arTag, matDir);
     save(fullfile(matDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filteredBreakup');
     fprintf('  Breakup %s: saved .mat + plots\n', arTag);
+end
+
+%% ================ CHUNK (INDIVIDUAL) RESULTS ================
+if ~isempty(chunkSummaryRows)
+    nMaxChunks = numel(chunkSummaryRows);
+    fprintf('\n=== Saving individual chunk results (%d chunks) ===\n', nMaxChunks);
+    for c = 1:nMaxChunks
+        if isempty(chunkSummaryRows{c}) || height(chunkSummaryRows{c}) == 0
+            continue;
+        end
+
+        chunkDir    = fullfile(resultsDir, "results individual", sprintf("chunk_%d", c));
+        chunkFigDir = fullfile(chunkDir, "Figures_PNG_SVG");
+        if ~isfolder(chunkDir), mkdir(chunkDir); end
+        if ~isfolder(chunkFigDir), mkdir(chunkFigDir); end
+
+        cSR = sortrows(chunkSummaryRows{c}, {'Re','kD'});
+
+        % Summary & gate CSVs
+        write_table_csv_compat(cSR, fullfile(chunkDir, "Summary_tracks.csv"));
+        if ~isempty(chunkGateSummaryRows{c}) && height(chunkGateSummaryRows{c}) > 0
+            cGS = sortrows(chunkGateSummaryRows{c}, {'Re','kD'});
+            write_table_csv_compat(cGS, fullfile(chunkDir, "track_gate_summary.csv"));
+        end
+
+        % .mat files
+        cMatDir = fullfile(chunkDir, "plot_data_mat");
+        if ~isfolder(cMatDir), mkdir(cMatDir); end
+        chunkSR = cSR; %#ok<NASGU>
+        save(fullfile(cMatDir, "activation_summary_by_case.mat"), 'chunkSR');
+        chunkLoc = chunkAllLoc{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "inception_locations_by_case.mat"), 'chunkLoc');
+        chunkSz = chunkAllSize{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "upstream_size_distribution_by_case.mat"), 'chunkSz');
+        chunkCol = chunkAllCollapse{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "collapse_analysis_by_case.mat"), 'chunkCol');
+        chunkVF = chunkAllVoidFrac{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "void_fraction_by_case.mat"), 'chunkVF');
+        save(fullfile(cMatDir, "normalization_parameters.mat"), 'normParams');
+
+        % ---- Plots (same set as combined) ----
+        plot_ai_vs_kdh_re(cSR, chunkFigDir, fullfile(chunkDir, "fit_AI_vs_kD_by_Re.txt"), plotOpts);
+
+        cLocDir = fullfile(chunkFigDir, "InceptionLocations");
+        if ~isfolder(cLocDir), mkdir(cLocDir); end
+        plot_inception_locations_by_re(chunkAllLoc{c}, cLocDir, plotOpts);
+
+        plot_ai_vs_kd_capped(chunkAllLoc{c}, chunkFigDir, plotOpts);
+        plot_tau_vs_kdh_re(cSR, chunkFigDir, plotOpts);
+
+        cDistDir = fullfile(chunkFigDir, "UpstreamSizeDistributions");
+        if ~isfolder(cDistDir), mkdir(cDistDir); end
+        plot_upstream_size_distribution_by_re(chunkAllSize{c}, cDistDir, binSize_phys, plotOpts);
+
+        cCollDir = fullfile(chunkFigDir, "CollapseAnalysis");
+        if ~isfolder(cCollDir), mkdir(cCollDir); end
+        plot_collapse_rate_vs_frame(chunkAllCollapse{c}, cCollDir, plotOpts);
+        plot_collapse_rate_vs_kd(chunkAllCollapse{c}, chunkFigDir, plotOpts);
+        plot_collapse_size_distribution(chunkAllCollapse{c}, cCollDir, plotOpts);
+        write_collapse_analysis_csv(chunkAllCollapse{c}, fullfile(chunkDir, "collapse_analysis.csv"));
+
+        plot_void_fraction_vs_kd(chunkAllVoidFrac{c}, chunkFigDir, plotOpts);
+
+        cBkDir = fullfile(chunkFigDir, "BreakupAnalysis");
+        if ~isfolder(cBkDir), mkdir(cBkDir); end
+        chunkBk = chunkAllBreakup{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "breakup_analysis_by_case.mat"), 'chunkBk');
+        write_breakup_analysis_xlsx(chunkAllBreakup{c}, fullfile(chunkDir, "breakup_events.xlsx"));
+
+        for arThr = breakupOpts.arThresholds
+            arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));
+            filtBk = filter_breakup_by_ar(chunkAllBreakup{c}, arThr);
+            plot_breakup_gamma_vs_dratio(filtBk, cBkDir, plotOpts, arTag);
+            plot_breakup_gamma_beeswarm_vs_kd(filtBk, cBkDir, plotOpts, arTag, cMatDir);
+            plot_breakup_gamma_scatter_vs_ar(filtBk, cBkDir, plotOpts, arTag, cMatDir);
+            save(fullfile(cMatDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filtBk');
+        end
+
+        fprintf('Chunk %d: saved results to %s\n', c, chunkDir);
+        close all force;
+    end
 end
 
 if useMatCache && cacheUpdated
@@ -840,6 +1061,99 @@ if islogical(v)
     tf = any(v(:));
 elseif isnumeric(v)
     tf = any(v(:) ~= 0);
+end
+end
+
+function [xmlFiles, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
+    caseDef, maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
+    cacheDB, cacheUpdated, cachePolicyTag, verboseFlag)
+xmlFiles = detect_chunk_xml_files(caseDef.xmlFile);
+nXml = numel(xmlFiles);
+outChunks = cell(nXml, 1);
+
+for c = 1:nXml
+    chunkCaseDef = caseDef;
+    chunkCaseDef.xmlFile = xmlFiles{c};
+
+    caseKey = build_case_cache_key(chunkCaseDef, maxTracksToParse, cachePolicyTag);
+    idxCache = find(cacheDB.key == caseKey, 1, 'first');
+    useCacheEntry = false;
+
+    if useMatCache && ~forceReparse && ~isempty(idxCache)
+        cachedOut = cacheDB.out{idxCache};
+        if is_cache_entry_compatible(cachedOut, parserOpts)
+            outChunks{c} = cachedOut;
+            useCacheEntry = true;
+            fprintf("  Using cache entry %d/%d for XML chunk %d/%d\n", ...
+                idxCache, numel(cacheDB.key), c, nXml);
+        else
+            fprintf("  Cache entry %d/%d incompatible for XML chunk %d/%d. Reparsing.\n", ...
+                idxCache, numel(cacheDB.key), c, nXml);
+        end
+    end
+
+    if ~useCacheEntry
+        fprintf("  Parsing XML chunk %d/%d: %s\n", c, nXml, xmlFiles{c});
+        outChunks{c} = analyze_trackmate_xml_arc( ...
+            xmlFiles{c}, ...
+            pixelSize = caseDef.pixelSize, ...
+            dt        = caseDef.dt, ...
+            maxTracks = maxTracksToParse, ...
+            parseROI  = false, ...
+            verbose   = verboseFlag, ...
+            makePlots = false, ...
+            parseTrackedSpotsOnly = parserOpts.parseTrackedSpotsOnly, ...
+            parseFilteredTracksOnly = parserOpts.parseFilteredTracksOnly);
+
+        if useMatCache
+            if isempty(idxCache)
+                cacheDB.key(end+1,1) = caseKey;
+                cacheDB.out{end+1,1} = outChunks{c};
+            else
+                cacheDB.out{idxCache,1} = outChunks{c};
+            end
+            cacheUpdated = true;
+        end
+    end
+end
+end
+
+function eventsOut = combine_breakup_event_chunks(eventsByChunk, chunkInfo)
+if isempty(eventsByChunk)
+    eventsOut = struct([]);
+    return;
+end
+
+eventsOut = eventsByChunk{1}([]);
+for c = 1:numel(eventsByChunk)
+    ev = eventsByChunk{c};
+    if isempty(ev)
+        continue;
+    end
+
+    frameOffset = 0;
+    if nargin >= 2 && numel(chunkInfo) >= c && isstruct(chunkInfo(c)) && ...
+            isfield(chunkInfo(c), 'frameOffset') && isfinite(chunkInfo(c).frameOffset)
+        frameOffset = chunkInfo(c).frameOffset;
+    end
+
+    ev = shift_breakup_event_frames(ev, frameOffset);
+    eventsOut = [eventsOut; ev(:)]; %#ok<AGROW>
+end
+end
+
+function events = shift_breakup_event_frames(events, frameOffset)
+if isempty(events) || ~isfinite(frameOffset) || frameOffset == 0
+    return;
+end
+
+for k = 1:numel(events)
+    if isfield(events, 'parentFrame') && isfinite(events(k).parentFrame)
+        events(k).parentFrame = events(k).parentFrame + frameOffset;
+    end
+    if isfield(events, 'childFrame') && isfinite(events(k).childFrame)
+        events(k).childFrame = events(k).childFrame + frameOffset;
+    end
 end
 end
 

@@ -1,4 +1,9 @@
-function save_video_overlay_gif_from_avi(caseDef, metrics, outDir, plotOpts)
+function save_video_overlay_gif_from_avi(caseDef, metrics, outDir, plotOpts, varargin)
+
+p = inputParser;
+addParameter(p, 'videoFileOverride', "", @(x) isstring(x) || ischar(x));
+parse(p, varargin{:});
+videoFileOverride = string(p.Results.videoFileOverride);
 
 if ~isstruct(metrics) || ~isfield(metrics, 'trackCatalog') || isempty(metrics.trackCatalog)
     warning('Track catalog missing for case %s. Skipping AVI-overlay GIF export.', char(caseDef.name));
@@ -13,7 +18,10 @@ if ~isfolder(outDir)
     mkdir(outDir);
 end
 
-videoFile = resolve_case_video_file(caseDef);
+videoFile = videoFileOverride;
+if strlength(videoFile) < 1
+    videoFile = resolve_case_video_file(caseDef);
+end
 if strlength(videoFile) < 1 || ~isfile(videoFile)
     warning('AVI file not found for case %s. Set cases(i).videoFile to a valid .avi path.', char(caseDef.name));
     return;
@@ -484,8 +492,28 @@ end
 function s = resolve_case_video_file(caseDef)
 s = "";
 if isfield(caseDef, 'videoFile') && strlength(string(caseDef.videoFile)) > 0
-    s = string(caseDef.videoFile);
-    return;
+    rawVideo = string(caseDef.videoFile);
+    if isfolder(rawVideo)
+        [~, folderName] = fileparts(char(rawVideo));
+        candidates = string({ ...
+            fullfile(char(rawVideo), [folderName '.avi']), ...
+            fullfile(char(rawVideo), [folderName '.AVI'])});
+        for i = 1:numel(candidates)
+            if isfile(candidates(i))
+                s = candidates(i);
+                return;
+            end
+        end
+
+        aviList = [dir(fullfile(char(rawVideo), '*.avi')); dir(fullfile(char(rawVideo), '*.AVI'))];
+        if numel(aviList) == 1
+            s = string(fullfile(aviList(1).folder, aviList(1).name));
+            return;
+        end
+    elseif isfile(rawVideo)
+        s = rawVideo;
+        return;
+    end
 end
 
 if ~isfield(caseDef, 'xmlFile') || strlength(string(caseDef.xmlFile)) < 1
