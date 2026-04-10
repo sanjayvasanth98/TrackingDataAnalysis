@@ -1,8 +1,8 @@
 function plot_collapse_size_distribution(allCollapse, figDir, plotOpts)
 %PLOT_COLLAPSE_SIZE_DISTRIBUTION  KDE of peak equivalent diameter at collapse.
 %
-%   Overlaid filled density curves, one per case.  X-axis: peak equivalent
-%   diameter d_eq (um) computed from peakArea_px2.  Mirrors the style of
+%   Overlaid density curves, one per case. X-axis: peak equivalent
+%   diameter d_eq (um) computed from peakArea_px2. Mirrors the style of
 %   plot_upstream_size_distribution_by_re.
 
 if nargin < 3 || ~isfield(plotOpts,'themes') || isempty(plotOpts.themes)
@@ -77,14 +77,11 @@ for theme = reshape(plotOpts.themes, 1, [])
         fhat = estimate_pdf_density(x, xi);
 
         col = cmap(ci,:);
-        hFill = fill(ax, [xi, fliplr(xi)], [fhat, zeros(size(fhat))], col, ...
-            'FaceAlpha', 0.5, ...
-            'EdgeColor', 'none');
-        plot(ax, xi, fhat, '-', 'LineWidth', 2.0, 'Color', col);
+        hLine = plot(ax, xi, fhat, '-', 'LineWidth', 2.0, 'Color', col);
         yMaxPlot = max(yMaxPlot, max(fhat));
         anyPlotted = true;
 
-        lgd(end+1,1)    = hFill; %#ok<AGROW>
+        lgd(end+1,1)    = hLine; %#ok<AGROW>
         lgdTxt(end+1,1) = sprintf('k/d=%.4g (n=%d)', ...
             allCollapse.kD(ci), cd.nQualified); %#ok<AGROW>
     end

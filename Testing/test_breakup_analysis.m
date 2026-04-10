@@ -42,10 +42,27 @@ plotOpts.saveSVG            = false; % square copies are saved manually below
 plotOpts.themes             = "normal";
 plotOpts.keepFiguresOpen    = true;
 
-%% AR thresholds — same as main batch
+%% Global gamma-vs-dRatio plot (no AR filtering)
+nTotalAll = 0;
+for ci = 1:nCases
+    nTotalAll = nTotalAll + numel(allBreakup(ci).events);
+end
+fprintf('Generating breakup plot for all events (%d events total)...\n', nTotalAll);
+plot_breakup_gamma_vs_dratio(allBreakup, outDir, plotOpts);
+save_square_only(gcf, outDir, "Breakup_gamma_vs_dRatio_normal", plotOpts);
+
+fprintf('Generating gamma vs parent AR plot for all events (%d events total)...\n', nTotalAll);
+plot_breakup_gamma_scatter_vs_ar(allBreakup, outDir, plotOpts, "", outDir);
+save_square_only(gcf, outDir, "Breakup_gamma_scatter_AR_normal", plotOpts);
+
+fprintf('Generating gamma vs k/d beeswarm for all events (%d events total)...\n', nTotalAll);
+plot_breakup_gamma_beeswarm_vs_kd(allBreakup, outDir, plotOpts, "", outDir);
+save_square_only(gcf, outDir, "Breakup_gamma_beeswarm_kD_normal", plotOpts);
+
+%% AR thresholds — same as main batch for the other breakup plots
 arThresholds = [1.5, 2.0, 3.0, 4.0];
 
-%% Re-run plots for each AR threshold
+%% Re-run the AR-filtered breakup plots
 for arThr = arThresholds
     arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));
     filteredBreakup = filter_breakup_by_ar(allBreakup, arThr);
@@ -54,16 +71,10 @@ for arThr = arThresholds
     for ci = 1:numel(filteredBreakup)
         nTotal = nTotal + numel(filteredBreakup(ci).events);
     end
-    fprintf('Generating breakup plot for %s (%d events total)...\n', arTag, nTotal);
-
-    plot_breakup_gamma_vs_dratio(filteredBreakup, outDir, plotOpts, arTag);
-    save_square_only(gcf, outDir, "Breakup_gamma_vs_dRatio_" + arTag + "_normal", plotOpts);
+    fprintf('Generating AR-filtered breakup plots for %s (%d events total)...\n', arTag, nTotal);
 
     plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, outDir, plotOpts, arTag, outDir);
     save_square_only(gcf, outDir, "Breakup_gamma_beeswarm_kD_" + arTag + "_normal", plotOpts);
-
-    plot_breakup_gamma_scatter_vs_ar(filteredBreakup, outDir, plotOpts, arTag, outDir);
-    save_square_only(gcf, outDir, "Breakup_gamma_scatter_AR_" + arTag + "_normal", plotOpts);
 end
 
 %% Write XLSX (full dataset)

@@ -71,13 +71,10 @@ for theme = reshape(plotOpts.themes, 1, [])
             xi = linspace(xLimUse(1), xLimUse(2), 300);
             fhat = estimate_pdf_density(x, xi);
 
-            hFill = fill(ax, [xi, fliplr(xi)], [fhat, zeros(size(fhat))], cmap(j,:), ...
-                'FaceAlpha', 0.5, ...
-                'EdgeColor', 'none');
-            plot(ax, xi, fhat, '-', 'LineWidth', 2.0, 'Color', cmap(j,:));
+            hLine = plot(ax, xi, fhat, '-', 'LineWidth', 2.0, 'Color', cmap(j,:));
             yMaxPlot = max(yMaxPlot, max(fhat));
 
-            lgd(end+1,1) = hFill; %#ok<AGROW>
+            lgd(end+1,1) = hLine; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('k/d=%.4g', allSize.kD(ci)); %#ok<AGROW>
         end
 

@@ -324,7 +324,7 @@ end
 
 %% ---- Breakup analysis options ------------------------------------------
 breakupOpts.aspectRatioMin       = 1.5;    % <---edit: parent ellipse aspect ratio threshold (lowest AR of interest; post-filtered per threshold below)
-breakupOpts.arThresholds         = [1.5, 2.0, 3.0, 4.0]; % <---edit: AR thresholds for separate plots & .mat files
+breakupOpts.arThresholds         = [1.5, 2.0, 3.0, 4.0]; % <---edit: AR thresholds for breakup k/d and AR plots & .mat files
 breakupOpts.childAreaMin_px2     = 100.0;  % <---edit: min child spot area (px^2)
 breakupOpts.dRoughnessSpacing_mm = 0.384;  % <---edit: roughness spacing d (mm) for gamma normalisation
 
@@ -747,19 +747,20 @@ plot_void_fraction_vs_kd(allVoidFrac, figDir, plotOpts);
 breakupFigDir = fullfile(figDir, "BreakupAnalysis");
 if ~isfolder(breakupFigDir), mkdir(breakupFigDir); end
 
-% Save the full (AR >= 1.5) dataset and produce per-threshold plots & .mat files
+% Save the full breakup dataset and produce one global gamma-vs-dRatio plot.
 save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
 write_breakup_analysis_xlsx(allBreakup, fullfile(resultsDir, "breakup_events.xlsx"));
+plot_breakup_gamma_vs_dratio(allBreakup, breakupFigDir, plotOpts);
+plot_breakup_gamma_beeswarm_vs_kd(allBreakup, breakupFigDir, plotOpts, "", matDir);
 
 for arThr = breakupOpts.arThresholds
     arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));  % e.g. AR1p5
     filteredBreakup = filter_breakup_by_ar(allBreakup, arThr);
-    plot_breakup_gamma_vs_dratio(filteredBreakup, breakupFigDir, plotOpts, arTag);
     plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, breakupFigDir, plotOpts, arTag, matDir);
-    plot_breakup_gamma_scatter_vs_ar(filteredBreakup, breakupFigDir, plotOpts, arTag, matDir);
     save(fullfile(matDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filteredBreakup');
     fprintf('  Breakup %s: saved .mat + plots\n', arTag);
 end
+plot_breakup_gamma_scatter_vs_ar(allBreakup, breakupFigDir, plotOpts, "", matDir);
 
 %% ================ CHUNK (INDIVIDUAL) RESULTS ================
 if ~isempty(chunkSummaryRows)
@@ -824,15 +825,16 @@ if ~isempty(chunkSummaryRows)
         chunkBk = chunkAllBreakup{c}; %#ok<NASGU>
         save(fullfile(cMatDir, "breakup_analysis_by_case.mat"), 'chunkBk');
         write_breakup_analysis_xlsx(chunkAllBreakup{c}, fullfile(chunkDir, "breakup_events.xlsx"));
+        plot_breakup_gamma_vs_dratio(chunkAllBreakup{c}, cBkDir, plotOpts);
+        plot_breakup_gamma_beeswarm_vs_kd(chunkAllBreakup{c}, cBkDir, plotOpts, "", cMatDir);
 
         for arThr = breakupOpts.arThresholds
             arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));
             filtBk = filter_breakup_by_ar(chunkAllBreakup{c}, arThr);
-            plot_breakup_gamma_vs_dratio(filtBk, cBkDir, plotOpts, arTag);
             plot_breakup_gamma_beeswarm_vs_kd(filtBk, cBkDir, plotOpts, arTag, cMatDir);
-            plot_breakup_gamma_scatter_vs_ar(filtBk, cBkDir, plotOpts, arTag, cMatDir);
             save(fullfile(cMatDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filtBk');
         end
+        plot_breakup_gamma_scatter_vs_ar(chunkAllBreakup{c}, cBkDir, plotOpts, "", cMatDir);
 
         fprintf('Chunk %d: saved results to %s\n', c, chunkDir);
         close all force;

@@ -2,7 +2,7 @@ function plot_breakup_gamma_beeswarm_vs_kd(breakupData, figDir, plotOpts, arLabe
 % PLOT_BREAKUP_GAMMA_BEESWARM_VS_KD
 %   Beeswarm plot of gamma = (x_child - x_parent)/d vs k/d.
 %   One beeswarm column per unique k/d value.
-%   Fully opaque markers with black edges.  Median bar per group.
+%   Fully opaque markers with black edges. Median bar per group.
 %
 %   breakupData : struct array with .caseName, .kD, .events
 %   figDir      : output directory for figures
@@ -18,6 +18,8 @@ if nargin < 5, matDir = ""; end
 
 nCases = numel(breakupData);
 if nCases == 0, warning('No breakup data.'); return; end
+
+markerSize = get_opt_value(plotOpts, 'breakupKDMarkerSize', 40.5);
 
 % ---- Pool events per unique k/d value ----
 kD_raw   = [breakupData.kD];
@@ -95,7 +97,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         yPos = gammaByGroup{g};
         col  = cmap(g, :);
 
-        hPt = scatter(ax, xPos, yPos, 45, col, 'filled', ...
+        hPt = scatter(ax, xPos, yPos, markerSize, col, 'filled', ...
             'MarkerFaceAlpha', 1.0, ...
             'MarkerEdgeColor', [0 0 0], ...
             'LineWidth', 1.2);
@@ -148,7 +150,7 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     if ~isempty(lgd)
         leg = legend(ax, lgd, cellstr(lgdTxt), ...
-            'Location', 'southoutside', 'NumColumns', 2, 'Box', 'off');
+            'Location', 'best', 'NumColumns', 1, 'Box', 'on');
     else
         leg = [];
     end
@@ -168,6 +170,16 @@ for theme = reshape(plotOpts.themes, 1, [])
 end
 
 fprintf('Saved breakup beeswarm (gamma vs k/d) to: %s\n', figDir);
+end
+
+
+% =========================================================================
+function val = get_opt_value(plotOpts, fieldName, defaultVal)
+if nargin < 1 || ~isstruct(plotOpts) || ~isfield(plotOpts, fieldName) || isempty(plotOpts.(fieldName))
+    val = defaultVal;
+else
+    val = plotOpts.(fieldName);
+end
 end
 
 
@@ -218,8 +230,10 @@ if isempty(leg) || ~isgraphics(leg), return; end
 if strcmp(theme, 'poster')
     leg.TextColor = [1 1 1];
     leg.Color     = [0 0 0];
+    leg.EdgeColor = [0.70 0.70 0.70];
 else
     leg.TextColor = [0 0 0];
-    leg.Color     = 'none';
+    leg.Color     = [1 1 1];
+    leg.EdgeColor = [0.80 0.80 0.80];
 end
 end
