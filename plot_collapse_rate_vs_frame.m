@@ -16,61 +16,97 @@ if nCases == 0
     return;
 end
 
-cmap = lines(max(nCases,1));
+[groups, groupLabels, useReSuffix] = collapse_groups_by_re(allCollapse, nCases);
 
 for theme = reshape(plotOpts.themes, 1, [])
-    fontName = resolve_plot_font_name();
-    f  = figure('Color','w','Position',[100 100 1100 580]);
-    ax = axes(f);
-    hold(ax,'on');
+    for gi = 1:numel(groups)
+        idxNow = groups{gi};
+        fontName = resolve_plot_font_name();
+        f  = figure('Color','w','Position',[100 100 1100 580]);
+        ax = axes(f);
+        hold(ax,'on');
 
-    lgd    = gobjects(0,1);
-    lgdTxt = strings(0,1);
+        lgd    = gobjects(0,1);
+        lgdTxt = strings(0,1);
+        cmap = lines(max(numel(idxNow),1));
 
-    for ci = 1:nCases
-        cd = allCollapse.data{ci};
-        if isempty(cd) || cd.nQualified == 0, continue; end
+        for jj = 1:numel(idxNow)
+            ci = idxNow(jj);
+            cd = allCollapse.data{ci};
+            if isempty(cd) || cd.nQualified == 0, continue; end
 
-        dt      = allCollapse.dt(ci);
-        tAxis   = (double(cd.frameAxis) - double(cd.frameAxis(1))) * dt * 1000;  % ms
-        cumCount = cumsum(double(cd.collapseCount));
-        col     = cmap(ci,:);
+            dt      = allCollapse.dt(ci);
+            tAxis   = (double(cd.frameAxis) - double(cd.frameAxis(1))) * dt * 1000;  % ms
+            cumCount = cumsum(double(cd.collapseCount));
+            col     = cmap(jj,:);
 
-        h = plot(ax, tAxis, cumCount, '-', ...
-            'Color', col, 'LineWidth', 2.2);
+            h = plot(ax, tAxis, cumCount, '-', ...
+                'Color', col, 'LineWidth', 2.2);
 
-        lgd(end+1,1)    = h; %#ok<AGROW>
-        lgdTxt(end+1,1) = sprintf('k/d=%.4g  (n=%d, %.3g/s)', ...
-            allCollapse.kD(ci), cd.nQualified, cd.ratePerSec); %#ok<AGROW>
-    end
+            lgd(end+1,1)    = h; %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('k/d=%.4g  (n=%d, %.3g/s)', ...
+                allCollapse.kD(ci), cd.nQualified, cd.ratePerSec); %#ok<AGROW>
+        end
 
-    xlabel(ax, 'Time (ms)', 'Interpreter','latex');
-    ylabel(ax, 'Cumulative collapse count, $\sum N_c$', 'Interpreter','latex');
-    title(ax,'');
-    grid(ax,'off');
-    box(ax,'on');
-    set(ax,'FontName',fontName);
+        xlabel(ax, 'Time (ms)', 'Interpreter','latex');
+        ylabel(ax, 'Cumulative collapse count, $\sum N_c$', 'Interpreter','latex');
+        title(ax,'');
+        grid(ax,'off');
+        box(ax,'on');
+        set(ax,'FontName',fontName);
 
-    if ~isempty(lgd)
-        leg = legend(ax, lgd, cellstr(lgdTxt), ...
-            'Location','northoutside','NumColumns',3,'Box','off');
-    else
-        leg = [];
-    end
+        if ~isempty(lgd)
+            leg = legend(ax, lgd, cellstr(lgdTxt), ...
+                'Location','northoutside','NumColumns',3,'Box','off');
+        else
+            leg = [];
+        end
 
-    apply_plot_theme(ax, char(theme));
-    style_legend_for_theme(leg, char(theme));
-    % Restore y >= 0 after theme may reset limits
-    yl = ylim(ax);
-    if yl(1) < 0, ylim(ax, [0 yl(2)]); end
+        apply_plot_theme(ax, char(theme));
+        style_legend_for_theme(leg, char(theme));
+        % Restore y >= 0 after theme may reset limits
+        yl = ylim(ax);
+        if yl(1) < 0, ylim(ax, [0 yl(2)]); end
 
-    outBase = fullfile(figDir, "CollapseCount_vs_time_" + theme);
-    save_fig_dual_safe(f, outBase, plotOpts);
-    if ~isfield(plotOpts,'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
-        close(f);
+        if useReSuffix
+            outBase = fullfile(figDir, "CollapseCount_vs_time_" + groupLabels(gi) + "_" + theme);
+        else
+            outBase = fullfile(figDir, "CollapseCount_vs_time_" + theme);
+        end
+        save_fig_dual_safe(f, outBase, plotOpts);
+        if ~isfield(plotOpts,'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
+            close(f);
+        end
     end
 end
 fprintf('Saved collapse cumulative count plot to: %s\n', figDir);
+end
+
+
+% =========================================================================
+function [groups, groupLabels, useReSuffix] = collapse_groups_by_re(allCollapse, nCases)
+groups = {1:nCases};
+groupLabels = "all";
+useReSuffix = false;
+
+if ~isfield(allCollapse, 'Re') || isempty(allCollapse.Re)
+    return;
+end
+
+reVals = allCollapse.Re(:);
+reVals = double(reVals);
+uniqueRe = unique(reVals(isfinite(reVals)));
+if numel(uniqueRe) <= 1
+    return;
+end
+
+groups = cell(numel(uniqueRe), 1);
+groupLabels = strings(numel(uniqueRe), 1);
+for ri = 1:numel(uniqueRe)
+    groups{ri} = find(reVals == uniqueRe(ri));
+    groupLabels(ri) = string(regexprep(sprintf('Re_%g', uniqueRe(ri)), '[^\w.-]', '_'));
+end
+useReSuffix = true;
 end
 
 

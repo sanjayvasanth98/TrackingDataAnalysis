@@ -16,116 +16,152 @@ if nCases == 0
 end
 
 hasPixelSize = isfield(allCollapse, 'pixelSize') && numel(allCollapse.pixelSize) >= nCases;
+[groups, groupLabels, useReSuffix] = collapse_size_groups_by_re(allCollapse, nCases);
 
 for theme = reshape(plotOpts.themes, 1, [])
-    f = figure('Color','w','Position',[120 120 1000 700]);
-    ax = axes(f);
-    hold(ax,'on');
+    for gi = 1:numel(groups)
+        idxNow = groups{gi};
+        f = figure('Color','w','Position',[120 120 1000 700]);
+        ax = axes(f);
+        hold(ax,'on');
 
-    cmap = lines(max(nCases,1));
-    lgd    = gobjects(0,1);
-    lgdTxt = strings(0,1);
-    yMaxPlot = 0;
-    anyPlotted = false;
+        cmap = lines(max(numel(idxNow),1));
+        lgd    = gobjects(0,1);
+        lgdTxt = strings(0,1);
+        yMaxPlot = 0;
+        anyPlotted = false;
 
-    % Pool all diameters first to determine shared x-axis limits
-    pooledX = [];
-    for ci = 1:nCases
-        cd = allCollapse.data{ci};
-        if isempty(cd) || cd.nQualified < 5, continue; end
-        areas = cd.peakArea_px2(:);
-        areas = areas(isfinite(areas) & areas > 0);
+        % Pool diameters for this Re group to determine shared x-axis limits.
+        pooledX = [];
+        for jj = 1:numel(idxNow)
+            ci = idxNow(jj);
+            cd = allCollapse.data{ci};
+            if isempty(cd) || cd.nQualified < 5, continue; end
+            areas = cd.peakArea_px2(:);
+            areas = areas(isfinite(areas) & areas > 0);
+            if hasPixelSize
+                d_eq = 2 * sqrt(areas / pi) * allCollapse.pixelSize(ci) * 1000; % um
+            else
+                d_eq = 2 * sqrt(areas / pi); % px (fallback)
+            end
+            pooledX = [pooledX; d_eq]; %#ok<AGROW>
+        end
+
+        if isempty(pooledX)
+            warning('plot_collapse_size_distribution: no cases with >= 5 events. Skipping.');
+            close(f);
+            continue;
+        end
+
+        xLimUse = robust_size_xlim(pooledX);
+
+        for jj = 1:numel(idxNow)
+            ci = idxNow(jj);
+            cd = allCollapse.data{ci};
+            if isempty(cd) || cd.nQualified < 5, continue; end
+
+            areas = cd.peakArea_px2(:);
+            areas = areas(isfinite(areas) & areas > 0);
+            if hasPixelSize
+                x = 2 * sqrt(areas / pi) * allCollapse.pixelSize(ci) * 1000; % um
+            else
+                x = 2 * sqrt(areas / pi); % px
+            end
+
+            if numel(x) < 5, continue; end
+
+            % Remove extreme outliers (1st-99th percentile)
+            pLo = percentile_linear(x, 1);
+            pHi = percentile_linear(x, 99);
+            if isfinite(pLo) && isfinite(pHi) && pHi > pLo
+                x = x(x >= pLo & x <= pHi);
+            end
+            if numel(x) < 5, continue; end
+
+            xi = linspace(xLimUse(1), xLimUse(2), 300);
+            fhat = estimate_pdf_density(x, xi);
+
+            col = cmap(jj,:);
+            hLine = plot(ax, xi, fhat, '-', 'LineWidth', 2.0, 'Color', col);
+            yMaxPlot = max(yMaxPlot, max(fhat));
+            anyPlotted = true;
+
+            lgd(end+1,1)    = hLine; %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('k/d=%.4g (n=%d)', ...
+                allCollapse.kD(ci), cd.nQualified); %#ok<AGROW>
+        end
+
+        if ~anyPlotted
+            warning('plot_collapse_size_distribution: nothing to plot after filtering.');
+            close(f);
+            continue;
+        end
+
+        xlim(ax, xLimUse);
+        if yMaxPlot > 0
+            ylim(ax, [0, yMaxPlot * 1.10]);
+        end
+
         if hasPixelSize
-            d_eq = 2 * sqrt(areas / pi) * allCollapse.pixelSize(ci) * 1000; % um
+            xlabel(ax, 'Peak equivalent diameter at collapse, $d_{eq}\,(\mu\mathrm{m})$', ...
+                'Interpreter','latex');
         else
-            d_eq = 2 * sqrt(areas / pi); % px (fallback)
+            xlabel(ax, 'Peak equivalent diameter at collapse, $d_{eq}\,(\mathrm{px})$', ...
+                'Interpreter','latex');
         end
-        pooledX = [pooledX; d_eq]; %#ok<AGROW>
-    end
+        ylabel(ax, 'PDF', 'Interpreter','latex');
+        title(ax, '');
+        grid(ax, 'off');
+        box(ax, 'on');
+        set(ax, 'LooseInset', max(get(ax,'LooseInset'), get(ax,'TightInset')));
 
-    if isempty(pooledX)
-        warning('plot_collapse_size_distribution: no cases with >= 5 events. Skipping.');
-        close(f);
-        continue;
-    end
-
-    xLimUse = robust_size_xlim(pooledX);
-
-    for ci = 1:nCases
-        cd = allCollapse.data{ci};
-        if isempty(cd) || cd.nQualified < 5, continue; end
-
-        areas = cd.peakArea_px2(:);
-        areas = areas(isfinite(areas) & areas > 0);
-        if hasPixelSize
-            x = 2 * sqrt(areas / pi) * allCollapse.pixelSize(ci) * 1000; % um
+        if ~isempty(lgd)
+            leg = legend(ax, lgd, cellstr(lgdTxt), 'Location','northeast','Box','off');
         else
-            x = 2 * sqrt(areas / pi); % px
+            leg = [];
         end
 
-        if numel(x) < 5, continue; end
+        apply_plot_theme(ax, char(theme));
+        style_legend_for_theme(leg, char(theme));
 
-        % Remove extreme outliers (1st-99th percentile)
-        pLo = percentile_linear(x, 1);
-        pHi = percentile_linear(x, 99);
-        if isfinite(pLo) && isfinite(pHi) && pHi > pLo
-            x = x(x >= pLo & x <= pHi);
+        if useReSuffix
+            outBase = fullfile(figDir, "CollapseSizeDist_" + groupLabels(gi) + "_" + theme);
+        else
+            outBase = fullfile(figDir, "CollapseSizeDist_" + theme);
         end
-        if numel(x) < 5, continue; end
-
-        xi = linspace(xLimUse(1), xLimUse(2), 300);
-        fhat = estimate_pdf_density(x, xi);
-
-        col = cmap(ci,:);
-        hLine = plot(ax, xi, fhat, '-', 'LineWidth', 2.0, 'Color', col);
-        yMaxPlot = max(yMaxPlot, max(fhat));
-        anyPlotted = true;
-
-        lgd(end+1,1)    = hLine; %#ok<AGROW>
-        lgdTxt(end+1,1) = sprintf('k/d=%.4g (n=%d)', ...
-            allCollapse.kD(ci), cd.nQualified); %#ok<AGROW>
-    end
-
-    if ~anyPlotted
-        warning('plot_collapse_size_distribution: nothing to plot after filtering.');
-        close(f);
-        continue;
-    end
-
-    xlim(ax, xLimUse);
-    if yMaxPlot > 0
-        ylim(ax, [0, yMaxPlot * 1.10]);
-    end
-
-    if hasPixelSize
-        xlabel(ax, 'Peak equivalent diameter at collapse, $d_{eq}\,(\mu\mathrm{m})$', ...
-            'Interpreter','latex');
-    else
-        xlabel(ax, 'Peak equivalent diameter at collapse, $d_{eq}\,(\mathrm{px})$', ...
-            'Interpreter','latex');
-    end
-    ylabel(ax, 'PDF', 'Interpreter','latex');
-    title(ax, '');
-    grid(ax, 'off');
-    box(ax, 'on');
-    set(ax, 'LooseInset', max(get(ax,'LooseInset'), get(ax,'TightInset')));
-
-    if ~isempty(lgd)
-        leg = legend(ax, lgd, cellstr(lgdTxt), 'Location','northeast','Box','off');
-    else
-        leg = [];
-    end
-
-    apply_plot_theme(ax, char(theme));
-    style_legend_for_theme(leg, char(theme));
-
-    outBase = fullfile(figDir, "CollapseSizeDist_" + theme);
-    save_fig_dual_safe(f, outBase, plotOpts);
-    if ~isfield(plotOpts,'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
-        close(f);
+        save_fig_dual_safe(f, outBase, plotOpts);
+        if ~isfield(plotOpts,'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
+            close(f);
+        end
     end
 end
 fprintf('Saved collapse size distribution plot to: %s\n', figDir);
+end
+
+
+% =========================================================================
+function [groups, groupLabels, useReSuffix] = collapse_size_groups_by_re(allCollapse, nCases)
+groups = {1:nCases};
+groupLabels = "all";
+useReSuffix = false;
+
+if ~isfield(allCollapse, 'Re') || isempty(allCollapse.Re)
+    return;
+end
+
+reVals = double(allCollapse.Re(:));
+uniqueRe = unique(reVals(isfinite(reVals)));
+if numel(uniqueRe) <= 1
+    return;
+end
+
+groups = cell(numel(uniqueRe), 1);
+groupLabels = strings(numel(uniqueRe), 1);
+for ri = 1:numel(uniqueRe)
+    groups{ri} = find(reVals == uniqueRe(ri));
+    groupLabels(ri) = string(regexprep(sprintf('Re_%g', uniqueRe(ri)), '[^\w.-]', '_'));
+end
+useReSuffix = true;
 end
 
 

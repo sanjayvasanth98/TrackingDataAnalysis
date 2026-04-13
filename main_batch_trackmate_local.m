@@ -99,7 +99,7 @@ end
 
 % Parser + metric policy (included in cache key).
 parserOpts = struct();
-parserOpts.parserVersion = 2;
+parserOpts.parserVersion = 3;
 parserOpts.parseTrackedSpotsOnly = true;
 parserOpts.parseFilteredTracksOnly = true;
 
@@ -331,6 +331,17 @@ breakupOpts.arThresholds         = [1.5, 2.0, 3.0, 4.0]; % <---edit: AR threshol
 breakupOpts.childAreaMin_px2     = 100.0;  % <---edit: min child spot area (px^2)
 breakupOpts.dRoughnessSpacing_mm = 0.384;  % <---edit: roughness spacing d (mm) for gamma normalisation
 
+%% ---- Growth/collapse rate analysis options ----------------------------
+% Figure-7-style PDFs of signed axial length rate dL/dt/U.
+growthCollapseOpts.U_m_s = 13.32; % <---edit: normalizing U for Re = 95,000
+growthCollapseOpts.aspectRatioEdges = [0, 2, 5, Inf]; % AR groups: <2, 2-5, >=5
+growthCollapseOpts.growthTrackMode = "strictActivated"; % activated upstream-moving tracks
+growthCollapseOpts.minTrackSpots = collapseOpts.minTrackSpots;
+growthCollapseOpts.collapseMinPeakArea_px2 = collapseOpts.collapseMinPeakArea_px2;
+growthCollapseOpts.collapseTruncationFactor = collapseOpts.collapseTruncationFactor;
+growthCollapseOpts.roiUnwantedMask = collapseOpts.roiUnwantedMask;
+growthCollapseOpts.roiPixelSize = collapseOpts.roiPixelSize;
+
 [cases, selectedCaseIdx, totalCaseCount] = select_cases(cases, caseSelection);
 selectedLabels = strings(numel(cases), 1);
 for si = 1:numel(cases)
@@ -367,13 +378,20 @@ allCollapse.dt       = [];
 allCollapse.pixelSize = [];
 allCollapse.data     = {};
 
+allGrowthCollapse = struct();
+allGrowthCollapse.caseName = strings(0,1);
+allGrowthCollapse.kD = nan(0,1);
+allGrowthCollapse.Re = nan(0,1);
+allGrowthCollapse.U_m_s = nan(0,1);
+allGrowthCollapse.data = cell(0,1);
+
 allVoidFrac = struct();
 allVoidFrac.caseName = {};
 allVoidFrac.kD       = [];
 allVoidFrac.Re       = [];
 allVoidFrac.data     = {};
 
-allBreakup = repmat(struct('caseName', "", 'kD', 0, 'events', []), 0, 1);
+allBreakup = repmat(struct('caseName', "", 'Re', NaN, 'kD', 0, 'events', []), 0, 1);
 
 allSize = struct();
 allSize.caseName = strings(0,1);
@@ -390,6 +408,7 @@ chunkAllCollapse    = {};
 chunkAllVoidFrac    = {};
 chunkAllBreakup     = {};
 chunkAllSize        = {};
+chunkAllGrowthCollapse = {};
 chunkGateSummaryRows = {};
 
 cachePolicyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts);
@@ -469,6 +488,14 @@ for i = 1:numel(cases)
     allCollapse.pixelSize(end+1) = cases(i).pixelSize;
     allCollapse.data{end+1}     = collapseResult;
 
+    % Growth/collapse axial length-rate analysis
+    growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
+    allGrowthCollapse.caseName(end+1,1) = string(cases(i).name);
+    allGrowthCollapse.kD(end+1,1)       = cases(i).kD;
+    allGrowthCollapse.Re(end+1,1)       = cases(i).Re;
+    allGrowthCollapse.U_m_s(end+1,1)    = growthCollapseOpts.U_m_s;
+    allGrowthCollapse.data{end+1,1}     = growthCollapseResult;
+
     % Void fraction analysis (all detected spots, no filter)
     voidFracOpts.cameraPixelSize = cases(i).pixelSize;
     vfResult = analyze_void_fraction(out, voidFracOpts);
@@ -490,7 +517,7 @@ for i = 1:numel(cases)
     end
     bkEvents = combine_breakup_event_chunks(breakupEventsByChunk, chunkInfo);
     allBreakup(end+1,1) = struct('caseName', string(cases(i).name), ...
-        'kD', cases(i).kD, 'events', bkEvents);
+        'Re', cases(i).Re, 'kD', cases(i).kD, 'events', bkEvents);
 
     % Accumulate upstream-size samples for distribution plot
     allSize.caseName(end+1,1) = string(cases(i).name);
@@ -570,8 +597,9 @@ for i = 1:numel(cases)
                                                 'inception2x_xy',{cell(0,1)});
                 chunkAllCollapse{c}    = struct('caseName',{{}},'kD',[],'Re',[],'dt',[],'pixelSize',[],'data',{{}});
                 chunkAllVoidFrac{c}    = struct('caseName',{{}},'kD',[],'Re',[],'data',{{}});
-                chunkAllBreakup{c}     = repmat(struct('caseName',"", 'kD',0, 'events',[]), 0, 1);
+                chunkAllBreakup{c}     = repmat(struct('caseName',"", 'Re',NaN, 'kD',0, 'events',[]), 0, 1);
                 chunkAllSize{c}        = struct('caseName',strings(0,1),'Re',nan(0,1),'kD',nan(0,1),'size_eqd',{cell(0,1)});
+                chunkAllGrowthCollapse{c} = struct('caseName',strings(0,1),'kD',nan(0,1),'Re',nan(0,1),'U_m_s',nan(0,1),'data',{cell(0,1)});
                 chunkGateSummaryRows{c} = table();
             end
 
@@ -598,6 +626,13 @@ for i = 1:numel(cases)
             chunkAllCollapse{c}.pixelSize(end+1) = cases(i).pixelSize;
             chunkAllCollapse{c}.data{end+1}     = collapseChunk;
 
+            growthCollapseChunk = analyze_growth_collapse_rates(outChunk, mc, cases(i), growthCollapseOpts);
+            chunkAllGrowthCollapse{c}.caseName(end+1,1) = string(cases(i).name);
+            chunkAllGrowthCollapse{c}.kD(end+1,1)       = cases(i).kD;
+            chunkAllGrowthCollapse{c}.Re(end+1,1)       = cases(i).Re;
+            chunkAllGrowthCollapse{c}.U_m_s(end+1,1)    = growthCollapseOpts.U_m_s;
+            chunkAllGrowthCollapse{c}.data{end+1,1}     = growthCollapseChunk;
+
             % Void fraction
             voidFracOpts.cameraPixelSize = cases(i).pixelSize;
             vfChunk = analyze_void_fraction(outChunk, voidFracOpts);
@@ -609,7 +644,7 @@ for i = 1:numel(cases)
             % Breakup
             bkChunk = breakupEventsByChunk{c};
             chunkAllBreakup{c}(end+1,1) = struct('caseName', string(cases(i).name), ...
-                'kD', cases(i).kD, 'events', bkChunk);
+                'Re', cases(i).Re, 'kD', cases(i).kD, 'events', bkChunk);
 
             % Upstream size
             chunkAllSize{c}.caseName(end+1,1) = string(cases(i).name);
@@ -708,10 +743,13 @@ save(fullfile(matDir, "activation_summary_by_case.mat"), 'summaryRows');
 save(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');
 save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
+save(fullfile(matDir, "growth_collapse_rate_by_case.mat"), 'allGrowthCollapse');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
 % breakup_analysis_by_case.mat saved later with per-AR-threshold variants
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
-    't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10);
+    't_conv_s', 10e-3 / 13.32, 'throatHeight_mm', 10, ...
+    'growthCollapse_U_ms', growthCollapseOpts.U_m_s, ...
+    'growthCollapse_aspectRatioEdges', growthCollapseOpts.aspectRatioEdges);
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
 fprintf("Saved plot data .mat files to: %s\n", matDir);
 
@@ -743,6 +781,11 @@ plot_collapse_rate_vs_kd(allCollapse, figDir, plotOpts);
 plot_collapse_size_distribution(allCollapse, collapseFigDir, plotOpts);
 write_collapse_analysis_csv(allCollapse, fullfile(resultsDir, "collapse_analysis.csv"));
 
+%% ---------------- PLOT 6b: Growth/collapse axial rate PDFs ----------------
+growthCollapseFigDir = fullfile(figDir, "Growth and collapse rate");
+if ~isfolder(growthCollapseFigDir), mkdir(growthCollapseFigDir); end
+plot_growth_collapse_rate_pdf(allGrowthCollapse, growthCollapseFigDir, plotOpts, matDir);
+
 %% ---------------- PLOT 7: Void fraction vs k/d ----------------
 plot_void_fraction_vs_kd(allVoidFrac, figDir, plotOpts);
 
@@ -750,20 +793,11 @@ plot_void_fraction_vs_kd(allVoidFrac, figDir, plotOpts);
 breakupFigDir = fullfile(figDir, "BreakupAnalysis");
 if ~isfolder(breakupFigDir), mkdir(breakupFigDir); end
 
-% Save the full breakup dataset and produce one global gamma-vs-dRatio plot.
+% Save the full breakup dataset. Plots are split by Re when multiple
+% Reynolds numbers are present, so identical k/d values do not pool.
 save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
 write_breakup_analysis_xlsx(allBreakup, fullfile(resultsDir, "breakup_events.xlsx"));
-plot_breakup_gamma_vs_dratio(allBreakup, breakupFigDir, plotOpts);
-plot_breakup_gamma_beeswarm_vs_kd(allBreakup, breakupFigDir, plotOpts, "", matDir);
-
-for arThr = breakupOpts.arThresholds
-    arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));  % e.g. AR1p5
-    filteredBreakup = filter_breakup_by_ar(allBreakup, arThr);
-    plot_breakup_gamma_beeswarm_vs_kd(filteredBreakup, breakupFigDir, plotOpts, arTag, matDir);
-    save(fullfile(matDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filteredBreakup');
-    fprintf('  Breakup %s: saved .mat + plots\n', arTag);
-end
-plot_breakup_gamma_scatter_vs_ar(allBreakup, breakupFigDir, plotOpts, "", matDir);
+plot_breakup_analysis_by_re(allBreakup, breakupFigDir, plotOpts, matDir, breakupOpts.arThresholds);
 
 %% ================ CHUNK (INDIVIDUAL) RESULTS ================
 if ~isempty(chunkSummaryRows)
@@ -799,6 +833,8 @@ if ~isempty(chunkSummaryRows)
         save(fullfile(cMatDir, "upstream_size_distribution_by_case.mat"), 'chunkSz');
         chunkCol = chunkAllCollapse{c}; %#ok<NASGU>
         save(fullfile(cMatDir, "collapse_analysis_by_case.mat"), 'chunkCol');
+        chunkGrowthCollapse = chunkAllGrowthCollapse{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "growth_collapse_rate_by_case.mat"), 'chunkGrowthCollapse');
         chunkVF = chunkAllVoidFrac{c}; %#ok<NASGU>
         save(fullfile(cMatDir, "void_fraction_by_case.mat"), 'chunkVF');
         save(fullfile(cMatDir, "normalization_parameters.mat"), 'normParams');
@@ -824,6 +860,10 @@ if ~isempty(chunkSummaryRows)
         plot_collapse_size_distribution(chunkAllCollapse{c}, cCollDir, plotOpts);
         write_collapse_analysis_csv(chunkAllCollapse{c}, fullfile(chunkDir, "collapse_analysis.csv"));
 
+        cGrowthCollapseDir = fullfile(chunkFigDir, "Growth and collapse rate");
+        if ~isfolder(cGrowthCollapseDir), mkdir(cGrowthCollapseDir); end
+        plot_growth_collapse_rate_pdf(chunkAllGrowthCollapse{c}, cGrowthCollapseDir, plotOpts, cMatDir);
+
         plot_void_fraction_vs_kd(chunkAllVoidFrac{c}, chunkFigDir, plotOpts);
 
         cBkDir = fullfile(chunkFigDir, "BreakupAnalysis");
@@ -831,16 +871,7 @@ if ~isempty(chunkSummaryRows)
         chunkBk = chunkAllBreakup{c}; %#ok<NASGU>
         save(fullfile(cMatDir, "breakup_analysis_by_case.mat"), 'chunkBk');
         write_breakup_analysis_xlsx(chunkAllBreakup{c}, fullfile(chunkDir, "breakup_events.xlsx"));
-        plot_breakup_gamma_vs_dratio(chunkAllBreakup{c}, cBkDir, plotOpts);
-        plot_breakup_gamma_beeswarm_vs_kd(chunkAllBreakup{c}, cBkDir, plotOpts, "", cMatDir);
-
-        for arThr = breakupOpts.arThresholds
-            arTag = sprintf('AR%s', strrep(sprintf('%.1f', arThr), '.', 'p'));
-            filtBk = filter_breakup_by_ar(chunkAllBreakup{c}, arThr);
-            plot_breakup_gamma_beeswarm_vs_kd(filtBk, cBkDir, plotOpts, arTag, cMatDir);
-            save(fullfile(cMatDir, sprintf("breakup_analysis_by_case_%s.mat", arTag)), 'filtBk');
-        end
-        plot_breakup_gamma_scatter_vs_ar(chunkAllBreakup{c}, cBkDir, plotOpts, "", cMatDir);
+        plot_breakup_analysis_by_re(chunkAllBreakup{c}, cBkDir, plotOpts, cMatDir, breakupOpts.arThresholds);
 
         fprintf('Chunk %d: saved results to %s\n', c, chunkDir);
         close all force;

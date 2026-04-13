@@ -45,9 +45,8 @@ f = figure('Color', 'w', 'Position', [120 120 1000 700]);
 ax = axes(f);
 hold(ax, 'on');
 
-markerFaceColor = [0 0 1];
-markerEdgeColor = [0 0 0];
-errorBarColor = [0 0 0];
+cmap = lines(max(numel(ReVals), 1));
+markerStyles = {'o', 's', '^', 'd', 'v', '>', '<', 'p', 'h'};
 lgd = gobjects(0,1);
 lgdTxt = strings(0,1);
 
@@ -55,6 +54,8 @@ for r = 1:numel(ReVals)
     Rei = ReVals(r);
     sub = summaryTable(summaryTable.Re == Rei, :);
     sub = sortrows(sub, 'kD');
+    col = cmap(r, :);
+    markerStyle = markerStyles{mod(r - 1, numel(markerStyles)) + 1};
 
     x = sub.kD(:);
     y = sub.tau_mean(:) * yScale;
@@ -72,14 +73,14 @@ for r = 1:numel(ReVals)
     e(~isfinite(e)) = 0;
     eLow = min(e, y);  % clip lower error bar at zero (tau >= 0)
 
-    h = errorbar(ax, x, y, eLow, e, 'o', ...
+    h = errorbar(ax, x, y, eLow, e, markerStyle, ...
         'LineStyle', 'none', ...
         'LineWidth', 0.75, ...
         'MarkerSize', 12, ...
         'CapSize', 8, ...
-        'Color', errorBarColor, ...
-        'MarkerFaceColor', markerFaceColor, ...
-        'MarkerEdgeColor', markerEdgeColor);
+        'Color', col, ...
+        'MarkerFaceColor', col, ...
+        'MarkerEdgeColor', [0 0 0]);
     lgd(end+1,1) = h; %#ok<AGROW>
     lgdTxt(end+1,1) = sprintf('Re=%g', Rei); %#ok<AGROW>
 end

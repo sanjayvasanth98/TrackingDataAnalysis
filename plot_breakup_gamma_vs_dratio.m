@@ -3,8 +3,8 @@ function plot_breakup_gamma_vs_dratio(breakupData, figDir, plotOpts, arLabel)
 %   Scatter of gamma = (x_child - x_parent)/d_roughness vs d_child/d_parent.
 %   One scatter point per child-parent pair, lightly transparent markers.
 %   Per-case coloured robust trend line using quantile bins and medians.
-%   The x-axis is clipped at a high percentile of dRatio and the number of
-%   hidden outliers is annotated on the plot and written to a text file.
+%   The x-axis is clipped at a high percentile of dRatio and hidden
+%   outliers are reported in a text file.
 %   Zero-line reference at gamma=0. Y centred at 0 with symmetric limits.
 %
 %   breakupData: struct array, one element per case, with fields:

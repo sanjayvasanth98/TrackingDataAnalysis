@@ -53,10 +53,8 @@ for theme = reshape(plotOpts.themes, 1, [])
     ax = axes(f);
     hold(ax, 'on');
 
-    markerFaceColor = [0 0 1];
-    markerEdgeColor = [0 0 0];
-    errorBarColor = [0 0 0];
-    fitColor = [0.35 0.35 0.35];
+    cmap = lines(max(numel(ReVals), 1));
+    markerStyles = {'o', 's', '^', 'd', 'v', '>', '<', 'p', 'h'};
     lgd = gobjects(0,1);
     lgdTxt = strings(0,1);
 
@@ -69,6 +67,8 @@ for theme = reshape(plotOpts.themes, 1, [])
         y = sub.A_over_I(:);
         ciLow = sub.A_over_I_ci_low(:);
         ciHigh = sub.A_over_I_ci_high(:);
+        col = cmap(r, :);
+        markerStyle = markerStyles{mod(r - 1, numel(markerStyles)) + 1};
 
         valid = isfinite(x) & isfinite(y) & (y > 0);
         x = x(valid);
@@ -91,14 +91,14 @@ for theme = reshape(plotOpts.themes, 1, [])
         errLow = max(0, y - lowerBound);
         errHigh = max(0, upperBound - y);
 
-        hErr = errorbar(ax, x, y, errLow, errHigh, 'o', ...
+        hErr = errorbar(ax, x, y, errLow, errHigh, markerStyle, ...
             'LineStyle', 'none', ...
             'LineWidth', 0.75, ...
             'MarkerSize', 12, ...
             'CapSize', 8, ...
-            'Color', errorBarColor, ...
-            'MarkerFaceColor', markerFaceColor, ...
-            'MarkerEdgeColor', markerEdgeColor);
+            'Color', col, ...
+            'MarkerFaceColor', col, ...
+            'MarkerEdgeColor', [0 0 0]);
         lgd(end+1,1) = hErr; %#ok<AGROW>
         lgdTxt(end+1,1) = sprintf('Data, Re=%g', Rei); %#ok<AGROW>
 
@@ -109,7 +109,7 @@ for theme = reshape(plotOpts.themes, 1, [])
 
             xFit = linspace(min(x), max(x), 200).';
             yFit = 10.^(a + b*xFit);
-            hFit = plot(ax, xFit, yFit, '--', 'LineWidth', 1.8, 'Color', fitColor);
+            hFit = plot(ax, xFit, yFit, '--', 'LineWidth', 1.8, 'Color', col);
             lgd(end+1,1) = hFit; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('Fit, Re=%g', Rei); %#ok<AGROW>
 

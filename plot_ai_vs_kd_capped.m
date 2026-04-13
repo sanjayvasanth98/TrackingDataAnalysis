@@ -37,15 +37,16 @@ for theme = reshape(plotOpts.themes, 1, [])
     ax = axes(f);
     hold(ax, 'on');
 
-    markerFaceColor = [0 0 1];
-    markerEdgeColor = [0 0 0];
-    fitColor        = [0.35 0.35 0.35];
+    cmap = lines(max(numel(ReVals), 1));
+    markerStyles = {'o', 's', '^', 'd', 'v', '>', '<', 'p', 'h'};
     lgd    = gobjects(0,1);
     lgdTxt = strings(0,1);
 
     for r = 1:numel(ReVals)
         Rei    = ReVals(r);
         idxRe  = find(allLoc.Re == Rei);
+        col = cmap(r, :);
+        markerStyle = markerStyles{mod(r - 1, numel(markerStyles)) + 1};
 
         kD_vals  = allLoc.kD(idxRe);
         nAct     = allLoc.nActivated(idxRe);
@@ -63,13 +64,13 @@ for theme = reshape(plotOpts.themes, 1, [])
         [kD_sorted, si] = sort(kD_v);
         AI_sorted = AI_v(si);
 
-        hPts = plot(ax, kD_sorted, AI_sorted, 'o-', ...
-            'Color', markerEdgeColor, ...
+        hPts = plot(ax, kD_sorted, AI_sorted, [markerStyle '-'], ...
+            'Color', col, ...
             'LineWidth', 0.75, ...
             'LineStyle', '-', ...
             'MarkerSize', 12, ...
-            'MarkerFaceColor', markerFaceColor, ...
-            'MarkerEdgeColor', markerEdgeColor);
+            'MarkerFaceColor', col, ...
+            'MarkerEdgeColor', [0 0 0]);
         lgd(end+1,1)    = hPts; %#ok<AGROW>
         lgdTxt(end+1,1) = sprintf('Data (cap=%d), Re=%g', maxAct, Rei); %#ok<AGROW>
 
@@ -77,7 +78,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             p = polyfit(kD_sorted, log10(AI_sorted), 1);
             xFit = linspace(min(kD_sorted), max(kD_sorted), 200).';
             yFit = 10.^(p(2) + p(1)*xFit);
-            hFit = plot(ax, xFit, yFit, '--', 'LineWidth', 1.8, 'Color', fitColor);
+            hFit = plot(ax, xFit, yFit, '--', 'LineWidth', 1.8, 'Color', col);
             lgd(end+1,1)    = hFit; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('Fit (cap=%d), Re=%g', maxAct, Rei); %#ok<AGROW>
         end

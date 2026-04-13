@@ -3,7 +3,7 @@ function filtered = filter_breakup_by_ar(allBreakup, arThreshold)
 %
 %   filtered = filter_breakup_by_ar(allBreakup, arThreshold)
 %
-%   allBreakup:   struct array with fields .caseName, .kD, .events
+%   allBreakup:   struct array with fields .caseName, optional .Re, .kD, .events
 %   arThreshold:  scalar, minimum parent aspect ratio to retain
 %
 %   Returns the same struct array with events filtered per case.

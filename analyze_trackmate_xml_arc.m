@@ -192,6 +192,9 @@ Z         = nan(nAlloc,1);
 QUALITY   = nan(nAlloc,1);
 RADIUS    = nan(nAlloc,1);
 AREA      = nan(nAlloc,1);
+ELLIPSE_ASPECTRATIO = nan(nAlloc,1);
+ELLIPSE_MAJOR = nan(nAlloc,1);
+ELLIPSE_MINOR = nan(nAlloc,1);
 PERIM     = nan(nAlloc,1);
 CIRC      = nan(nAlloc,1);
 SOLIDITY  = nan(nAlloc,1);
@@ -232,6 +235,9 @@ for i = 1:nSpotsAll
     QUALITY(nKeep)  = getAttrNum(node, 'QUALITY');
     RADIUS(nKeep)   = getAttrNum(node, 'RADIUS');
     AREA(nKeep)     = getAttrNum(node, 'AREA');
+    ELLIPSE_ASPECTRATIO(nKeep) = getAttrNum(node, 'ELLIPSE_ASPECTRATIO');
+    ELLIPSE_MAJOR(nKeep)       = getAttrNum(node, 'ELLIPSE_MAJOR');
+    ELLIPSE_MINOR(nKeep)       = getAttrNum(node, 'ELLIPSE_MINOR');
     PERIM(nKeep)    = getAttrNum(node, 'PERIMETER');
     CIRC(nKeep)     = getAttrNum(node, 'CIRCULARITY');
     SOLIDITY(nKeep) = getAttrNum(node, 'SOLIDITY');
@@ -267,6 +273,9 @@ Z         = Z(1:nKeep);
 QUALITY   = QUALITY(1:nKeep);
 RADIUS    = RADIUS(1:nKeep);
 AREA      = AREA(1:nKeep);
+ELLIPSE_ASPECTRATIO = ELLIPSE_ASPECTRATIO(1:nKeep);
+ELLIPSE_MAJOR = ELLIPSE_MAJOR(1:nKeep);
+ELLIPSE_MINOR = ELLIPSE_MINOR(1:nKeep);
 PERIM     = PERIM(1:nKeep);
 CIRC      = CIRC(1:nKeep);
 SOLIDITY  = SOLIDITY(1:nKeep);
@@ -275,7 +284,9 @@ TOTAL_I1  = TOTAL_I1(1:nKeep);
 ROI_NPTS  = ROI_NPTS(1:nKeep);
 ROI_XY    = ROI_XY(1:nKeep);
 
-spots = table(ID, FRAME, POS_T, X, Y, Z, QUALITY, RADIUS, AREA, PERIM, CIRC, SOLIDITY, MEAN_I1, TOTAL_I1, ROI_NPTS);
+spots = table(ID, FRAME, POS_T, X, Y, Z, QUALITY, RADIUS, AREA, ...
+    ELLIPSE_ASPECTRATIO, ELLIPSE_MAJOR, ELLIPSE_MINOR, ...
+    PERIM, CIRC, SOLIDITY, MEAN_I1, TOTAL_I1, ROI_NPTS);
 if opts.parseROI
     spots.ROI_XY = ROI_XY;
 end
@@ -425,7 +436,7 @@ end
 % --------------------------
 function meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots)
 meta = struct();
-meta.parserVersion = 2;
+meta.parserVersion = 3;
 meta.parseTrackedSpotsOnly = logical(opts.parseTrackedSpotsOnly);
 meta.parseFilteredTracksOnly = logical(useFilteredTrackSet);
 meta.hasFilteredTracks = logical(hasFilteredTracks);
