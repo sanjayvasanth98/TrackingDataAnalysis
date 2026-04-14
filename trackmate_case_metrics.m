@@ -43,6 +43,7 @@ strictActLocation_xy = zeros(0,2);
 strictTrack_xy = cell(0,1);
 strictUpstreamSize_eqd = nan(0,1);
 strictTau_values = nan(0,1);
+strictActivatedVelocity_m_s = nan(0,1);
 strictActivationEventFrames = nan(0,1);
 strictActivationEventTrackIds = nan(0,1);
 strictFrameCells = cell(0,1);
@@ -278,6 +279,7 @@ for k = 1:nTotal
     strictActivationEventFrames(end+1,1) = prep(k).actFrame; %#ok<AGROW>
     strictActivationEventTrackIds(end+1,1) = prep(k).TRACK_ID; %#ok<AGROW>
     strictTau_values(end+1,1) = max(prep(k).t(prep(k).actIdx) - prep(k).t(1), 0); %#ok<AGROW>
+    strictActivatedVelocity_m_s(end+1,1) = compute_activation_upstream_velocity_m_s(prep(k), flowOpts); %#ok<AGROW>
 end
 
 % Include microbubble-start tracks (configured px^2 range) outside strict set.
@@ -399,6 +401,7 @@ metrics = pack_metrics();
         outMetrics.strictActivationEvent_frame = strictActivationEventFrames;
         outMetrics.strictActivationEvent_trackId = strictActivationEventTrackIds;
         outMetrics.strict_tau_values = strictTau_values;
+        outMetrics.strict_activatedVelocity_m_s = strictActivatedVelocity_m_s;
         outMetrics.strict_upstreamSize_eqd = strictUpstreamSize_eqd;
         outMetrics.strict_frame_axis = strictFrameAxis;
         outMetrics.strict_frame_nVisible = strictFrameVisible;
@@ -426,6 +429,16 @@ metrics = pack_metrics();
         outMetrics.tau_values = strictTau_values;
         outMetrics.tau_mean = mean(strictTau_values, 'omitnan');
         outMetrics.tau_std = std(strictTau_values, 0, 'omitnan');
+        outMetrics.activatedUpstreamVelocity_m_s = strictActivatedVelocity_m_s;
+        outMetrics.activatedUpstreamVelocity_mean_m_s = mean(strictActivatedVelocity_m_s, 'omitnan');
+        outMetrics.activatedUpstreamVelocity_std_m_s = std(strictActivatedVelocity_m_s, 0, 'omitnan');
+        outMetrics.activatedUpstreamVelocity_n = sum(isfinite(strictActivatedVelocity_m_s));
+        if outMetrics.activatedUpstreamVelocity_n > 1
+            outMetrics.activatedUpstreamVelocity_sem_m_s = ...
+                outMetrics.activatedUpstreamVelocity_std_m_s / sqrt(outMetrics.activatedUpstreamVelocity_n);
+        else
+            outMetrics.activatedUpstreamVelocity_sem_m_s = NaN;
+        end
         outMetrics.upstreamSize_eqd = strictUpstreamSize_eqd;
         outMetrics.frame_axis = strictFrameAxis;
         outMetrics.frame_nLeftMovingVisible = strictFrameVisible;
@@ -1053,6 +1066,43 @@ if isempty(yLimits) || numel(yLimits) ~= 2 || any(~isfinite(yLimits))
     return;
 end
 pass = (yVal >= min(yLimits)) && (yVal <= max(yLimits));
+end
+
+function v_m_s = compute_activation_upstream_velocity_m_s(prep, flowOpts)
+% Mean of per-step axial upstream velocities from track start to activation,
+% positive in the counter-flow direction. Positions are mm and time is
+% seconds.
+v_m_s = NaN;
+if ~prep.hasActivation || ~isfinite(prep.actIdx) || prep.actIdx < 1 || ...
+        prep.actIdx > numel(prep.x) || prep.actIdx > numel(prep.t)
+    return;
+end
+
+actIdx = round(prep.actIdx);
+if actIdx < 2
+    return;
+end
+
+dx = diff(prep.x(1:actIdx));
+dt = diff(prep.t(1:actIdx));
+valid = isfinite(dx) & isfinite(dt) & dt > 0;
+if ~any(valid)
+    return;
+end
+
+if strcmpi(flowOpts.bulkDirection, 'left_to_right')
+    stepVelocity_mm_s = -dx(valid) ./ dt(valid);
+else
+    stepVelocity_mm_s = dx(valid) ./ dt(valid);
+end
+
+stepVelocity_m_s = stepVelocity_mm_s ./ 1000; % mm/s -> m/s
+stepVelocity_m_s = stepVelocity_m_s(isfinite(stepVelocity_m_s) & stepVelocity_m_s >= 0);
+if isempty(stepVelocity_m_s)
+    v_m_s = NaN;
+else
+    v_m_s = mean(stepVelocity_m_s, 'omitnan');
+end
 end
 
 function [prep, nRejected] = reject_proximity_merge_activations(prep, spots, activationOpts)
