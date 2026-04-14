@@ -410,6 +410,7 @@ chunkAllBreakup     = {};
 chunkAllSize        = {};
 chunkAllGrowthCollapse = {};
 chunkGateSummaryRows = {};
+chunkFramewiseRows = {};
 
 cachePolicyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts);
 runTimer = tic;
@@ -563,21 +564,29 @@ for i = 1:numel(cases)
         nMicroAE = numel(metrics.microbubbleActivationEvent_frame_nonLeft);
     end
     nTotalAE = metrics.strictActivationEventsTotal + nMicroAE;
+    leftMovingActivated_pct = NaN;
+    if nStrictRecirculationTracks > 0
+        leftMovingActivated_pct = 100 * nStrictActivatedTracks / nStrictRecirculationTracks;
+    end
+    AE_leftMoving_pct = NaN;
+    if nTotalAE > 0
+        AE_leftMoving_pct = 100 * metrics.strictActivationEventsTotal / nTotalAE;
+    end
 
     % Store per-case summary
     row = table( ...
         string(cases(i).name), cases(i).Re, cases(i).kD, ...
         metrics.nTracksTotal, nValidTracks, ...
-        nStrictRecirculationTracks, nStrictActivatedTracks, ...
+        nStrictRecirculationTracks, nStrictActivatedTracks, leftMovingActivated_pct, ...
         metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
-        nMicroAE, nTotalAE, ...
+        nMicroAE, nTotalAE, AE_leftMoving_pct, ...
         strictRecirculationFrac_total, strictActivationFrac_valid, ...
         metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, A_over_I_err_low, A_over_I_err_high, ...
         tau_mean_val, tau_std_val, tau_sem, nTauVals, elapsed_case_sec, ...
         'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
-        'nLeftMovingTracks','nLeftMovingActivated', ...
+        'nLeftMovingTracks','nLeftMovingActivated','leftMovingActivated_pct', ...
         'leftMovingFrameExposure','AE_leftMoving', ...
-        'AE_microbubble','AE_total', ...
+        'AE_microbubble','AE_total','AE_leftMoving_pct', ...
         'leftMovingFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
         'tau_mean','tau_std','tau_sem','nTau','elapsed_case_sec'});
 
@@ -670,7 +679,19 @@ for i = 1:numel(cases)
             % Per-case framewise CSV for this chunk
             chunkCaseDir = fullfile(resultsDir, "results individual", sprintf("chunk_%d", c));
             if ~isfolder(chunkCaseDir), mkdir(chunkCaseDir); end
-            write_framewise_case_csv(chunkCaseDir, cases(i), mc);
+            chunkFramewiseTbl = write_framewise_case_csv(chunkCaseDir, cases(i), mc);
+            if numel(chunkFramewiseRows) < c || isempty(chunkFramewiseRows{c})
+                chunkFramewiseRows{c} = table();
+            end
+            if ~isempty(chunkFramewiseTbl) && height(chunkFramewiseTbl) > 0
+                chunkMetaTbl = table( ...
+                    repmat(c, height(chunkFramewiseTbl), 1), ...
+                    repmat(string(cases(i).name), height(chunkFramewiseTbl), 1), ...
+                    repmat(cases(i).Re, height(chunkFramewiseTbl), 1), ...
+                    repmat(cases(i).kD, height(chunkFramewiseTbl), 1), ...
+                    'VariableNames', {'Chunk','Case','Re','kD'});
+                chunkFramewiseRows{c} = append_table_compat(chunkFramewiseRows{c}, [chunkMetaTbl, chunkFramewiseTbl]);
+            end
 
             % Chunk-specific video overlay GIF (if matching AVI exists)
             if plotOpts.makeVideoOverlayGifs && c <= numel(chunkVideoFiles_i)
@@ -696,18 +717,26 @@ for i = 1:numel(cases)
                 nMcAE = numel(mc.microbubbleActivationEvent_frame_nonLeft);
             end
             nTotAEc = mc.strictActivationEventsTotal + nMcAE;
+            leftMovingActivated_pct_c = NaN;
+            if nSRc > 0
+                leftMovingActivated_pct_c = 100 * nSAc / nSRc;
+            end
+            AE_leftMoving_pct_c = NaN;
+            if nTotAEc > 0
+                AE_leftMoving_pct_c = 100 * mc.strictActivationEventsTotal / nTotAEc;
+            end
 
             chunkRow = table( ...
                 string(cases(i).name), cases(i).Re, cases(i).kD, ...
-                mc.nTracksTotal, nVc, nSRc, nSAc, ...
+                mc.nTracksTotal, nVc, nSRc, nSAc, leftMovingActivated_pct_c, ...
                 mc.strictTrackFrameExposure, mc.strictActivationEventsTotal, ...
-                nMcAE, nTotAEc, sRFc, sAFc, ...
+                nMcAE, nTotAEc, AE_leftMoving_pct_c, sRFc, sAFc, ...
                 mc.A_over_I, mc.A_over_I_ci_low, mc.A_over_I_ci_high, aiElc, aiEhc, ...
                 tMc, tSc, tSEMc, nTc, 0, ...
                 'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
-                'nLeftMovingTracks','nLeftMovingActivated', ...
+                'nLeftMovingTracks','nLeftMovingActivated','leftMovingActivated_pct', ...
                 'leftMovingFrameExposure','AE_leftMoving', ...
-                'AE_microbubble','AE_total', ...
+                'AE_microbubble','AE_total','AE_leftMoving_pct', ...
                 'leftMovingFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
                 'tau_mean','tau_std','tau_sem','nTau','elapsed_case_sec'});
             chunkSummaryRows{c} = [chunkSummaryRows{c}; chunkRow]; %#ok<AGROW>
@@ -803,12 +832,62 @@ plot_breakup_analysis_by_re(allBreakup, breakupFigDir, plotOpts, matDir, breakup
 if ~isempty(chunkSummaryRows)
     nMaxChunks = numel(chunkSummaryRows);
     fprintf('\n=== Saving individual chunk results (%d chunks) ===\n', nMaxChunks);
+    individualRootDir = fullfile(resultsDir, "results individual");
+    if ~isfolder(individualRootDir), mkdir(individualRootDir); end
+
+    allChunkSummaryRows = table();
+    allChunkGateSummaryRows = table();
+    allChunkCollapseRows = table();
+    allChunkFramewiseRows = table();
+    for c = 1:nMaxChunks
+        if isempty(chunkSummaryRows{c}) || height(chunkSummaryRows{c}) == 0
+            continue;
+        end
+        cTbl = chunkSummaryRows{c};
+        chunkCol = table(repmat(c, height(cTbl), 1), 'VariableNames', {'Chunk'});
+        allChunkSummaryRows = append_table_compat(allChunkSummaryRows, [chunkCol, cTbl]);
+
+        if numel(chunkGateSummaryRows) >= c && ~isempty(chunkGateSummaryRows{c}) && height(chunkGateSummaryRows{c}) > 0
+            cGateTbl = chunkGateSummaryRows{c};
+            chunkGateCol = table(repmat(c, height(cGateTbl), 1), 'VariableNames', {'Chunk'});
+            allChunkGateSummaryRows = append_table_compat(allChunkGateSummaryRows, [chunkGateCol, cGateTbl]);
+        end
+
+        if numel(chunkAllCollapse) >= c && ~isempty(chunkAllCollapse{c}) && numel(chunkAllCollapse{c}.caseName) > 0
+            cCollapseTbl = collapse_analysis_to_table(chunkAllCollapse{c});
+            if ~isempty(cCollapseTbl) && height(cCollapseTbl) > 0
+                chunkCollapseCol = table(repmat(c, height(cCollapseTbl), 1), 'VariableNames', {'Chunk'});
+                allChunkCollapseRows = append_table_compat(allChunkCollapseRows, [chunkCollapseCol, cCollapseTbl]);
+            end
+        end
+
+        if numel(chunkFramewiseRows) >= c && ~isempty(chunkFramewiseRows{c}) && height(chunkFramewiseRows{c}) > 0
+            allChunkFramewiseRows = append_table_compat(allChunkFramewiseRows, chunkFramewiseRows{c});
+        end
+    end
+    if ~isempty(allChunkSummaryRows) && height(allChunkSummaryRows) > 0
+        allChunkSummaryRows = sortrows(allChunkSummaryRows, {'Re','kD','Chunk'});
+        write_table_csv_compat(allChunkSummaryRows, fullfile(individualRootDir, "summary - chunks_case.csv"));
+    end
+    if ~isempty(allChunkGateSummaryRows) && height(allChunkGateSummaryRows) > 0
+        allChunkGateSummaryRows = sortrows(allChunkGateSummaryRows, {'Re','kD','Chunk'});
+        write_table_csv_compat(allChunkGateSummaryRows, fullfile(individualRootDir, "track_gate_summary - chunks_case.csv"));
+    end
+    if ~isempty(allChunkCollapseRows) && height(allChunkCollapseRows) > 0
+        allChunkCollapseRows = sortrows(allChunkCollapseRows, {'Re','kD','Chunk'});
+        write_table_csv_compat(allChunkCollapseRows, fullfile(individualRootDir, "collapse_analysis - chunks_case.csv"));
+    end
+    if ~isempty(allChunkFramewiseRows) && height(allChunkFramewiseRows) > 0
+        allChunkFramewiseRows = sortrows(allChunkFramewiseRows, {'Re','kD','Chunk','frame'});
+        write_table_csv_compat(allChunkFramewiseRows, fullfile(individualRootDir, "framewise_counts - chunks_case.csv"));
+    end
+
     for c = 1:nMaxChunks
         if isempty(chunkSummaryRows{c}) || height(chunkSummaryRows{c}) == 0
             continue;
         end
 
-        chunkDir    = fullfile(resultsDir, "results individual", sprintf("chunk_%d", c));
+        chunkDir    = fullfile(individualRootDir, sprintf("chunk_%d", c));
         chunkFigDir = fullfile(chunkDir, "Figures_PNG_SVG");
         if ~isfolder(chunkDir), mkdir(chunkDir); end
         if ~isfolder(chunkFigDir), mkdir(chunkFigDir); end
@@ -887,7 +966,7 @@ totalElapsedSec = toc(runTimer);
 fprintf("Total elapsed time (selected cases): %.2f s (%s)\n", totalElapsedSec, format_elapsed_hms(totalElapsedSec));
 fprintf("\nAll done. Results in: %s\n", resultsDir);
 
-function write_framewise_case_csv(resultsDir, caseDef, metrics)
+function frameTbl = write_framewise_case_csv(resultsDir, caseDef, metrics)
 strictAxis = get_metric_vector(metrics, 'strict_frame_axis', metrics.frame_axis);
 strictVisible = get_metric_vector(metrics, 'strict_frame_nVisible', metrics.frame_nLeftMovingVisible);
 strictAct = get_metric_vector(metrics, 'strict_frame_nActivationEvents', metrics.frame_nActivationEvents);
@@ -948,6 +1027,17 @@ caseToken = sanitize_case_token(caseDef.name);
 outCsv = fullfile(resultsDir, sprintf('framewise_counts_%s_Re_%g_kD_%g.csv', caseToken, caseDef.Re, caseDef.kD));
 write_table_csv_compat(frameTbl, outCsv);
 fprintf("Saved: %s\n", outCsv);
+end
+
+function outTbl = append_table_compat(outTbl, newRows)
+if isempty(newRows) || height(newRows) == 0
+    return;
+end
+if isempty(outTbl) || width(outTbl) == 0
+    outTbl = newRows;
+else
+    outTbl = [outTbl; newRows]; %#ok<AGROW>
+end
 end
 
 function v = get_metric_vector(metrics, fieldName, fallback)

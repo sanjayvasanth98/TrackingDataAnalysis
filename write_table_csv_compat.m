@@ -6,8 +6,10 @@ function write_table_csv_compat(tbl, outCsv)
 
 if exist('writetable', 'file') == 2
     try
-        writetable(tbl, outCsv);
-        return;
+        if ~requires_custom_csv_headers(tbl)
+            writetable(tbl, outCsv);
+            return;
+        end
     catch
         % Fall back to manual writer below.
     end
@@ -21,11 +23,12 @@ end
 varNames = tbl.Properties.VariableNames;
 nCols = numel(varNames);
 nRows = height(tbl);
+headerNames = display_csv_header_names(varNames);
 
 % Header
 header = cell(1, nCols);
 for c = 1:nCols
-    header{c} = csv_escape(varNames{c});
+    header{c} = csv_escape(headerNames{c});
 end
 fprintf(fid, '%s\n', strjoin(header, ','));
 
@@ -47,6 +50,28 @@ for r = 1:nRows
 end
 
 fclose(fid);
+end
+
+function tf = requires_custom_csv_headers(tbl)
+tf = false;
+if ~istable(tbl)
+    return;
+end
+varNames = tbl.Properties.VariableNames;
+customNames = {'leftMovingActivated_pct', 'AE_leftMoving_pct'};
+tf = any(ismember(varNames, customNames));
+end
+
+function headerNames = display_csv_header_names(varNames)
+headerNames = varNames;
+for c = 1:numel(headerNames)
+    switch headerNames{c}
+        case 'leftMovingActivated_pct'
+            headerNames{c} = 'leftMovingActivated %';
+        case 'AE_leftMoving_pct'
+            headerNames{c} = 'AE_leftmoving %';
+    end
+end
 end
 
 function s = to_scalar_text(v)
