@@ -2,10 +2,10 @@ function plot_breakup_gamma_vs_dratio(breakupData, figDir, plotOpts, arLabel)
 % PLOT_BREAKUP_GAMMA_VS_DRATIO
 %   Scatter of gamma = (x_child - x_parent)/d_roughness vs d_child/d_parent.
 %   One scatter point per child-parent pair, lightly transparent markers.
-%   Per-case coloured binned mean trend line.
+%   Per-case coloured dashed binned mean trend line.
 %   The x-axis defaults to log scale with robust low/high clipping, and
 %   extreme tails are reported in a text file.
-%   Zero-line reference at gamma=0. Y centred at 0 with symmetric limits.
+%   The y-axis is linear and fixed to the published breakup view window.
 %
 %   breakupData: struct array, one element per case, with fields:
 %     .caseName  string
@@ -165,6 +165,9 @@ else
     yLimPlot = [yLo - yPad, yHi + yPad];
 end
 
+% Keep the published breakup view fixed so the panel is consistent run-to-run.
+yLimPlot = [-0.5, 0.5];
+
 % Per-case colour (using lines colourmap).
 cmap = lines(max(nCases, 1));
 
@@ -179,6 +182,10 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     lgd    = gobjects(0,1);
     lgdTxt = strings(0,1);
+    trendHandles = gobjects(0,1);
+    trendX = cell(nCases, 1);
+    trendY = cell(nCases, 1);
+    trendKeep = false(nCases, 1);
 
     for ci = 1:nCases
         ev = breakupData(ci).events;
@@ -197,14 +204,16 @@ for theme = reshape(plotOpts.themes, 1, [])
             if isempty(dRatio), continue; end
         end
 
-        visibleCase = dRatio >= xLower & dRatio <= xUpper;
+        visibleCase = dRatio >= xLower & dRatio <= xUpper & ...
+                      gamma  >= yLimPlot(1) & gamma  <= yLimPlot(2);
         col      = cmap(ci, :);
 
         if any(visibleCase)
             % Scatter with low opacity so dense clusters read as density.
             hPt = scatter(ax, dRatio(visibleCase), gamma(visibleCase), markerSize, col, 'filled', ...
                 'MarkerFaceAlpha', markerAlpha, ...
-                'MarkerEdgeColor', 'none');
+                'MarkerEdgeColor', 'none', ...
+                'Clipping', 'on');
             lgd(end+1,1)    = hPt; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('k/d = %.2f', breakupData(ci).kD); %#ok<AGROW>
         end
@@ -213,19 +222,32 @@ for theme = reshape(plotOpts.themes, 1, [])
         [xTrend, gammaTrend] = build_binned_mean_trend( ...
             dRatio(visibleCase), gamma(visibleCase), maxTrendBins, minBinCount, axisScale, xLim);
         if numel(xTrend) >= 2
-            plot(ax, xTrend, gammaTrend, '-', ...
-                'Color', col, ...
-                'LineWidth', 2.0, ...
-                'HandleVisibility', 'off');
+            trendX{ci} = xTrend;
+            trendY{ci} = gammaTrend;
+            trendKeep(ci) = true;
         end
     end
 
     % Zero reference line.
     plot(ax, xLim, [0 0], '--', 'Color', [0.5 0.5 0.5], ...
-        'LineWidth', 1.2, 'HandleVisibility', 'off');
+        'LineWidth', 1.2, 'HandleVisibility', 'off', 'Clipping', 'on');
+
+    % Draw all trend lines after the scatters so they sit on top.
+    for ci = 1:nCases
+        if ~trendKeep(ci)
+            continue;
+        end
+        hTrend = plot(ax, trendX{ci}, trendY{ci}, '--', ...
+            'Color', cmap(ci, :), ...
+            'LineWidth', 2.2, ...
+            'HandleVisibility', 'off', ...
+            'Clipping', 'on');
+        trendHandles(end+1,1) = hTrend; %#ok<AGROW>
+    end
 
     xlim(ax, xLim);
     ylim(ax, yLimPlot);
+
     enhance_minor_ticks(ax, axisScale, xLim, yLimPlot);
 
     xlabel(ax, '$d_\mathrm{child}/d_\mathrm{parent}$', 'Interpreter', 'latex');
@@ -249,6 +271,16 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
 
     apply_plot_theme(ax, char(theme));
+
+    % Re-assert the stacking order after theming so mean lines stay above
+    % the scatter markers even when the renderer/theme updates children.
+    for h = reshape(trendHandles, 1, [])
+        try
+            uistack(h, 'top');
+        catch
+        end
+    end
+
     style_legend_for_theme(leg, char(theme));
 
     if arLabel ~= ""
@@ -417,7 +449,6 @@ yTrend = yTrend(keep);
 end
 
 
-% =========================================================================
 function pctVals = local_percentile(xVals, probs)
 xVals = xVals(isfinite(xVals));
 if isempty(xVals)

@@ -12,7 +12,7 @@
 clear; clc;
 
 %% Paths — edit matDir to point to your latest results run
-matDir   = "E:\March Re 90,000 inception data\Processed images\results\results 30 local\plot_data_mat";
+matDir   = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
 outDir   = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'CollapseAnalysis');
 csvOut   = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'collapse_analysis.csv');
 if ~isfolder(outDir), mkdir(outDir); end

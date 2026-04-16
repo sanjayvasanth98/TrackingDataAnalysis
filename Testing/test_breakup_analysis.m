@@ -42,15 +42,21 @@ plotOpts.saveSVG            = false; % square copies are saved manually below
 plotOpts.themes             = "normal";
 plotOpts.keepFiguresOpen    = true;
 plotOpts.breakupDRatioXScale = "log";
-plotOpts.breakupDRatioXLim = [0.11, 1.4];
+plotOpts.breakupDRatioXLim = [1e-1, 1.4];
 plotOpts.breakupDRatioClipLowPercentile = 0.5;
 plotOpts.breakupDRatioClipPercentile = 99.5;
-plotOpts.breakupGammaYLim = [];
+plotOpts.breakupGammaYLim = [-0.5, 0.5];
 plotOpts.breakupGammaYClipPercentile = [1, 99];
 plotOpts.breakupDRatioMarkerSize = 30;
 plotOpts.breakupDRatioMarkerAlpha = 0.40;
 plotOpts.breakupDRatioTrendMaxBins = 12;
 plotOpts.breakupDRatioTrendMinCount = 5;
+plotOpts.breakupARMarkerSize = 30;
+plotOpts.breakupARMarkerAlpha = 0.40;
+plotOpts.breakupARXLim = [0, 4];
+plotOpts.breakupARGammaYLim = [-0.5, 0.5];
+plotOpts.breakupARTrendMaxBins = 12;
+plotOpts.breakupARTrendMinCount = 5;
 
 %% Global gamma-vs-dRatio plot (no AR filtering)
 nTotalAll = 0;
@@ -97,6 +103,12 @@ fprintf('\nDone. Output in:\n  %s\n  %s\n', outDir, xlsxOut);
 %% ========================================================================
 function save_square_only(fig, outDir, baseName, plotOpts)
 %SAVE_SQUARE_ONLY  Resize an open figure to square and save only that version.
+    if nargin < 1 || isempty(fig) || ~isgraphics(fig, 'figure')
+        warning('save_square_only:InvalidFigure', ...
+            'Skipping square save for %s because the figure handle is invalid.', char(baseName));
+        return;
+    end
+
     origPos = fig.Position;
     fig.Position = [100 100 700 700];
     drawnow;
@@ -105,5 +117,11 @@ function save_square_only(fig, outDir, baseName, plotOpts)
         squarePlotOpts.savePNG = true;
     end
     save_fig_dual_safe(fig, fullfile(outDir, baseName + "_square"), squarePlotOpts);
-    fig.Position = origPos;
+    if isgraphics(fig, 'figure')
+        try
+            fig.Position = origPos;
+        catch
+            % If the figure was closed during export, there is nothing to restore.
+        end
+    end
 end

@@ -2,8 +2,9 @@ function plot_breakup_gamma_scatter_vs_ar(breakupData, figDir, plotOpts, arLabel
 % PLOT_BREAKUP_GAMMA_SCATTER_VS_AR
 %   Scatter of gamma = (x_child - x_parent)/d vs parent aspect ratio.
 %   One colour per k/d case, lightly transparent markers, no edges.
-%   A single density-based contour is added per case to show the dominant
-%   cluster location and spread.
+%   A PDF panel is added above the scatter to show the marginal density of
+%   parent AR values for each case. Binned dashed mean trend lines are
+%   drawn after the scatter markers so they stay visually on top.
 %
 %   breakupData : struct array with .caseName, .kD, .events
 %   figDir      : output directory for figures
@@ -20,12 +21,25 @@ if nargin < 5, matDir = ""; end
 nCases = numel(breakupData);
 if nCases == 0, warning('No breakup data.'); return; end
 
-markerAlpha = get_opt_value(plotOpts, 'breakupARMarkerAlpha', 0.22);
-densityMass = get_opt_value(plotOpts, 'breakupARDensityMass', 0.60);
-densityGridSize = round(get_opt_value(plotOpts, 'breakupARDensityGridSize', 80));
-densityGridSize = max(densityGridSize, 40);
-clusterMinCount = round(get_opt_value(plotOpts, 'breakupARClusterMinCount', 5));
-clusterMinCount = max(clusterMinCount, 3);
+markerSize = round(get_opt_value(plotOpts, 'breakupARMarkerSize', 30));
+if ~isfinite(markerSize) || markerSize <= 0
+    markerSize = 30;
+end
+markerSize = max(markerSize, 5);
+markerAlpha = get_opt_value(plotOpts, 'breakupARMarkerAlpha', 0.40);
+if ~isfinite(markerAlpha)
+    markerAlpha = 0.40;
+end
+markerAlpha = min(max(markerAlpha, 0), 1);
+trendMaxBins = round(get_opt_value(plotOpts, 'breakupARTrendMaxBins', 12));
+trendMaxBins = max(trendMaxBins, 2);
+trendMinCount = round(get_opt_value(plotOpts, 'breakupARTrendMinCount', 5));
+trendMinCount = max(trendMinCount, 2);
+
+xLim = get_opt_value(plotOpts, 'breakupARXLim', [0, 4]);
+yLim = get_opt_value(plotOpts, 'breakupARGammaYLim', [-0.5, 0.5]);
+xLim = sanitize_limit_pair(xLim, [0, 4]);
+yLim = sanitize_limit_pair(yLim, [-0.5, 0.5]);
 
 % ---- Collect all events with case metadata ----
 allAR    = [];
@@ -86,21 +100,28 @@ if matDir ~= ""
     save(matFile, 'plotData');
 end
 
-% ---- Axis ranges ----
-xPad = 0.05 * (max(allAR) - min(allAR));
-if ~isfinite(xPad) || xPad <= 0, xPad = 0.5; end
-xLim = [max(0, min(allAR) - xPad), max(allAR) + xPad];
-if xLim(2) <= xLim(1), xLim(2) = xLim(1) + 1; end
-
-yAbsMax = ceil(max(abs(allGamma)));
-if yAbsMax == 0, yAbsMax = 1; end
-
 % ---- Plot per theme ----
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
-    f  = figure('Color', 'w', 'Position', [100 100 1000 700]);
-    ax = axes(f); %#ok<LAXES>
-    hold(ax, 'on');
+    f = figure('Color', 'w', 'Position', [100 100 1000 820]);
+    mainL = 0.09;
+    mainR = 0.06;
+    mainB = 0.12;
+    mainW = 1 - mainL - mainR;
+    pdfH = 0.17;
+    pdfGap = 0.02;
+    mainH = 0.56;
+    pdfB = mainB + mainH + pdfGap;
+
+    axPdf = axes(f, 'Position', [mainL, pdfB, mainW, pdfH]); %#ok<LAXES>
+    axMain = axes(f, 'Position', [mainL, mainB, mainW, mainH]); %#ok<LAXES>
+    hold(axPdf, 'on');
+    hold(axMain, 'on');
+    trendX = cell(nPresent, 1);
+    trendY = cell(nPresent, 1);
+    trendKeep = false(nPresent, 1);
+    trendHandles = gobjects(0, 1);
+    pdfYMax = 0;
 
     lgd    = gobjects(0, 1);
     lgdTxt = strings(0, 1);
@@ -109,50 +130,112 @@ for theme = reshape(plotOpts.themes, 1, [])
         ci  = casesPresent(p);
         sel = caseIdx == ci;
         col = cmap(p, :);
-        nSel = sum(sel);
-        if nSel == 0, continue; end
+        xVals = allAR(sel);
+        yVals = allGamma(sel);
+        scatterMask = xVals >= xLim(1) & xVals <= xLim(2) & ...
+                      yVals >= yLim(1) & yVals <= yLim(2);
+        pdfMask = xVals >= xLim(1) & xVals <= xLim(2);
 
-        draw_density_contour(ax, allAR(sel), allGamma(sel), col, densityMass, densityGridSize, clusterMinCount);
+        nVisible = nnz(scatterMask);
+        if nVisible > 0
+            hPt = scatter(axMain, xVals(scatterMask), yVals(scatterMask), markerSize, col, 'filled', ...
+                'MarkerFaceAlpha', markerAlpha, ...
+                'MarkerEdgeColor', 'none', ...
+                'Clipping', 'on');
+            lgd(end+1, 1)    = hPt; %#ok<AGROW>
+            lgdTxt(end+1, 1) = sprintf('k/d = %.2f  (n = %d)', ...
+                breakupData(ci).kD, nVisible); %#ok<AGROW>
+        end
 
-        hPt = scatter(ax, allAR(sel), allGamma(sel), 50, col, 'filled', ...
-            'MarkerFaceAlpha', markerAlpha, ...
-            'MarkerEdgeColor', 'none');
-        lgd(end+1, 1)    = hPt; %#ok<AGROW>
-        lgdTxt(end+1, 1) = sprintf('k/d = %.2f  (n = %d)', ...
-            breakupData(ci).kD, nSel); %#ok<AGROW>
+        xPdf = xVals(pdfMask);
+        if numel(xPdf) >= 2
+            xi = linspace(xLim(1), xLim(2), 300);
+            fhat = estimate_pdf_density(xPdf, xi);
+            if any(isfinite(fhat))
+                plot(axPdf, xi, fhat, '-', ...
+                    'Color', col, ...
+                    'LineWidth', 2.0, ...
+                    'HandleVisibility', 'off', ...
+                    'Clipping', 'on');
+                pdfYMax = max(pdfYMax, max(fhat(isfinite(fhat))));
+            end
+        end
+
+        [xTrend, yTrend] = build_binned_mean_trend( ...
+            xVals(scatterMask), yVals(scatterMask), trendMaxBins, trendMinCount, xLim);
+        if numel(xTrend) >= 2
+            trendX{p} = xTrend;
+            trendY{p} = yTrend;
+            trendKeep(p) = true;
+        end
     end
 
     % ---- Zero reference ----
-    plot(ax, xLim, [0 0], ':', ...
+    plot(axMain, xLim, [0 0], ':', ...
         'Color', [0.55 0.55 0.55], 'LineWidth', 1.0, ...
         'HandleVisibility', 'off');
 
-    % ---- Axes ----
-    xlim(ax, xLim);
-    ylim(ax, [-yAbsMax, yAbsMax]);
-    set(ax, 'FontName', fontName);
+    % ---- Mean trend lines ----
+    for p = 1:nPresent
+        if ~trendKeep(p)
+            continue;
+        end
+        hTrend = plot(axMain, trendX{p}, trendY{p}, '--', ...
+            'Color', cmap(p, :), ...
+            'LineWidth', 2.4, ...
+            'HandleVisibility', 'off', ...
+            'Clipping', 'on');
+        trendHandles(end+1, 1) = hTrend; %#ok<AGROW>
+    end
 
-    xlabel(ax, 'Parent aspect ratio, $\mathrm{AR}_\mathrm{parent}$', ...
+    % ---- Axes ----
+    xlim(axPdf, xLim);
+    if pdfYMax > 0
+        ylim(axPdf, [0, pdfYMax * 1.12]);
+    else
+        ylim(axPdf, [0, 1]);
+    end
+    set(axPdf, 'FontName', fontName);
+    ylabel(axPdf, 'PDF', 'Interpreter', 'latex');
+    title(axPdf, '');
+    grid(axPdf, 'off');
+    box(axPdf, 'on');
+
+    xlim(axMain, xLim);
+    ylim(axMain, yLim);
+    set(axMain, 'FontName', fontName);
+
+    xlabel(axMain, 'Parent aspect ratio, $\mathrm{AR}_\mathrm{parent}$', ...
         'Interpreter', 'latex');
-    ylabel(ax, '$\gamma = (x_\mathrm{child} - x_\mathrm{parent})\,/\,d$', ...
+    ylabel(axMain, '$\gamma = (x_\mathrm{child} - x_\mathrm{parent})\,/\,d$', ...
         'Interpreter', 'latex');
     if arLabel ~= ""
-        title(ax, sprintf('Parent AR $\\geq$ %s', ...
+        title(axMain, sprintf('Parent AR $\\geq$ %s', ...
             strrep(char(arLabel), 'AR', '')), 'Interpreter', 'latex');
     else
-        title(ax, '');
+        title(axMain, '');
     end
-    grid(ax, 'off');
-    box(ax, 'on');
+    grid(axMain, 'off');
+    box(axMain, 'on');
 
     if ~isempty(lgd)
-        leg = legend(ax, lgd, cellstr(lgdTxt), ...
+        leg = legend(axMain, lgd, cellstr(lgdTxt), ...
             'Location', 'best', 'NumColumns', 1, 'Box', 'on');
     else
         leg = [];
     end
 
-    apply_plot_theme(ax, char(theme));
+    apply_plot_theme(axPdf, char(theme));
+    apply_plot_theme(axMain, char(theme));
+    set(axPdf, 'XTickLabel', []);
+
+    for h = reshape(trendHandles, 1, [])
+        try
+            uistack(h, 'top');
+        catch
+        end
+    end
+
     style_legend_for_theme(leg, char(theme));
 
     if arLabel ~= ""
@@ -171,133 +254,51 @@ end
 
 
 % =========================================================================
-function draw_density_contour(ax, xVals, yVals, col, targetMass, gridSize, minCount)
+function [xTrend, yTrend] = build_binned_mean_trend(xVals, yVals, maxTrendBins, minBinCount, xLim)
 valid = isfinite(xVals) & isfinite(yVals);
 xVals = xVals(valid);
 yVals = yVals(valid);
-if numel(xVals) < minCount
+
+if numel(xVals) < minBinCount
+    xTrend = nan(0, 1);
+    yTrend = nan(0, 1);
     return;
 end
 
-xVals = xVals(:);
-yVals = yVals(:);
-n = numel(xVals);
-
-xMin = min(xVals);
-xMax = max(xVals);
-yMin = min(yVals);
-yMax = max(yVals);
-
-xRange = xMax - xMin;
-yRange = yMax - yMin;
-if ~isfinite(xRange) || xRange < 0, xRange = 0; end
-if ~isfinite(yRange) || yRange < 0, yRange = 0; end
-
-xPad = max(0.10 * max(xRange, eps), 0.20 * estimate_bandwidth(xVals));
-yPad = max(0.10 * max(yRange, eps), 0.20 * estimate_bandwidth(yVals));
-
-xGrid = linspace(xMin - xPad, xMax + xPad, gridSize);
-yGrid = linspace(yMin - yPad, yMax + yPad, gridSize);
-[X, Y] = meshgrid(xGrid, yGrid);
-
-hx = estimate_bandwidth(xVals);
-hy = estimate_bandwidth(yVals);
-if ~isfinite(hx) || hx <= 0 || ~isfinite(hy) || hy <= 0
+nBins = min(maxTrendBins, floor(numel(xVals) / minBinCount));
+if nBins < 1
+    xTrend = nan(0, 1);
+    yTrend = nan(0, 1);
     return;
 end
 
-Z = zeros(size(X));
-for ii = 1:n
-    ZX = ((X - xVals(ii)) ./ hx) .^ 2;
-    ZY = ((Y - yVals(ii)) ./ hy) .^ 2;
-    Z = Z + exp(-0.5 * (ZX + ZY));
+x0 = xLim(1);
+x1 = xLim(2);
+if ~isfinite(x0) || ~isfinite(x1) || x1 <= x0
+    x0 = min(xVals);
+    x1 = max(xVals);
 end
-Z = Z ./ (n * 2 * pi * hx * hy);
-
-level = density_level_for_mass(Z, targetMass);
-if ~isfinite(level) || level <= 0
+if ~isfinite(x0) || ~isfinite(x1) || x1 <= x0
+    xTrend = nan(0, 1);
+    yTrend = nan(0, 1);
     return;
 end
 
-[~, hContour] = contour(ax, xGrid, yGrid, Z, [level level], ...
-    'LineColor', col, ...
-    'LineWidth', 1.8, ...
-    'HandleVisibility', 'off');
-if isgraphics(hContour)
-    hContour.HandleVisibility = 'off';
+edges = linspace(x0, x1, nBins + 1);
+xTrend = nan(0, 1);
+yTrend = nan(0, 1);
+for bi = 1:nBins
+    if bi < nBins
+        inBin = xVals >= edges(bi) & xVals < edges(bi + 1);
+    else
+        inBin = xVals >= edges(bi) & xVals <= edges(bi + 1);
+    end
+    if nnz(inBin) < minBinCount
+        continue;
+    end
+    xTrend(end+1, 1) = mean(xVals(inBin)); %#ok<AGROW>
+    yTrend(end+1, 1) = mean(yVals(inBin)); %#ok<AGROW>
 end
-end
-
-
-% =========================================================================
-function bw = estimate_bandwidth(vals)
-vals = vals(isfinite(vals));
-n = numel(vals);
-if n <= 1
-    bw = eps;
-    return;
-end
-
-sigma = std(vals);
-iqrVal = local_percentile(vals, 0.75) - local_percentile(vals, 0.25);
-sigmaRobust = iqrVal / 1.349;
-
-if isfinite(sigmaRobust) && sigmaRobust > 0
-    sigmaUse = min(sigma, sigmaRobust);
-else
-    sigmaUse = sigma;
-end
-
-if ~isfinite(sigmaUse) || sigmaUse <= 0
-    sigmaUse = max(max(vals) - min(vals), eps) / 4;
-end
-
-bw = 1.06 * sigmaUse * n^(-1/5);
-if ~isfinite(bw) || bw <= 0
-    bw = max(max(vals) - min(vals), eps) / 20;
-end
-end
-
-
-% =========================================================================
-function level = density_level_for_mass(Z, targetMass)
-targetMass = min(max(targetMass, 0.05), 0.95);
-zVals = Z(isfinite(Z) & Z > 0);
-if isempty(zVals)
-    level = nan;
-    return;
-end
-
-zVals = sort(zVals, 'descend');
-cumMass = cumsum(zVals) / sum(zVals);
-idx = find(cumMass >= targetMass, 1, 'first');
-if isempty(idx)
-    idx = numel(zVals);
-end
-level = zVals(idx);
-end
-
-
-% =========================================================================
-function pctVal = local_percentile(vals, p)
-vals = vals(isfinite(vals));
-if isempty(vals)
-    pctVal = nan;
-    return;
-end
-
-vals = sort(vals(:));
-p = min(max(p, 0), 1);
-if numel(vals) == 1
-    pctVal = vals;
-    return;
-end
-
-idx = 1 + p * (numel(vals) - 1);
-idxLo = floor(idx);
-idxHi = ceil(idx);
-w = idx - idxLo;
-pctVal = (1 - w) * vals(idxLo) + w * vals(idxHi);
 end
 
 
@@ -308,6 +309,130 @@ if nargin < 1 || ~isstruct(plotOpts) || ~isfield(plotOpts, fieldName) || isempty
 else
     val = plotOpts.(fieldName);
 end
+end
+
+
+% =========================================================================
+function pair = sanitize_limit_pair(pair, fallbackPair)
+if nargin < 2 || isempty(fallbackPair)
+    fallbackPair = [0, 1];
+end
+
+pair = double(pair(:).');
+if numel(pair) < 2 || any(~isfinite(pair(1:2)))
+    pair = fallbackPair;
+else
+    pair = sort(pair(1:2));
+end
+
+if pair(2) <= pair(1)
+    pair = fallbackPair;
+end
+end
+
+
+% =========================================================================
+function fhat = estimate_pdf_density(x, xi)
+x = x(:);
+x = x(isfinite(x));
+xi = xi(:).';
+n = numel(x);
+
+fhat = zeros(size(xi));
+if n < 2 || isempty(xi)
+    return;
+end
+
+if exist('ksdensity', 'file') == 2
+    try
+        fhat = ksdensity(x, xi);
+        fhat = fhat(:).';
+        return;
+    catch
+    end
+end
+
+h = silverman_bandwidth(x);
+if ~(isfinite(h) && h > 0)
+    xSpan = max(xi) - min(xi);
+    if ~(isfinite(xSpan) && xSpan > 0)
+        xSpan = max(x) - min(x);
+    end
+    h = max(xSpan / 50, sqrt(eps));
+end
+
+normConst = 1 / (n * h * sqrt(2*pi));
+blockSize = 5000;
+for s = 1:blockSize:n
+    e = min(s + blockSize - 1, n);
+    xb = x(s:e);
+    u = bsxfun(@minus, xi, xb) / h;
+    fhat = fhat + sum(exp(-0.5 * (u .^ 2)), 1);
+end
+fhat = normConst * fhat;
+end
+
+
+% =========================================================================
+function h = silverman_bandwidth(x)
+n = numel(x);
+h = NaN;
+if n < 2
+    return;
+end
+
+sx = std(x, 0);
+iqrx = iqr_linear(x);
+scale = min(sx, iqrx / 1.34);
+if ~(isfinite(scale) && scale > 0)
+    scale = max(sx, iqrx / 1.34);
+end
+if ~(isfinite(scale) && scale > 0)
+    return;
+end
+
+h = 0.9 * scale * (n ^ (-1/5));
+end
+
+
+% =========================================================================
+function q = percentile_linear(x, p)
+q = NaN;
+if isempty(x) || ~isfinite(p)
+    return;
+end
+
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    return;
+end
+
+x = sort(x);
+n = numel(x);
+if n == 1
+    q = x(1);
+    return;
+end
+
+p = min(100, max(0, p));
+idx = 1 + (n - 1) * (p / 100);
+i0 = floor(idx);
+i1 = ceil(idx);
+if i0 == i1
+    q = x(i0);
+else
+    frac = idx - i0;
+    q = x(i0) + frac * (x(i1) - x(i0));
+end
+end
+
+
+% =========================================================================
+function w = iqr_linear(x)
+q75 = percentile_linear(x, 75);
+q25 = percentile_linear(x, 25);
+w = q75 - q25;
 end
 
 

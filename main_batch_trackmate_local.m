@@ -193,12 +193,18 @@ plotOpts.breakupDRatioXScale = "log"; % <---edit: x scale for gamma vs d_child/d
 plotOpts.breakupDRatioXLim = [0.11, 1.4]; % <---edit: fixed x-window for gamma vs d_child/d_parent
 plotOpts.breakupDRatioClipLowPercentile = 0.5; % <---edit: fallback if breakupDRatioXLim is empty
 plotOpts.breakupDRatioClipPercentile = 99.5; % <---edit: fallback if breakupDRatioXLim is empty
-plotOpts.breakupGammaYLim = []; % <---edit: [] = robust auto y-window
+plotOpts.breakupGammaYLim = [-0.5, 0.5]; % <---edit: fixed y-window for gamma vs d_child/d_parent
 plotOpts.breakupGammaYClipPercentile = [1, 99]; % <---edit: robust auto y-window percentile
 plotOpts.breakupDRatioMarkerSize = 30; % <---edit: gamma vs d_child/d_parent marker size
 plotOpts.breakupDRatioMarkerAlpha = 0.40; % <---edit: gamma vs d_child/d_parent marker transparency
 plotOpts.breakupDRatioTrendMaxBins = 12; % <---edit: binned mean trend bins
 plotOpts.breakupDRatioTrendMinCount = 5; % <---edit: skip sparse bins in mean trend
+plotOpts.breakupARMarkerSize = 30; % <---edit: gamma vs parent AR marker size
+plotOpts.breakupARMarkerAlpha = 0.40; % <---edit: gamma vs parent AR marker transparency
+plotOpts.breakupARXLim = [0, 4]; % <---edit: fixed x-window for gamma vs parent AR
+plotOpts.breakupARGammaYLim = [-0.5, 0.5]; % <---edit: fixed y-window for gamma vs parent AR
+plotOpts.breakupARTrendMaxBins = 12; % <---edit: binned mean trend bins for gamma vs parent AR
+plotOpts.breakupARTrendMinCount = 5; % <---edit: skip sparse bins in AR mean trend
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
