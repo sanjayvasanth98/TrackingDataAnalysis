@@ -1,0 +1,26 @@
+# ── TrackMate outputs ────────────────────────────────────────
+*.xml
+
+# ── Video input files (large) ────────────────────────────────
+*.avi
+*.mp4
+*.tif
+*.tiff
+
+# ── MATLAB binary / workspace files ──────────────────────────
+*.mat
+*.fig
+*.asv          # auto-save backups
+*.mex*         # compiled MEX files
+
+# ── OS artefacts ─────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# ── IDE / editor files ───────────────────────────────────────
+.vscode/
+*.swp
+
+# ── Tool/system files ────────────────────────────────────────
+.codex

@@ -1,0 +1,16 @@
+Breakup gamma vs d_child/d_parent outlier report
+================================================
+X scale: log
+Visible x-window: 0.1 to 10
+Limit mode: fixed breakupDRatioXLim
+
+Case                   TotalPts   ClippedLow   ClippedHigh
+--------------------------------------------------------------
+5um                         797            1            38
+12um                        940            2            45
+20um                       1072            3            28
+30um                        790            0            22
+53um                       1006            1             7
+80um                        946            1            23
+--------------------------------------------------------------
+TOTAL                      5551            8           163
