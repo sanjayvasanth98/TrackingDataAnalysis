@@ -41,6 +41,16 @@ plotOpts.savePNG            = false; % suppress default rectangular saves
 plotOpts.saveSVG            = false; % square copies are saved manually below
 plotOpts.themes             = "normal";
 plotOpts.keepFiguresOpen    = true;
+plotOpts.breakupDRatioXScale = "log";
+plotOpts.breakupDRatioXLim = [0.11, 1.4];
+plotOpts.breakupDRatioClipLowPercentile = 0.5;
+plotOpts.breakupDRatioClipPercentile = 99.5;
+plotOpts.breakupGammaYLim = [];
+plotOpts.breakupGammaYClipPercentile = [1, 99];
+plotOpts.breakupDRatioMarkerSize = 30;
+plotOpts.breakupDRatioMarkerAlpha = 0.40;
+plotOpts.breakupDRatioTrendMaxBins = 12;
+plotOpts.breakupDRatioTrendMinCount = 5;
 
 %% Global gamma-vs-dRatio plot (no AR filtering)
 nTotalAll = 0;
