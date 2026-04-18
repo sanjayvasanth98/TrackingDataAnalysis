@@ -90,6 +90,7 @@ nTraj      = numel(traj);
 cfFrame    = nan(nTraj,1);
 cfX        = nan(nTraj,1);
 cfY        = nan(nTraj,1);
+cfTrackId  = nan(nTraj,1);
 cfPeakArea = nan(nTraj,1);
 cfLastArea = nan(nTraj,1);
 
@@ -163,6 +164,9 @@ for k = 1:nTraj
     cfFrame(nQualified)    = fLast;
     cfX(nQualified)        = xLast;
     cfY(nQualified)        = yLast;
+    if isfield(tk, 'TRACK_ID') && isfinite(tk.TRACK_ID)
+        cfTrackId(nQualified) = double(tk.TRACK_ID);
+    end
     cfPeakArea(nQualified) = peakA;
     cfLastArea(nQualified) = lastA;
 end
@@ -171,6 +175,7 @@ end
 cfFrame    = cfFrame(1:nQualified);
 cfX        = cfX(1:nQualified);
 cfY        = cfY(1:nQualified);
+cfTrackId  = cfTrackId(1:nQualified);
 cfPeakArea = cfPeakArea(1:nQualified);
 cfLastArea = cfLastArea(1:nQualified);
 
@@ -204,6 +209,7 @@ fprintf('  Collapse: %d qualified | %d truncated | %d ROI-rejected | %.4g/frame 
 collapseData.collapseFrame   = cfFrame;
 collapseData.collapseX_mm    = cfX;
 collapseData.collapseY_mm    = cfY;
+collapseData.collapseTrackId  = cfTrackId;
 collapseData.peakArea_px2    = cfPeakArea;
 collapseData.lastArea_px2    = cfLastArea;
 collapseData.frameMin        = frameMin;

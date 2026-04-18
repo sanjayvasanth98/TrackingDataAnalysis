@@ -326,6 +326,15 @@ else
     collapseOpts.roiPixelSize    = 0;
 end
 
+%% ---- Collapse recirculation attribution options ------------------------
+% A collapse-generated microbubble is a small-start track born near a
+% qualified collapse location within this short frame window.
+collapseRecirculationOpts.minFrameLag = 0; % <---edit: first allowed frame after collapse
+collapseRecirculationOpts.maxFrameLag = 3; % <---edit: last allowed frame after collapse
+collapseRecirculationOpts.maxDistance_mm = 0.15; % <---edit: spatial match radius around collapse
+collapseRecirculationOpts.microbubbleStartAreaRange_px2 = activationOpts.microbubbleStartAreaRange_px2;
+collapseRecirculationOpts.requireBasicValid = true;
+
 %% ---- Void fraction analysis options ------------------------------------
 % See analyze_void_fraction.m for signal definition.
 % The ROI mask subtracts wall / unwanted-track pixels from the FOV
@@ -394,6 +403,8 @@ allCollapse.dt       = [];
 allCollapse.pixelSize = [];
 allCollapse.data     = {};
 
+allCollapseRecirculation = repmat(struct('caseName',"", 'Re',NaN, 'kD',NaN, 'data',[]), 0, 1);
+
 allGrowthCollapse = struct();
 allGrowthCollapse.caseName = strings(0,1);
 allGrowthCollapse.kD = nan(0,1);
@@ -425,6 +436,7 @@ chunkAllVoidFrac    = {};
 chunkAllBreakup     = {};
 chunkAllSize        = {};
 chunkAllGrowthCollapse = {};
+chunkAllCollapseRecirculation = {};
 chunkGateSummaryRows = {};
 chunkFramewiseRows = {};
 
@@ -508,6 +520,11 @@ for i = 1:numel(cases)
     allCollapse.dt(end+1)       = cases(i).dt;
     allCollapse.pixelSize(end+1) = cases(i).pixelSize;
     allCollapse.data{end+1}     = collapseResult;
+
+    collapseRecirculationResult = analyze_collapse_recirculation( ...
+        out, metrics, collapseResult, cases(i), collapseRecirculationOpts);
+    allCollapseRecirculation(end+1,1) = struct('caseName', string(cases(i).name), ...
+        'Re', cases(i).Re, 'kD', cases(i).kD, 'data', collapseRecirculationResult);
 
     % Growth/collapse axial length-rate analysis
     growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
@@ -633,6 +650,7 @@ for i = 1:numel(cases)
                 chunkAllBreakup{c}     = repmat(struct('caseName',"", 'Re',NaN, 'kD',0, 'events',[]), 0, 1);
                 chunkAllSize{c}        = struct('caseName',strings(0,1),'Re',nan(0,1),'kD',nan(0,1),'size_eqd',{cell(0,1)});
                 chunkAllGrowthCollapse{c} = struct('caseName',strings(0,1),'kD',nan(0,1),'Re',nan(0,1),'U_m_s',nan(0,1),'data',{cell(0,1)});
+                chunkAllCollapseRecirculation{c} = repmat(struct('caseName',"", 'Re',NaN, 'kD',NaN, 'data',[]), 0, 1);
                 chunkGateSummaryRows{c} = table();
             end
 
@@ -658,6 +676,11 @@ for i = 1:numel(cases)
             chunkAllCollapse{c}.dt(end+1)       = cases(i).dt;
             chunkAllCollapse{c}.pixelSize(end+1) = cases(i).pixelSize;
             chunkAllCollapse{c}.data{end+1}     = collapseChunk;
+
+            collapseRecirculationChunk = analyze_collapse_recirculation( ...
+                outChunk, mc, collapseChunk, cases(i), collapseRecirculationOpts);
+            chunkAllCollapseRecirculation{c}(end+1,1) = struct('caseName', string(cases(i).name), ...
+                'Re', cases(i).Re, 'kD', cases(i).kD, 'data', collapseRecirculationChunk);
 
             growthCollapseChunk = analyze_growth_collapse_rates(outChunk, mc, cases(i), growthCollapseOpts);
             chunkAllGrowthCollapse{c}.caseName(end+1,1) = string(cases(i).name);
@@ -795,6 +818,11 @@ if ~isempty(gateSummaryRows)
     fprintf("Saved: %s\n", gateSummaryCsv);
 end
 
+collapseRecirculationDir = fullfile(resultsDir, "collapse recirculation");
+if ~isfolder(collapseRecirculationDir), mkdir(collapseRecirculationDir); end
+write_collapse_recirculation_csv(allCollapseRecirculation, ...
+    fullfile(collapseRecirculationDir, "collapse_recirculation_summary.csv"));
+
 %% ---------------- SAVE PLOT DATA (.mat) ----------------
 matDir = fullfile(resultsDir, "plot_data_mat");
 if ~isfolder(matDir), mkdir(matDir); end
@@ -802,6 +830,7 @@ save(fullfile(matDir, "activation_summary_by_case.mat"), 'summaryRows');
 save(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');
 save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
+save(fullfile(matDir, "collapse_recirculation_by_case.mat"), 'allCollapseRecirculation');
 save(fullfile(matDir, "growth_collapse_rate_by_case.mat"), 'allGrowthCollapse');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
 % breakup_analysis_by_case.mat saved later with per-AR-threshold variants
@@ -869,6 +898,7 @@ if ~isempty(chunkSummaryRows)
     allChunkSummaryRows = table();
     allChunkGateSummaryRows = table();
     allChunkCollapseRows = table();
+    allChunkCollapseRecirculationRows = table();
     allChunkFramewiseRows = table();
     for c = 1:nMaxChunks
         if isempty(chunkSummaryRows{c}) || height(chunkSummaryRows{c}) == 0
@@ -892,6 +922,14 @@ if ~isempty(chunkSummaryRows)
             end
         end
 
+        if numel(chunkAllCollapseRecirculation) >= c && ~isempty(chunkAllCollapseRecirculation{c})
+            cRecircTbl = collapse_recirculation_to_table(chunkAllCollapseRecirculation{c});
+            if ~isempty(cRecircTbl) && height(cRecircTbl) > 0
+                chunkRecircCol = table(repmat(c, height(cRecircTbl), 1), 'VariableNames', {'Chunk'});
+                allChunkCollapseRecirculationRows = append_table_compat(allChunkCollapseRecirculationRows, [chunkRecircCol, cRecircTbl]);
+            end
+        end
+
         if numel(chunkFramewiseRows) >= c && ~isempty(chunkFramewiseRows{c}) && height(chunkFramewiseRows{c}) > 0
             allChunkFramewiseRows = append_table_compat(allChunkFramewiseRows, chunkFramewiseRows{c});
         end
@@ -907,6 +945,13 @@ if ~isempty(chunkSummaryRows)
     if ~isempty(allChunkCollapseRows) && height(allChunkCollapseRows) > 0
         allChunkCollapseRows = sortrows(allChunkCollapseRows, {'Re','kD','Chunk'});
         write_table_csv_compat(allChunkCollapseRows, fullfile(individualRootDir, "collapse_analysis - chunks_case.csv"));
+    end
+    if ~isempty(allChunkCollapseRecirculationRows) && height(allChunkCollapseRecirculationRows) > 0
+        allChunkCollapseRecirculationRows = sortrows(allChunkCollapseRecirculationRows, {'Re','kD','Chunk'});
+        chunkRecircRootDir = fullfile(individualRootDir, "collapse recirculation");
+        if ~isfolder(chunkRecircRootDir), mkdir(chunkRecircRootDir); end
+        write_table_csv_compat(allChunkCollapseRecirculationRows, ...
+            fullfile(chunkRecircRootDir, "collapse_recirculation_summary - chunks_case.csv"));
     end
     if ~isempty(allChunkFramewiseRows) && height(allChunkFramewiseRows) > 0
         allChunkFramewiseRows = sortrows(allChunkFramewiseRows, {'Re','kD','Chunk','frame'});
@@ -943,6 +988,8 @@ if ~isempty(chunkSummaryRows)
         save(fullfile(cMatDir, "upstream_size_distribution_by_case.mat"), 'chunkSz');
         chunkCol = chunkAllCollapse{c}; %#ok<NASGU>
         save(fullfile(cMatDir, "collapse_analysis_by_case.mat"), 'chunkCol');
+        chunkCollapseRecirculation = chunkAllCollapseRecirculation{c}; %#ok<NASGU>
+        save(fullfile(cMatDir, "collapse_recirculation_by_case.mat"), 'chunkCollapseRecirculation');
         chunkGrowthCollapse = chunkAllGrowthCollapse{c}; %#ok<NASGU>
         save(fullfile(cMatDir, "growth_collapse_rate_by_case.mat"), 'chunkGrowthCollapse');
         chunkVF = chunkAllVoidFrac{c}; %#ok<NASGU>
@@ -970,6 +1017,10 @@ if ~isempty(chunkSummaryRows)
         plot_collapse_rate_vs_kd(chunkAllCollapse{c}, chunkFigDir, plotOpts);
         plot_collapse_size_distribution(chunkAllCollapse{c}, cCollDir, plotOpts);
         write_collapse_analysis_csv(chunkAllCollapse{c}, fullfile(chunkDir, "collapse_analysis.csv"));
+        cCollapseRecircDir = fullfile(chunkDir, "collapse recirculation");
+        if ~isfolder(cCollapseRecircDir), mkdir(cCollapseRecircDir); end
+        write_collapse_recirculation_csv(chunkAllCollapseRecirculation{c}, ...
+            fullfile(cCollapseRecircDir, "collapse_recirculation_summary.csv"));
 
         cGrowthCollapseDir = fullfile(chunkFigDir, "Growth and collapse rate");
         if ~isfolder(cGrowthCollapseDir), mkdir(cGrowthCollapseDir); end

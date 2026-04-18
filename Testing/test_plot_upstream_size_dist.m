@@ -9,7 +9,7 @@
 clear; clc;
 
 %% Paths
-matDir = "E:\March Re 90,000 inception data\Processed images\results\results 28\plot_data_mat";
+matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'UpstreamSizeDistributions');
 if ~isfolder(outDir), mkdir(outDir); end
 
