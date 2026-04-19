@@ -212,6 +212,37 @@ plotOpts.breakupARTrendMaxBins = 12; % <---edit: binned mean trend bins for gamm
 plotOpts.breakupARTrendMinCount = 5; % <---edit: skip sparse bins in AR mean trend
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
+%% ---- Lagrangian acceleration / pressure-gradient proxy options ----------
+lagAccelOpts = struct();
+lagAccelOpts.sgWindowFrames = 7; % <---edit: Savitzky-Golay local polynomial window
+lagAccelOpts.sgPolyOrder = 3; % <---edit: local polynomial order for smoothing/derivatives
+lagAccelOpts.triggerWindowFrames = 5; % <---edit: frames immediately before activation
+lagAccelOpts.minTriggerSamples = 5; % <---edit: require complete trigger/random windows
+lagAccelOpts.minTrackFrames = 12; % <---edit: skip short tracks before differentiating
+lagAccelOpts.requireConsecutiveFrames = true; % <---edit: avoid frame-gap derivative artifacts
+lagAccelOpts.maxAllowedFrameGap = 1;
+lagAccelOpts.excludeSmoothingEdgeFrames = true; % edge derivatives are less reliable
+lagAccelOpts.trackPopulation = "strictPrimary"; % strict left-moving/injected tracks
+lagAccelOpts.bulkDirection = flowOpts.bulkDirection;
+lagAccelOpts.throatHeight_mm = 10;
+lagAccelOpts.imageSize_px = plotOpts.inceptionImageSize_px;
+lagAccelOpts.xLimNorm = plotOpts.inceptionXLim_mm ./ lagAccelOpts.throatHeight_mm;
+lagAccelOpts.xLimNorm(2) = min(lagAccelOpts.xLimNorm(2), 0.5);
+lagAccelOpts.yLimNorm = plotOpts.inceptionYLim_mm ./ lagAccelOpts.throatHeight_mm;
+lagAccelOpts.fallbackURef_m_s = 13.32;
+lagAccelOpts.fallbackDiameter_m = 100e-6;
+lagAccelOpts.heatmapGridSize = [25 25];
+lagAccelOpts.heatmapStats = ["median", "p90"];
+lagAccelOpts.heatmapMinSamplesPerBin = 10;
+lagAccelOpts.activationOverlayPerCase = 75;
+lagAccelOpts.randomSeed = 42;
+lagAccelOpts.minSpearmanN = 10;
+lagAccelOpts.makeSanityPlots = true;
+lagAccelOpts.nSanityTracks = 5;
+lagAccelOpts.makeStationarySanityCheck = true;
+lagAccelOpts.stationaryMaxNetDisplacement_px = 2;
+lagAccelOpts.stationaryMaxPathLength_px = 5;
+
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
 % Required fields per case:
 %   name, Re, kD, xmlFile, pixelSize, dt
@@ -381,6 +412,7 @@ allLoc.pixelSize  = nan(0,1);
 allLoc.nActivated = nan(0,1);
 allLoc.nInjected  = nan(0,1);
 allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving + microbubble-rescue tracks
+allLoc.leftMovingActivation_xy = cell(0,1);  % [x y] strict left-moving activation points only
 
 trackFigOutDir = fullfile(figDir, "TrackDiagnostics");
 if ~isfolder(trackFigOutDir), mkdir(trackFigOutDir); end
@@ -407,6 +439,8 @@ allGrowthCollapse.kD = nan(0,1);
 allGrowthCollapse.Re = nan(0,1);
 allGrowthCollapse.U_m_s = nan(0,1);
 allGrowthCollapse.data = cell(0,1);
+
+allLagAccel = [];
 
 allVoidFrac = struct();
 allVoidFrac.caseName = {};
@@ -480,6 +514,11 @@ for i = 1:numel(cases)
     allLoc.nActivated(end+1,1) = g.nActivated;
     allLoc.nInjected(end+1,1)  = g.nInjected;
     allLoc.inception2x_xy{end+1,1} = choose_inception_activation_xy(metrics);
+    allLoc.leftMovingActivation_xy{end+1,1} = choose_left_moving_activation_xy(metrics);
+
+    % Lagrangian acceleration / pressure-gradient proxy analysis
+    lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
+    allLagAccel(end+1,1) = lagAccelResult; %#ok<AGROW>
 
     % Collapse frequency analysis (all tracks, no direction filter)
     collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
@@ -598,6 +637,7 @@ collapseRecirculationDir = fullfile(resultsDir, "collapse recirculation");
 if ~isfolder(collapseRecirculationDir), mkdir(collapseRecirculationDir); end
 write_collapse_recirculation_csv(allCollapseRecirculation, ...
     fullfile(collapseRecirculationDir, "collapse_recirculation_summary.csv"));
+plot_collapse_recirculation_vs_kd(allCollapseRecirculation, collapseRecirculationDir, plotOpts);
 
 %% ---------------- PLOT 1: A/I vs k/d (per Re) ----------------
 %% ---------------- SAVE PLOT DATA (.mat) ----------------
@@ -609,6 +649,7 @@ save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 save(fullfile(matDir, "collapse_recirculation_by_case.mat"), 'allCollapseRecirculation');
 save(fullfile(matDir, "growth_collapse_rate_by_case.mat"), 'allGrowthCollapse');
+save(fullfile(matDir, "lagrangian_acceleration_by_case.mat"), 'allLagAccel', 'lagAccelOpts', '-v7.3');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
 % breakup_analysis_by_case.mat saved later with per-AR-threshold variants
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
@@ -618,6 +659,14 @@ normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
 fprintf("Saved plot data .mat files to: %s\n", matDir);
 
+%% ---------------- LAGRANGIAN ACCELERATION / PRESSURE PROXY --------------
+lagAccelFigDir = fullfile(figDir, "lagrangian acceleration");
+if ~isfolder(lagAccelFigDir), mkdir(lagAccelFigDir); end
+lagAccelSummaryRows = lagrangian_acceleration_to_table(allLagAccel);
+write_table_csv_compat(lagAccelSummaryRows, fullfile(lagAccelFigDir, "lagrangian_acceleration_summary.csv"));
+save(fullfile(lagAccelFigDir, "lagrangian_acceleration_by_case.mat"), 'allLagAccel', 'lagAccelOpts', '-v7.3');
+plot_lagrangian_acceleration_analysis(allLagAccel, lagAccelFigDir, plotOpts, lagAccelOpts);
+
 fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kD_by_Re.txt");
 plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
 
@@ -625,6 +674,13 @@ plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
 locFigOutDir = fullfile(figDir, "InceptionLocations");
 if ~isfolder(locFigOutDir), mkdir(locFigOutDir); end
 plot_inception_locations_by_re(allLoc, locFigOutDir, plotOpts);
+leftMovingLocPlotOpts = plotOpts;
+leftMovingLocPlotOpts.inceptionLocationField = 'leftMovingActivation_xy';
+leftMovingLocPlotOpts.inceptionLocationOutputStem = 'LeftMovingActivation_locations';
+leftMovingLocPlotOpts.inceptionLocationWarningLabel = 'left-moving activation points';
+leftMovingLocPlotOpts.inceptionLocationPlotDimensional = false;
+leftMovingLocPlotOpts.inceptionLocationPlotNormalized = true;
+plot_inception_locations_by_re(allLoc, locFigOutDir, leftMovingLocPlotOpts);
 
 %% ---------------- PLOT 2b: A/I based on capped activations ----------------
 plot_ai_vs_kd_capped(allLoc, figDir, plotOpts);
@@ -1236,6 +1292,22 @@ elseif isfield(metrics, 'inception2x_xy') && ~isempty(metrics.inception2x_xy)
 end
 if isfield(metrics, 'microbubbleActivationEvent_xy_nonLeft') && ~isempty(metrics.microbubbleActivationEvent_xy_nonLeft)
     xy = [xy; metrics.microbubbleActivationEvent_xy_nonLeft];
+end
+if ~isempty(xy)
+    xy = unique(xy, 'rows', 'stable');
+end
+end
+
+function xy = choose_left_moving_activation_xy(metrics)
+xy = zeros(0,2);
+if isfield(metrics, 'strictActivationEvent_xy') && ~isempty(metrics.strictActivationEvent_xy)
+    xy = metrics.strictActivationEvent_xy;
+elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
+    xy = metrics.activationEvent_xy;
+elseif isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
+    xy = metrics.activationEvent_xy_netLeftLegacy;
+elseif isfield(metrics, 'inception2x_xy') && ~isempty(metrics.inception2x_xy)
+    xy = metrics.inception2x_xy;
 end
 if ~isempty(xy)
     xy = unique(xy, 'rows', 'stable');

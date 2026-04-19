@@ -58,14 +58,15 @@ end
 % - ["5um","30um"]   -> run multiple cases by name
 caseSelection = "all"; % <---edit
 
-% Multi-XML chunk auto-detection:
+% Multi-XML independent-sample auto-detection:
 % Keep cases(i).xmlFile pointed at the base XML path or folder path. If it
 % points to a folder, the folder name is used as the XML stem. If sibling
 % files named <stem>_1.xml, <stem>_2.xml, ... exist, those numbered XMLs
-% are used as the chunk set for that case. If no numbered chunk XMLs
+% are used as independent random samples for that case. If no numbered XMLs
 % exist, the unnumbered base XML is used as the single combined input.
-% Combined results stay in resultsDir; per-chunk results are written under
-% resultsDir/results individual/chunk_N/.
+% Combined results stay in resultsDir; per-case convergence results are
+% written under resultsDir/results individual/<caseName>/.
+convergenceFrameStep = 2000; % <---edit: cumulative frame interval for convergence CSVs
 
 % Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
 useMatCache = true; % <---edit
@@ -99,7 +100,7 @@ end
 
 % Parser + metric policy (included in cache key).
 parserOpts = struct();
-parserOpts.parserVersion = 3;
+parserOpts.parserVersion = 4;
 parserOpts.parseTrackedSpotsOnly = true;
 parserOpts.parseFilteredTracksOnly = true;
 
@@ -207,16 +208,47 @@ plotOpts.breakupARTrendMaxBins = 12; % <---edit: binned mean trend bins for gamm
 plotOpts.breakupARTrendMinCount = 5; % <---edit: skip sparse bins in AR mean trend
 plotOpts.themes = enabled_plot_themes(plotOpts);
 
+%% ---- Lagrangian acceleration / pressure-gradient proxy options ----------
+lagAccelOpts = struct();
+lagAccelOpts.sgWindowFrames = 7; % <---edit: Savitzky-Golay local polynomial window
+lagAccelOpts.sgPolyOrder = 3; % <---edit: local polynomial order for smoothing/derivatives
+lagAccelOpts.triggerWindowFrames = 5; % <---edit: frames immediately before activation
+lagAccelOpts.minTriggerSamples = 5; % <---edit: require complete trigger/random windows
+lagAccelOpts.minTrackFrames = 12; % <---edit: skip short tracks before differentiating
+lagAccelOpts.requireConsecutiveFrames = true; % <---edit: avoid frame-gap derivative artifacts
+lagAccelOpts.maxAllowedFrameGap = 1;
+lagAccelOpts.excludeSmoothingEdgeFrames = true; % edge derivatives are less reliable
+lagAccelOpts.trackPopulation = "strictPrimary"; % strict left-moving/injected tracks
+lagAccelOpts.bulkDirection = flowOpts.bulkDirection;
+lagAccelOpts.throatHeight_mm = 10;
+lagAccelOpts.imageSize_px = plotOpts.inceptionImageSize_px;
+lagAccelOpts.xLimNorm = plotOpts.inceptionXLim_mm ./ lagAccelOpts.throatHeight_mm;
+lagAccelOpts.xLimNorm(2) = min(lagAccelOpts.xLimNorm(2), 0.5);
+lagAccelOpts.yLimNorm = plotOpts.inceptionYLim_mm ./ lagAccelOpts.throatHeight_mm;
+lagAccelOpts.fallbackURef_m_s = 13.32;
+lagAccelOpts.fallbackDiameter_m = 100e-6;
+lagAccelOpts.heatmapGridSize = [25 25];
+lagAccelOpts.heatmapStats = ["median", "p90"];
+lagAccelOpts.heatmapMinSamplesPerBin = 10;
+lagAccelOpts.activationOverlayPerCase = 75;
+lagAccelOpts.randomSeed = 42;
+lagAccelOpts.minSpearmanN = 10;
+lagAccelOpts.makeSanityPlots = true;
+lagAccelOpts.nSanityTracks = 5;
+lagAccelOpts.makeStationarySanityCheck = true;
+lagAccelOpts.stationaryMaxNetDisplacement_px = 2;
+lagAccelOpts.stationaryMaxPathLength_px = 5;
+
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
 % Required fields per case:
 %   name, Re, kD, xmlFile, pixelSize, dt
 %   xmlFile may be a base XML path or a folder path. If it points to a
-%   folder, the folder name is used as the XML stem for chunk detection.
+%   folder, the folder name is used as the XML stem for numbered sample detection.
 % Optional:
 %   videoFile = base AVI path or folder path. If it points to a folder,
 %   the folder name is used as the video stem. If sibling files named
-%   <stem>_1.avi, <stem>_2.avi, ... exist, chunk overlay GIFs use those
-%   per chunk.
+%   <stem>_1.avi, <stem>_2.avi, ... exist, sample overlay GIFs use those
+%   per XML sample.
 % If you include one Re only, everything still runs.
 % Edit case definitions below for your runs. <---edit
 
@@ -385,6 +417,7 @@ allLoc.pixelSize  = nan(0,1);
 allLoc.nActivated = nan(0,1);
 allLoc.nInjected  = nan(0,1);
 allLoc.inception2x_xy = cell(0,1);  % [x y] activation points on left-moving + microbubble-rescue tracks
+allLoc.leftMovingActivation_xy = cell(0,1);  % [x y] strict left-moving activation points only
 
 trackFigOutDir = fullfile(figDir, "TrackDiagnostics");
 if ~isfolder(trackFigOutDir), mkdir(trackFigOutDir); end
@@ -412,6 +445,8 @@ allGrowthCollapse.Re = nan(0,1);
 allGrowthCollapse.U_m_s = nan(0,1);
 allGrowthCollapse.data = cell(0,1);
 
+allLagAccel = [];
+
 allVoidFrac = struct();
 allVoidFrac.caseName = {};
 allVoidFrac.kD       = [];
@@ -428,17 +463,8 @@ allSize.size_eqd = cell(0,1);
 
 gateSummaryRows = table();
 
-% Chunk accumulators (cell arrays indexed by chunk number)
-chunkSummaryRows    = {};
-chunkAllLoc         = {};
-chunkAllCollapse    = {};
-chunkAllVoidFrac    = {};
-chunkAllBreakup     = {};
-chunkAllSize        = {};
-chunkAllGrowthCollapse = {};
-chunkAllCollapseRecirculation = {};
-chunkGateSummaryRows = {};
-chunkFramewiseRows = {};
+individualInstanceSummaryRows = table();
+individualConvergenceRows = table();
 
 cachePolicyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts);
 runTimer = tic;
@@ -452,21 +478,23 @@ for i = 1:numel(cases)
         cases(i), maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
         cacheDB, cacheUpdated, cachePolicyTag, ~isArc);
     nXmlChunks_i = numel(xmlFiles_i);
-    hasIndividualChunks = nXmlChunks_i > 1;
-    if hasIndividualChunks
-        fprintf("  Found %d XML chunks for combined analysis.\n", nXmlChunks_i);
+    hasMultipleXmlSamples = nXmlChunks_i > 1;
+    if hasMultipleXmlSamples
+        fprintf("  Found %d independent XML sample(s) for pooled analysis.\n", nXmlChunks_i);
     end
 
+    % Pool independent XML samples without linking tracks across files. The
+    % merge only offsets IDs/frame axes so counts can be evaluated together.
     out = merge_parsed_outputs(outChunks, xmlFiles_i);
     chunkInfo = out.meta.chunkInfo;
     chunkVideoFiles_i = {};
     if plotOpts.makeVideoOverlayGifs
         chunkVideoFiles_i = detect_chunk_video_files(cases(i).videoFile);
-        if hasIndividualChunks
+        if hasMultipleXmlSamples
             if isempty(chunkVideoFiles_i)
-                fprintf("  Video overlay: no chunk AVI files found for this multi-XML case.\n");
+                fprintf("  Video overlay: no numbered AVI files found for this multi-XML case.\n");
             elseif numel(chunkVideoFiles_i) ~= nXmlChunks_i
-                fprintf("  Video overlay: found %d AVI chunk(s) for %d XML chunk(s); exporting first %d chunk overlay GIF(s).\n", ...
+                fprintf("  Video overlay: found %d AVI file(s) for %d XML sample(s); exporting first %d overlay GIF(s).\n", ...
                     numel(chunkVideoFiles_i), nXmlChunks_i, min(numel(chunkVideoFiles_i), nXmlChunks_i));
             end
         end
@@ -511,6 +539,11 @@ for i = 1:numel(cases)
     allLoc.nActivated(end+1,1) = g.nActivated;
     allLoc.nInjected(end+1,1)  = g.nInjected;
     allLoc.inception2x_xy{end+1,1} = choose_inception_activation_xy(metrics);
+    allLoc.leftMovingActivation_xy{end+1,1} = choose_left_moving_activation_xy(metrics);
+
+    % Lagrangian acceleration / pressure-gradient proxy analysis
+    lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
+    allLagAccel(end+1,1) = lagAccelResult; %#ok<AGROW>
 
     % Collapse frequency analysis (all tracks, no direction filter)
     collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
@@ -588,7 +621,7 @@ for i = 1:numel(cases)
         save_diagnostic_track_gifs(cases(i), metrics, gifOutDir, plotOpts);
     end
 
-    if plotOpts.makeVideoOverlayGifs && ~hasIndividualChunks
+    if plotOpts.makeVideoOverlayGifs && ~hasMultipleXmlSamples
         save_video_overlay_gif_from_avi(cases(i), metrics, videoGifOutDir, plotOpts);
     end
 
@@ -633,171 +666,12 @@ for i = 1:numel(cases)
 
     summaryRows = [summaryRows; row]; %#ok<AGROW>
 
-    % ---- Individual per-XML chunk analysis for this case -----------------
-    if hasIndividualChunks
-        for c = 1:nXmlChunks_i
-            outChunk = outChunks{c};
-            if isempty(outChunk.trajectories), continue; end
-
-            % Initialise chunk accumulator on first use
-            if numel(chunkSummaryRows) < c || isempty(chunkSummaryRows{c})
-                chunkSummaryRows{c}    = table();
-                chunkAllLoc{c}         = struct('caseName',strings(0,1),'Re',nan(0,1),'kD',nan(0,1), ...
-                                                'pixelSize',nan(0,1),'nActivated',nan(0,1),'nInjected',nan(0,1), ...
-                                                'inception2x_xy',{cell(0,1)});
-                chunkAllCollapse{c}    = struct('caseName',{{}},'kD',[],'Re',[],'dt',[],'pixelSize',[],'data',{{}});
-                chunkAllVoidFrac{c}    = struct('caseName',{{}},'kD',[],'Re',[],'data',{{}});
-                chunkAllBreakup{c}     = repmat(struct('caseName',"", 'Re',NaN, 'kD',0, 'events',[]), 0, 1);
-                chunkAllSize{c}        = struct('caseName',strings(0,1),'Re',nan(0,1),'kD',nan(0,1),'size_eqd',{cell(0,1)});
-                chunkAllGrowthCollapse{c} = struct('caseName',strings(0,1),'kD',nan(0,1),'Re',nan(0,1),'U_m_s',nan(0,1),'data',{cell(0,1)});
-                chunkAllCollapseRecirculation{c} = repmat(struct('caseName',"", 'Re',NaN, 'kD',NaN, 'data',[]), 0, 1);
-                chunkGateSummaryRows{c} = table();
-            end
-
-            % Metrics for this chunk
-            activationOpts.pixelSize = cases(i).pixelSize;
-            mc = trackmate_case_metrics(outChunk, qcOpts, flowOpts, activationOpts);
-            gc = mc.gateStats;
-
-            % Inception locations
-            chunkAllLoc{c}.caseName(end+1,1)   = string(cases(i).name);
-            chunkAllLoc{c}.Re(end+1,1)         = cases(i).Re;
-            chunkAllLoc{c}.kD(end+1,1)         = cases(i).kD;
-            chunkAllLoc{c}.pixelSize(end+1,1)  = cases(i).pixelSize;
-            chunkAllLoc{c}.nActivated(end+1,1) = gc.nActivated;
-            chunkAllLoc{c}.nInjected(end+1,1)  = gc.nInjected;
-            chunkAllLoc{c}.inception2x_xy{end+1,1} = choose_inception_activation_xy(mc);
-
-            % Collapse
-            collapseChunk = analyze_collapse_events(outChunk, cases(i).pixelSize, cases(i).dt, collapseOpts);
-            chunkAllCollapse{c}.caseName{end+1} = char(cases(i).name);
-            chunkAllCollapse{c}.kD(end+1)       = cases(i).kD;
-            chunkAllCollapse{c}.Re(end+1)       = cases(i).Re;
-            chunkAllCollapse{c}.dt(end+1)       = cases(i).dt;
-            chunkAllCollapse{c}.pixelSize(end+1) = cases(i).pixelSize;
-            chunkAllCollapse{c}.data{end+1}     = collapseChunk;
-
-            collapseRecirculationChunk = analyze_collapse_recirculation( ...
-                outChunk, mc, collapseChunk, cases(i), collapseRecirculationOpts);
-            chunkAllCollapseRecirculation{c}(end+1,1) = struct('caseName', string(cases(i).name), ...
-                'Re', cases(i).Re, 'kD', cases(i).kD, 'data', collapseRecirculationChunk);
-
-            growthCollapseChunk = analyze_growth_collapse_rates(outChunk, mc, cases(i), growthCollapseOpts);
-            chunkAllGrowthCollapse{c}.caseName(end+1,1) = string(cases(i).name);
-            chunkAllGrowthCollapse{c}.kD(end+1,1)       = cases(i).kD;
-            chunkAllGrowthCollapse{c}.Re(end+1,1)       = cases(i).Re;
-            chunkAllGrowthCollapse{c}.U_m_s(end+1,1)    = growthCollapseOpts.U_m_s;
-            chunkAllGrowthCollapse{c}.data{end+1,1}     = growthCollapseChunk;
-
-            % Void fraction
-            voidFracOpts.cameraPixelSize = cases(i).pixelSize;
-            vfChunk = analyze_void_fraction(outChunk, voidFracOpts);
-            chunkAllVoidFrac{c}.caseName{end+1} = char(cases(i).name);
-            chunkAllVoidFrac{c}.kD(end+1)       = cases(i).kD;
-            chunkAllVoidFrac{c}.Re(end+1)       = cases(i).Re;
-            chunkAllVoidFrac{c}.data{end+1}     = vfChunk;
-
-            % Breakup
-            bkChunk = breakupEventsByChunk{c};
-            chunkAllBreakup{c}(end+1,1) = struct('caseName', string(cases(i).name), ...
-                'Re', cases(i).Re, 'kD', cases(i).kD, 'events', bkChunk);
-
-            % Upstream size
-            chunkAllSize{c}.caseName(end+1,1) = string(cases(i).name);
-            chunkAllSize{c}.Re(end+1,1)       = cases(i).Re;
-            chunkAllSize{c}.kD(end+1,1)       = cases(i).kD;
-            chunkAllSize{c}.size_eqd{end+1,1} = mc.upstreamSize_eqd;
-
-            % Gate summary
-            chunkGateRow = table( ...
-                string(cases(i).name), cases(i).Re, cases(i).kD, ...
-                gc.nTracksTotal, gc.nInjected, gc.nActivated, ...
-                gc.nRejectedTooShort, gc.nRejectedNonFinite, gc.nRejectedNonMonotonicTime, ...
-                gc.nRejectedTopology, gc.nRejectedFlow, gc.nRejectedOrigin, ...
-                gc.nRejectedNoActivation, gc.nRejectedWallBand, ...
-                gc.originThreshold, gc.xStartMin, gc.xStartMax, ...
-                'VariableNames', {'Case','Re','kD','nTracksTotal','nInjected','nActivated', ...
-                'nRejectedTooShort','nRejectedNonFinite','nRejectedNonMonotonicTime', ...
-                'nRejectedTopology','nRejectedFlow','nRejectedOrigin', ...
-                'nRejectedNoActivation','nRejectedWallBand', ...
-                'originThreshold','xStartMin','xStartMax'});
-            chunkGateSummaryRows{c} = [chunkGateSummaryRows{c}; chunkGateRow]; %#ok<AGROW>
-
-            % Per-case framewise CSV for this chunk
-            chunkCaseDir = fullfile(resultsDir, "results individual", sprintf("chunk_%d", c));
-            if ~isfolder(chunkCaseDir), mkdir(chunkCaseDir); end
-            chunkFramewiseTbl = write_framewise_case_csv(chunkCaseDir, cases(i), mc);
-            if numel(chunkFramewiseRows) < c || isempty(chunkFramewiseRows{c})
-                chunkFramewiseRows{c} = table();
-            end
-            if ~isempty(chunkFramewiseTbl) && height(chunkFramewiseTbl) > 0
-                chunkMetaTbl = table( ...
-                    repmat(c, height(chunkFramewiseTbl), 1), ...
-                    repmat(string(cases(i).name), height(chunkFramewiseTbl), 1), ...
-                    repmat(cases(i).Re, height(chunkFramewiseTbl), 1), ...
-                    repmat(cases(i).kD, height(chunkFramewiseTbl), 1), ...
-                    'VariableNames', {'Chunk','Case','Re','kD'});
-                chunkFramewiseRows{c} = append_table_compat(chunkFramewiseRows{c}, [chunkMetaTbl, chunkFramewiseTbl]);
-            end
-
-            % Chunk-specific video overlay GIF (if matching AVI exists)
-            if plotOpts.makeVideoOverlayGifs && c <= numel(chunkVideoFiles_i)
-                chunkVideoDir = fullfile(chunkCaseDir, "video overlay gifs");
-                chunkCaseDef = cases(i);
-                chunkCaseDef.videoFile = string(chunkVideoFiles_i{c});
-                save_video_overlay_gif_from_avi(chunkCaseDef, mc, chunkVideoDir, plotOpts, ...
-                    videoFileOverride = chunkVideoFiles_i{c});
-            end
-
-            % Summary row for this chunk
-            nVc = mc.nBasicValidTracks;
-            nSRc = mc.nStrictPrimaryTracks;
-            nSAc = mc.nStrictActivatedTracks;
-            sRFc = nSRc / max(mc.nTracksTotal, 1);
-            sAFc = nSAc / max(nVc, 1);
-            tMc = mc.tau_mean; tSc = mc.tau_std; nTc = numel(mc.tau_values);
-            aiElc = mc.A_over_I - mc.A_over_I_ci_low;
-            aiEhc = mc.A_over_I_ci_high - mc.A_over_I;
-            tSEMc = NaN; if nTc > 1, tSEMc = tSc / sqrt(nTc); end
-            vMeanC = mc.activatedUpstreamVelocity_mean_m_s;
-            vStdC = mc.activatedUpstreamVelocity_std_m_s;
-            vSemC = mc.activatedUpstreamVelocity_sem_m_s;
-            vNC = mc.activatedUpstreamVelocity_n;
-            nMcAE = 0;
-            if isfield(mc, 'microbubbleActivationEvent_frame_nonLeft') && ~isempty(mc.microbubbleActivationEvent_frame_nonLeft)
-                nMcAE = numel(mc.microbubbleActivationEvent_frame_nonLeft);
-            end
-            nTotAEc = mc.strictActivationEventsTotal + nMcAE;
-            leftMovingActivated_pct_c = NaN;
-            if nSRc > 0
-                leftMovingActivated_pct_c = 100 * nSAc / nSRc;
-            end
-            AE_leftMoving_pct_c = NaN;
-            if nTotAEc > 0
-                AE_leftMoving_pct_c = 100 * mc.strictActivationEventsTotal / nTotAEc;
-            end
-
-            chunkRow = table( ...
-                string(cases(i).name), cases(i).Re, cases(i).kD, ...
-                mc.nTracksTotal, nVc, nSRc, nSAc, leftMovingActivated_pct_c, ...
-                mc.strictTrackFrameExposure, mc.strictActivationEventsTotal, ...
-                nMcAE, nTotAEc, AE_leftMoving_pct_c, sRFc, sAFc, ...
-                mc.A_over_I, mc.A_over_I_ci_low, mc.A_over_I_ci_high, aiElc, aiEhc, ...
-                tMc, tSc, tSEMc, nTc, vMeanC, vStdC, vSemC, vNC, 0, ...
-                'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
-                'nLeftMovingTracks','nLeftMovingActivated','leftMovingActivated_pct', ...
-                'leftMovingFrameExposure','AE_leftMoving', ...
-                'AE_microbubble','AE_total','AE_leftMoving_pct', ...
-                'leftMovingFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
-                'tau_mean','tau_std','tau_sem','nTau', ...
-                'activatedVelocity_mean_m_s','activatedVelocity_std_m_s','activatedVelocity_sem_m_s','activatedVelocity_n', ...
-                'elapsed_case_sec'});
-            chunkSummaryRows{c} = [chunkSummaryRows{c}; chunkRow]; %#ok<AGROW>
-
-            fprintf('  Chunk %d/%d (%s): I=%d, A=%d, A/I=%.4f\n', ...
-                c, nXmlChunks_i, xmlFiles_i{c}, gc.nInjected, gc.nActivated, mc.A_over_I);
-        end
-    end
+    % ---- Independent XML-instance convergence for this case --------------
+    [caseInstanceRows, caseConvergenceRows] = write_case_independent_convergence( ...
+        resultsDir, cases(i), outChunks, xmlFiles_i, row, ...
+        convergenceFrameStep, qcOpts, flowOpts, activationOpts);
+    individualInstanceSummaryRows = append_table_compat(individualInstanceSummaryRows, caseInstanceRows);
+    individualConvergenceRows = append_table_compat(individualConvergenceRows, caseConvergenceRows);
 
     % Close any accidental figures
     close all force;
@@ -822,6 +696,7 @@ collapseRecirculationDir = fullfile(resultsDir, "collapse recirculation");
 if ~isfolder(collapseRecirculationDir), mkdir(collapseRecirculationDir); end
 write_collapse_recirculation_csv(allCollapseRecirculation, ...
     fullfile(collapseRecirculationDir, "collapse_recirculation_summary.csv"));
+plot_collapse_recirculation_vs_kd(allCollapseRecirculation, collapseRecirculationDir, plotOpts);
 
 %% ---------------- SAVE PLOT DATA (.mat) ----------------
 matDir = fullfile(resultsDir, "plot_data_mat");
@@ -832,6 +707,7 @@ save(fullfile(matDir, "upstream_size_distribution_by_case.mat"), 'allSize');
 save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 save(fullfile(matDir, "collapse_recirculation_by_case.mat"), 'allCollapseRecirculation');
 save(fullfile(matDir, "growth_collapse_rate_by_case.mat"), 'allGrowthCollapse');
+save(fullfile(matDir, "lagrangian_acceleration_by_case.mat"), 'allLagAccel', 'lagAccelOpts', '-v7.3');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
 % breakup_analysis_by_case.mat saved later with per-AR-threshold variants
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
@@ -841,6 +717,14 @@ normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
 save(fullfile(matDir, "normalization_parameters.mat"), 'normParams');
 fprintf("Saved plot data .mat files to: %s\n", matDir);
 
+%% ---------------- LAGRANGIAN ACCELERATION / PRESSURE PROXY --------------
+lagAccelFigDir = fullfile(figDir, "lagrangian acceleration");
+if ~isfolder(lagAccelFigDir), mkdir(lagAccelFigDir); end
+lagAccelSummaryRows = lagrangian_acceleration_to_table(allLagAccel);
+write_table_csv_compat(lagAccelSummaryRows, fullfile(lagAccelFigDir, "lagrangian_acceleration_summary.csv"));
+save(fullfile(lagAccelFigDir, "lagrangian_acceleration_by_case.mat"), 'allLagAccel', 'lagAccelOpts', '-v7.3');
+plot_lagrangian_acceleration_analysis(allLagAccel, lagAccelFigDir, plotOpts, lagAccelOpts);
+
 %% ---------------- PLOT 1: A/I vs k/d (per Re) ----------------
 fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kD_by_Re.txt");
 plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
@@ -849,6 +733,13 @@ plot_ai_vs_kdh_re(summaryRows, figDir, fitTxtFile, plotOpts);
 locFigOutDir = fullfile(figDir, "InceptionLocations");
 if ~isfolder(locFigOutDir), mkdir(locFigOutDir); end
 plot_inception_locations_by_re(allLoc, locFigOutDir, plotOpts);
+leftMovingLocPlotOpts = plotOpts;
+leftMovingLocPlotOpts.inceptionLocationField = 'leftMovingActivation_xy';
+leftMovingLocPlotOpts.inceptionLocationOutputStem = 'LeftMovingActivation_locations';
+leftMovingLocPlotOpts.inceptionLocationWarningLabel = 'left-moving activation points';
+leftMovingLocPlotOpts.inceptionLocationPlotDimensional = false;
+leftMovingLocPlotOpts.inceptionLocationPlotNormalized = true;
+plot_inception_locations_by_re(allLoc, locFigOutDir, leftMovingLocPlotOpts);
 
 %% ---------------- PLOT 2b: A/I based on capped activations ----------------
 plot_ai_vs_kd_capped(allLoc, figDir, plotOpts);
@@ -888,156 +779,18 @@ save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
 write_breakup_analysis_xlsx(allBreakup, fullfile(resultsDir, "breakup_events.xlsx"));
 plot_breakup_analysis_by_re(allBreakup, breakupFigDir, plotOpts, matDir, breakupOpts.arThresholds);
 
-%% ================ CHUNK (INDIVIDUAL) RESULTS ================
-if ~isempty(chunkSummaryRows)
-    nMaxChunks = numel(chunkSummaryRows);
-    fprintf('\n=== Saving individual chunk results (%d chunks) ===\n', nMaxChunks);
+%% ================ INDEPENDENT-SAMPLE CONVERGENCE RESULTS ================
+if ~isempty(individualConvergenceRows) && height(individualConvergenceRows) > 0
     individualRootDir = fullfile(resultsDir, "results individual");
     if ~isfolder(individualRootDir), mkdir(individualRootDir); end
-
-    allChunkSummaryRows = table();
-    allChunkGateSummaryRows = table();
-    allChunkCollapseRows = table();
-    allChunkCollapseRecirculationRows = table();
-    allChunkFramewiseRows = table();
-    for c = 1:nMaxChunks
-        if isempty(chunkSummaryRows{c}) || height(chunkSummaryRows{c}) == 0
-            continue;
-        end
-        cTbl = chunkSummaryRows{c};
-        chunkCol = table(repmat(c, height(cTbl), 1), 'VariableNames', {'Chunk'});
-        allChunkSummaryRows = append_table_compat(allChunkSummaryRows, [chunkCol, cTbl]);
-
-        if numel(chunkGateSummaryRows) >= c && ~isempty(chunkGateSummaryRows{c}) && height(chunkGateSummaryRows{c}) > 0
-            cGateTbl = chunkGateSummaryRows{c};
-            chunkGateCol = table(repmat(c, height(cGateTbl), 1), 'VariableNames', {'Chunk'});
-            allChunkGateSummaryRows = append_table_compat(allChunkGateSummaryRows, [chunkGateCol, cGateTbl]);
-        end
-
-        if numel(chunkAllCollapse) >= c && ~isempty(chunkAllCollapse{c}) && numel(chunkAllCollapse{c}.caseName) > 0
-            cCollapseTbl = collapse_analysis_to_table(chunkAllCollapse{c});
-            if ~isempty(cCollapseTbl) && height(cCollapseTbl) > 0
-                chunkCollapseCol = table(repmat(c, height(cCollapseTbl), 1), 'VariableNames', {'Chunk'});
-                allChunkCollapseRows = append_table_compat(allChunkCollapseRows, [chunkCollapseCol, cCollapseTbl]);
-            end
-        end
-
-        if numel(chunkAllCollapseRecirculation) >= c && ~isempty(chunkAllCollapseRecirculation{c})
-            cRecircTbl = collapse_recirculation_to_table(chunkAllCollapseRecirculation{c});
-            if ~isempty(cRecircTbl) && height(cRecircTbl) > 0
-                chunkRecircCol = table(repmat(c, height(cRecircTbl), 1), 'VariableNames', {'Chunk'});
-                allChunkCollapseRecirculationRows = append_table_compat(allChunkCollapseRecirculationRows, [chunkRecircCol, cRecircTbl]);
-            end
-        end
-
-        if numel(chunkFramewiseRows) >= c && ~isempty(chunkFramewiseRows{c}) && height(chunkFramewiseRows{c}) > 0
-            allChunkFramewiseRows = append_table_compat(allChunkFramewiseRows, chunkFramewiseRows{c});
-        end
-    end
-    if ~isempty(allChunkSummaryRows) && height(allChunkSummaryRows) > 0
-        allChunkSummaryRows = sortrows(allChunkSummaryRows, {'Re','kD','Chunk'});
-        write_table_csv_compat(allChunkSummaryRows, fullfile(individualRootDir, "summary - chunks_case.csv"));
-    end
-    if ~isempty(allChunkGateSummaryRows) && height(allChunkGateSummaryRows) > 0
-        allChunkGateSummaryRows = sortrows(allChunkGateSummaryRows, {'Re','kD','Chunk'});
-        write_table_csv_compat(allChunkGateSummaryRows, fullfile(individualRootDir, "track_gate_summary - chunks_case.csv"));
-    end
-    if ~isempty(allChunkCollapseRows) && height(allChunkCollapseRows) > 0
-        allChunkCollapseRows = sortrows(allChunkCollapseRows, {'Re','kD','Chunk'});
-        write_table_csv_compat(allChunkCollapseRows, fullfile(individualRootDir, "collapse_analysis - chunks_case.csv"));
-    end
-    if ~isempty(allChunkCollapseRecirculationRows) && height(allChunkCollapseRecirculationRows) > 0
-        allChunkCollapseRecirculationRows = sortrows(allChunkCollapseRecirculationRows, {'Re','kD','Chunk'});
-        chunkRecircRootDir = fullfile(individualRootDir, "collapse recirculation");
-        if ~isfolder(chunkRecircRootDir), mkdir(chunkRecircRootDir); end
-        write_table_csv_compat(allChunkCollapseRecirculationRows, ...
-            fullfile(chunkRecircRootDir, "collapse_recirculation_summary - chunks_case.csv"));
-    end
-    if ~isempty(allChunkFramewiseRows) && height(allChunkFramewiseRows) > 0
-        allChunkFramewiseRows = sortrows(allChunkFramewiseRows, {'Re','kD','Chunk','frame'});
-        write_table_csv_compat(allChunkFramewiseRows, fullfile(individualRootDir, "framewise_counts - chunks_case.csv"));
-    end
-
-    for c = 1:nMaxChunks
-        if isempty(chunkSummaryRows{c}) || height(chunkSummaryRows{c}) == 0
-            continue;
-        end
-
-        chunkDir    = fullfile(individualRootDir, sprintf("chunk_%d", c));
-        chunkFigDir = fullfile(chunkDir, "Figures_PNG_SVG");
-        if ~isfolder(chunkDir), mkdir(chunkDir); end
-        if ~isfolder(chunkFigDir), mkdir(chunkFigDir); end
-
-        cSR = sortrows(chunkSummaryRows{c}, {'Re','kD'});
-
-        % Summary & gate CSVs
-        write_table_csv_compat(cSR, fullfile(chunkDir, "Summary_tracks.csv"));
-        if ~isempty(chunkGateSummaryRows{c}) && height(chunkGateSummaryRows{c}) > 0
-            cGS = sortrows(chunkGateSummaryRows{c}, {'Re','kD'});
-            write_table_csv_compat(cGS, fullfile(chunkDir, "track_gate_summary.csv"));
-        end
-
-        % .mat files
-        cMatDir = fullfile(chunkDir, "plot_data_mat");
-        if ~isfolder(cMatDir), mkdir(cMatDir); end
-        chunkSR = cSR; %#ok<NASGU>
-        save(fullfile(cMatDir, "activation_summary_by_case.mat"), 'chunkSR');
-        chunkLoc = chunkAllLoc{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "inception_locations_by_case.mat"), 'chunkLoc');
-        chunkSz = chunkAllSize{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "upstream_size_distribution_by_case.mat"), 'chunkSz');
-        chunkCol = chunkAllCollapse{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "collapse_analysis_by_case.mat"), 'chunkCol');
-        chunkCollapseRecirculation = chunkAllCollapseRecirculation{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "collapse_recirculation_by_case.mat"), 'chunkCollapseRecirculation');
-        chunkGrowthCollapse = chunkAllGrowthCollapse{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "growth_collapse_rate_by_case.mat"), 'chunkGrowthCollapse');
-        chunkVF = chunkAllVoidFrac{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "void_fraction_by_case.mat"), 'chunkVF');
-        save(fullfile(cMatDir, "normalization_parameters.mat"), 'normParams');
-
-        % ---- Plots (same set as combined) ----
-        plot_ai_vs_kdh_re(cSR, chunkFigDir, fullfile(chunkDir, "fit_AI_vs_kD_by_Re.txt"), plotOpts);
-
-        cLocDir = fullfile(chunkFigDir, "InceptionLocations");
-        if ~isfolder(cLocDir), mkdir(cLocDir); end
-        plot_inception_locations_by_re(chunkAllLoc{c}, cLocDir, plotOpts);
-
-        plot_ai_vs_kd_capped(chunkAllLoc{c}, chunkFigDir, plotOpts);
-        plot_tau_vs_kdh_re(cSR, chunkFigDir, plotOpts);
-        plot_tau_velocity_colormap(cSR, chunkFigDir, plotOpts, cMatDir);
-
-        cDistDir = fullfile(chunkFigDir, "UpstreamSizeDistributions");
-        if ~isfolder(cDistDir), mkdir(cDistDir); end
-        plot_upstream_size_distribution_by_re(chunkAllSize{c}, cDistDir, binSize_phys, plotOpts);
-
-        cCollDir = fullfile(chunkFigDir, "CollapseAnalysis");
-        if ~isfolder(cCollDir), mkdir(cCollDir); end
-        plot_collapse_rate_vs_frame(chunkAllCollapse{c}, cCollDir, plotOpts);
-        plot_collapse_rate_vs_kd(chunkAllCollapse{c}, chunkFigDir, plotOpts);
-        plot_collapse_size_distribution(chunkAllCollapse{c}, cCollDir, plotOpts);
-        write_collapse_analysis_csv(chunkAllCollapse{c}, fullfile(chunkDir, "collapse_analysis.csv"));
-        cCollapseRecircDir = fullfile(chunkDir, "collapse recirculation");
-        if ~isfolder(cCollapseRecircDir), mkdir(cCollapseRecircDir); end
-        write_collapse_recirculation_csv(chunkAllCollapseRecirculation{c}, ...
-            fullfile(cCollapseRecircDir, "collapse_recirculation_summary.csv"));
-
-        cGrowthCollapseDir = fullfile(chunkFigDir, "Growth and collapse rate");
-        if ~isfolder(cGrowthCollapseDir), mkdir(cGrowthCollapseDir); end
-        plot_growth_collapse_rate_pdf(chunkAllGrowthCollapse{c}, cGrowthCollapseDir, plotOpts, cMatDir);
-
-        plot_void_fraction_vs_kd(chunkAllVoidFrac{c}, chunkFigDir, plotOpts);
-
-        cBkDir = fullfile(chunkFigDir, "BreakupAnalysis");
-        if ~isfolder(cBkDir), mkdir(cBkDir); end
-        chunkBk = chunkAllBreakup{c}; %#ok<NASGU>
-        save(fullfile(cMatDir, "breakup_analysis_by_case.mat"), 'chunkBk');
-        write_breakup_analysis_xlsx(chunkAllBreakup{c}, fullfile(chunkDir, "breakup_events.xlsx"));
-        plot_breakup_analysis_by_re(chunkAllBreakup{c}, cBkDir, plotOpts, cMatDir, breakupOpts.arThresholds);
-
-        fprintf('Chunk %d: saved results to %s\n', c, chunkDir);
-        close all force;
-    end
+    write_table_csv_compat(individualConvergenceRows, ...
+        fullfile(individualRootDir, "convergence_summary_all_cases.csv"));
+end
+if ~isempty(individualInstanceSummaryRows) && height(individualInstanceSummaryRows) > 0
+    individualRootDir = fullfile(resultsDir, "results individual");
+    if ~isfolder(individualRootDir), mkdir(individualRootDir); end
+    write_table_csv_compat(individualInstanceSummaryRows, ...
+        fullfile(individualRootDir, "xml_instance_summary_all_cases.csv"));
 end
 
 if useMatCache && cacheUpdated
@@ -1110,6 +863,411 @@ caseToken = sanitize_case_token(caseDef.name);
 outCsv = fullfile(resultsDir, sprintf('framewise_counts_%s_Re_%g_kD_%g.csv', caseToken, caseDef.Re, caseDef.kD));
 write_table_csv_compat(frameTbl, outCsv);
 fprintf("Saved: %s\n", outCsv);
+end
+
+function summaryRow = make_activation_summary_row(caseDef, metrics, elapsedCaseSec)
+nValidTracks = metrics.nBasicValidTracks;
+nStrictRecirculationTracks = metrics.nStrictPrimaryTracks;
+nStrictActivatedTracks = metrics.nStrictActivatedTracks;
+
+leftMovingActivated_pct = NaN;
+if nStrictRecirculationTracks > 0
+    leftMovingActivated_pct = 100 * nStrictActivatedTracks / nStrictRecirculationTracks;
+end
+
+nMicroAE = 0;
+if isfield(metrics, 'microbubbleActivationEvent_frame_nonLeft') && ~isempty(metrics.microbubbleActivationEvent_frame_nonLeft)
+    nMicroAE = numel(metrics.microbubbleActivationEvent_frame_nonLeft);
+end
+nTotalAE = metrics.strictActivationEventsTotal + nMicroAE;
+
+AE_leftMoving_pct = NaN;
+if nTotalAE > 0
+    AE_leftMoving_pct = 100 * metrics.strictActivationEventsTotal / nTotalAE;
+end
+
+strictRecirculationFrac_total = nStrictRecirculationTracks / max(metrics.nTracksTotal, 1);
+strictActivationFrac_valid = nStrictActivatedTracks / max(nValidTracks, 1);
+nTauVals = numel(metrics.tau_values);
+tau_sem = NaN;
+if nTauVals > 1
+    tau_sem = metrics.tau_std / sqrt(nTauVals);
+end
+
+A_over_I_err_low = metrics.A_over_I - metrics.A_over_I_ci_low;
+A_over_I_err_high = metrics.A_over_I_ci_high - metrics.A_over_I;
+
+summaryRow = table( ...
+    string(caseDef.name), caseDef.Re, caseDef.kD, ...
+    metrics.nTracksTotal, nValidTracks, ...
+    nStrictRecirculationTracks, nStrictActivatedTracks, leftMovingActivated_pct, ...
+    metrics.strictTrackFrameExposure, metrics.strictActivationEventsTotal, ...
+    nMicroAE, nTotalAE, AE_leftMoving_pct, ...
+    strictRecirculationFrac_total, strictActivationFrac_valid, ...
+    metrics.A_over_I, metrics.A_over_I_ci_low, metrics.A_over_I_ci_high, A_over_I_err_low, A_over_I_err_high, ...
+    metrics.tau_mean, metrics.tau_std, tau_sem, nTauVals, ...
+    metrics.activatedUpstreamVelocity_mean_m_s, metrics.activatedUpstreamVelocity_std_m_s, ...
+    metrics.activatedUpstreamVelocity_sem_m_s, metrics.activatedUpstreamVelocity_n, ...
+    elapsedCaseSec, ...
+    'VariableNames', {'Case','Re','kD','nTracksTotal','nValidTracks', ...
+    'nLeftMovingTracks','nLeftMovingActivated','leftMovingActivated_pct', ...
+    'leftMovingFrameExposure','AE_leftMoving', ...
+    'AE_microbubble','AE_total','AE_leftMoving_pct', ...
+    'leftMovingFrac_total','activationFrac_valid','A_over_I','A_over_I_ci_low','A_over_I_ci_high','A_over_I_err_low','A_over_I_err_high', ...
+    'tau_mean','tau_std','tau_sem','nTau', ...
+    'activatedVelocity_mean_m_s','activatedVelocity_std_m_s','activatedVelocity_sem_m_s','activatedVelocity_n', ...
+    'elapsed_case_sec'});
+end
+
+function [instanceRows, convergenceRows] = write_case_independent_convergence( ...
+    resultsDir, caseDef, outChunks, xmlFiles, finalSummaryRow, frameStep, ...
+    qcOpts, flowOpts, activationOpts)
+
+instanceRows = table();
+convergenceRows = table();
+if isempty(outChunks)
+    return;
+end
+
+caseToken = sanitize_case_token(caseDef.name);
+caseDir = fullfile(resultsDir, "results individual", caseToken);
+if ~isfolder(caseDir), mkdir(caseDir); end
+
+[instanceRows, convergenceRows, totalFrames] = build_case_independent_convergence_tables( ...
+    caseDef, outChunks, xmlFiles, frameStep, qcOpts, flowOpts, activationOpts);
+
+finalMeta = table(frameStep, totalFrames, numel(outChunks), ...
+    'VariableNames', {'ConvergenceFrameStep','TotalSourceFrames','XMLInstanceCount'});
+write_table_csv_compat([finalMeta, finalSummaryRow], fullfile(caseDir, "converged_summary.csv"));
+
+if ~isempty(instanceRows) && height(instanceRows) > 0
+    write_table_csv_compat(instanceRows, fullfile(caseDir, "xml_instance_summary.csv"));
+end
+if ~isempty(convergenceRows) && height(convergenceRows) > 0
+    write_table_csv_compat(convergenceRows, fullfile(caseDir, "convergence_summary.csv"));
+end
+
+fprintf('Independent sample convergence for %s: %d XML file(s), %d source frame(s), step=%d -> %s\n', ...
+    char(string(caseDef.name)), numel(outChunks), totalFrames, frameStep, caseDir);
+end
+
+function [instanceRows, convergenceRows, totalFrames] = build_case_independent_convergence_tables( ...
+    caseDef, outChunks, xmlFiles, frameStep, qcOpts, flowOpts, activationOpts)
+
+instanceRows = table();
+convergenceRows = table();
+totalFrames = estimate_total_source_frames(outChunks);
+
+activationOpts.pixelSize = caseDef.pixelSize;
+
+for c = 1:numel(outChunks)
+    outOne = outChunks{c};
+    [frameMin, frameMax, frameCount] = parsed_output_frame_span(outOne);
+    if isempty(outOne) || ~isstruct(outOne) || ~isfield(outOne, 'trajectories') || isempty(outOne.trajectories)
+        continue;
+    end
+
+    metricsOne = trackmate_case_metrics(outOne, qcOpts, flowOpts, activationOpts);
+    summaryOne = make_activation_summary_row(caseDef, metricsOne, 0);
+    metaOne = table(c, string(xmlFiles{c}), frameMin, frameMax, frameCount, ...
+        'VariableNames', {'XMLInstance','XMLFile','SourceFrameMin','SourceFrameMax','SourceFrameCount'});
+    instanceRows = append_table_compat(instanceRows, [metaOne, summaryOne]);
+end
+
+if ~(isfinite(frameStep) && frameStep > 0 && totalFrames > 0)
+    return;
+end
+
+targets = (frameStep:frameStep:totalFrames).';
+if isempty(targets) || targets(end) ~= totalFrames
+    targets(end+1,1) = totalFrames;
+end
+
+previousSummary = table();
+for bi = 1:numel(targets)
+    targetFrames = targets(bi);
+    [outCum, usedFrames, instancesUsed, lastInstance, lastInstanceFrames] = ...
+        cumulative_output_by_source_frames(outChunks, xmlFiles, targetFrames);
+    if isempty(outCum) || usedFrames <= 0
+        continue;
+    end
+
+    metricsCum = trackmate_case_metrics(outCum, qcOpts, flowOpts, activationOpts);
+    summaryCum = make_activation_summary_row(caseDef, metricsCum, 0);
+    changeTbl = summary_change_table(summaryCum, previousSummary);
+    metaCum = table(bi, targetFrames, usedFrames, instancesUsed, lastInstance, lastInstanceFrames, ...
+        'VariableNames', {'FrameBin','CumulativeFrameTarget','CumulativeFramesUsed', ...
+        'XMLInstancesUsed','LastXMLInstance','LastXMLFramesUsed'});
+
+    convergenceRows = append_table_compat(convergenceRows, [metaCum, summaryCum, changeTbl]);
+    previousSummary = summaryCum;
+end
+end
+
+function T = summary_change_table(currentSummary, previousSummary)
+varNames = currentSummary.Properties.VariableNames;
+skipNames = ["Case", "Re", "kD", "elapsed_case_sec"];
+changeVals = [];
+changeNames = strings(0,1);
+
+for vi = 1:numel(varNames)
+    name = string(varNames{vi});
+    if any(strcmp(name, skipNames))
+        continue;
+    end
+
+    curRaw = currentSummary.(varNames{vi});
+    if ~(isnumeric(curRaw) || islogical(curRaw))
+        continue;
+    end
+    curVal = double(curRaw(1));
+    prevVal = NaN;
+    if ~isempty(previousSummary) && height(previousSummary) > 0 && ismember(varNames{vi}, previousSummary.Properties.VariableNames)
+        prevRaw = previousSummary.(varNames{vi});
+        if isnumeric(prevRaw) || islogical(prevRaw)
+            prevVal = double(prevRaw(1));
+        end
+    end
+
+    deltaVal = curVal - prevVal;
+    pctVal = NaN;
+    if isfinite(prevVal) && abs(prevVal) > eps
+        pctVal = 100 * deltaVal / abs(prevVal);
+    end
+
+    changeVals = [changeVals, deltaVal, pctVal]; %#ok<AGROW>
+    changeNames(end+1,1) = "delta_" + name; %#ok<AGROW>
+    changeNames(end+1,1) = "pctChange_" + name; %#ok<AGROW>
+end
+
+if isempty(changeVals)
+    T = table();
+else
+    T = array2table(changeVals, 'VariableNames', cellstr(changeNames));
+end
+end
+
+function [outCum, usedFrames, instancesUsed, lastInstance, lastInstanceFrames] = ...
+    cumulative_output_by_source_frames(outChunks, xmlFiles, targetFrames)
+
+outCum = [];
+usedFrames = 0;
+instancesUsed = 0;
+lastInstance = 0;
+lastInstanceFrames = 0;
+remainingFrames = max(0, round(targetFrames));
+parts = {};
+partXmlFiles = {};
+
+for c = 1:numel(outChunks)
+    if remainingFrames <= 0
+        break;
+    end
+
+    outOne = outChunks{c};
+    [frameMin, ~, frameCount] = parsed_output_frame_span(outOne);
+    if frameCount <= 0 || ~isfinite(frameMin)
+        continue;
+    end
+
+    framesThisInstance = min(remainingFrames, frameCount);
+    frameStop = frameMin + framesThisInstance - 1;
+    outPart = subset_parsed_output_by_frame_window(outOne, frameMin, frameStop);
+    if parsed_output_has_content(outPart)
+        parts{end+1,1} = outPart; %#ok<AGROW>
+        partXmlFiles{end+1,1} = xmlFiles{c}; %#ok<AGROW>
+    end
+
+    usedFrames = usedFrames + framesThisInstance;
+    instancesUsed = instancesUsed + 1;
+    lastInstance = c;
+    lastInstanceFrames = framesThisInstance;
+    remainingFrames = remainingFrames - framesThisInstance;
+end
+
+if ~isempty(parts)
+    outCum = merge_parsed_outputs(parts, partXmlFiles);
+end
+end
+
+function tf = parsed_output_has_content(out)
+tf = isstruct(out) && isfield(out, 'trajectories') && ~isempty(out.trajectories) && ...
+    isfield(out, 'spots') && istable(out.spots) && height(out.spots) > 0;
+end
+
+function totalFrames = estimate_total_source_frames(outChunks)
+totalFrames = 0;
+for c = 1:numel(outChunks)
+    [~, ~, frameCount] = parsed_output_frame_span(outChunks{c});
+    if isfinite(frameCount) && frameCount > 0
+        totalFrames = totalFrames + frameCount;
+    end
+end
+end
+
+function [frameMin, frameMax, frameCount] = parsed_output_frame_span(out)
+frameMin = NaN;
+frameMax = NaN;
+frameCount = 0;
+frames = nan(0,1);
+
+if isstruct(out) && isfield(out, 'spots') && istable(out.spots) && ...
+        height(out.spots) > 0 && ismember('FRAME', out.spots.Properties.VariableNames)
+    frames = [frames; double(out.spots.FRAME(:))]; %#ok<AGROW>
+end
+if isstruct(out) && isfield(out, 'trajectories') && ~isempty(out.trajectories) && ...
+        isstruct(out.trajectories) && isfield(out.trajectories, 'frame')
+    for k = 1:numel(out.trajectories)
+        frames = [frames; double(out.trajectories(k).frame(:))]; %#ok<AGROW>
+    end
+end
+
+frames = frames(isfinite(frames));
+if isstruct(out) && isfield(out, 'meta') && isstruct(out.meta) && ...
+        isfield(out.meta, 'imageNFrames') && isfinite(out.meta.imageNFrames) && out.meta.imageNFrames > 0
+    nImageFrames = round(out.meta.imageNFrames);
+    if isempty(frames)
+        frameMin = 0;
+    else
+        observedMin = min(frames);
+        if observedMin > nImageFrames
+            frameMin = round(observedMin);
+        else
+            frameMin = 0;
+        end
+    end
+    frameMax = frameMin + nImageFrames - 1;
+    frameCount = nImageFrames;
+    return;
+end
+
+if isempty(frames)
+    return;
+end
+
+frameMin = min(frames);
+frameMax = max(frames);
+frameCount = max(0, round(frameMax) - round(frameMin) + 1);
+end
+
+function outSub = subset_parsed_output_by_frame_window(out, frameStart, frameStop)
+outSub = out;
+if isempty(out) || ~isstruct(out)
+    return;
+end
+
+keptSpotIds = nan(0,1);
+if isfield(out, 'spots') && istable(out.spots) && height(out.spots) > 0 && ...
+        ismember('FRAME', out.spots.Properties.VariableNames)
+    spotFrame = double(out.spots.FRAME(:));
+    keepSpots = isfinite(spotFrame) & spotFrame >= frameStart & spotFrame <= frameStop;
+    outSub.spots = out.spots(keepSpots, :);
+    if ismember('ID', outSub.spots.Properties.VariableNames)
+        keptSpotIds = double(outSub.spots.ID(:));
+    end
+end
+
+if isfield(out, 'trajectories')
+    trajSub = out.trajectories([]);
+else
+    trajSub = struct([]);
+end
+if isfield(out, 'trajectories') && ~isempty(out.trajectories)
+    for k = 1:numel(out.trajectories)
+        tr = out.trajectories(k);
+        if ~isfield(tr, 'frame') || isempty(tr.frame)
+            continue;
+        end
+        trFrame = double(tr.frame(:));
+        keepPoints = isfinite(trFrame) & trFrame >= frameStart & trFrame <= frameStop;
+        if ~any(keepPoints)
+            continue;
+        end
+        tr = subset_trajectory_points(tr, keepPoints);
+        trajSub(end+1,1) = tr; %#ok<AGROW>
+    end
+end
+outSub.trajectories = trajSub;
+
+keptTrackIds = collect_traj_scalar_field_local(trajSub, 'TRACK_ID');
+if isfield(out, 'tracks') && istable(out.tracks) && height(out.tracks) > 0 && ...
+        ismember('TRACK_ID', out.tracks.Properties.VariableNames)
+    keepTracks = ismember(out.tracks.TRACK_ID, keptTrackIds);
+    outSub.tracks = out.tracks(keepTracks, :);
+else
+    if isfield(out, 'tracks')
+        outSub.tracks = out.tracks;
+    end
+end
+
+if isfield(out, 'edges') && istable(out.edges) && height(out.edges) > 0
+    keepEdges = true(height(out.edges), 1);
+    if ismember('TRACK_ID', out.edges.Properties.VariableNames)
+        keepEdges = keepEdges & ismember(out.edges.TRACK_ID, keptTrackIds);
+    end
+    if ~isempty(keptSpotIds)
+        if ismember('SPOT_SOURCE_ID', out.edges.Properties.VariableNames)
+            keepEdges = keepEdges & ismember(out.edges.SPOT_SOURCE_ID, keptSpotIds);
+        end
+        if ismember('SPOT_TARGET_ID', out.edges.Properties.VariableNames)
+            keepEdges = keepEdges & ismember(out.edges.SPOT_TARGET_ID, keptSpotIds);
+        end
+    end
+    outSub.edges = out.edges(keepEdges, :);
+else
+    if isfield(out, 'edges')
+        outSub.edges = out.edges;
+    end
+end
+
+if isfield(outSub, 'meta') && isstruct(outSub.meta)
+    outSub.meta.convergenceFrameStart = frameStart;
+    outSub.meta.convergenceFrameStop = frameStop;
+    if isfield(outSub, 'spots') && istable(outSub.spots)
+        outSub.meta.nSpotsParsed = height(outSub.spots);
+    end
+    if isfield(outSub, 'tracks') && istable(outSub.tracks)
+        outSub.meta.nTracksParsed = height(outSub.tracks);
+    end
+    if isfield(outSub, 'edges') && istable(outSub.edges)
+        outSub.meta.nEdgesParsed = height(outSub.edges);
+    end
+end
+end
+
+function tr = subset_trajectory_points(tr, keepPoints)
+fields = fieldnames(tr);
+nPoints = numel(keepPoints);
+segmentKeep = keepPoints(1:end-1) & keepPoints(2:end);
+
+for fi = 1:numel(fields)
+    name = fields{fi};
+    val = tr.(name);
+    if ~(isnumeric(val) || islogical(val))
+        continue;
+    end
+    if isvector(val) && numel(val) == nPoints
+        tr.(name) = val(keepPoints);
+    elseif isvector(val) && numel(val) == max(nPoints - 1, 0)
+        tr.(name) = val(segmentKeep);
+    end
+end
+end
+
+function vals = collect_traj_scalar_field_local(traj, fieldName)
+vals = nan(0,1);
+if isempty(traj) || ~isstruct(traj) || ~isfield(traj, fieldName)
+    return;
+end
+vals = nan(numel(traj), 1);
+for k = 1:numel(traj)
+    raw = traj(k).(fieldName);
+    if isempty(raw)
+        continue;
+    end
+    vals(k) = raw(1);
+end
+vals = vals(isfinite(vals));
 end
 
 function outTbl = append_table_compat(outTbl, newRows)
@@ -1193,6 +1351,22 @@ elseif isfield(metrics, 'inception2x_xy') && ~isempty(metrics.inception2x_xy)
 end
 if isfield(metrics, 'microbubbleActivationEvent_xy_nonLeft') && ~isempty(metrics.microbubbleActivationEvent_xy_nonLeft)
     xy = [xy; metrics.microbubbleActivationEvent_xy_nonLeft];
+end
+if ~isempty(xy)
+    xy = unique(xy, 'rows', 'stable');
+end
+end
+
+function xy = choose_left_moving_activation_xy(metrics)
+xy = zeros(0,2);
+if isfield(metrics, 'strictActivationEvent_xy') && ~isempty(metrics.strictActivationEvent_xy)
+    xy = metrics.strictActivationEvent_xy;
+elseif isfield(metrics, 'activationEvent_xy') && ~isempty(metrics.activationEvent_xy)
+    xy = metrics.activationEvent_xy;
+elseif isfield(metrics, 'activationEvent_xy_netLeftLegacy') && ~isempty(metrics.activationEvent_xy_netLeftLegacy)
+    xy = metrics.activationEvent_xy_netLeftLegacy;
+elseif isfield(metrics, 'inception2x_xy') && ~isempty(metrics.inception2x_xy)
+    xy = metrics.inception2x_xy;
 end
 if ~isempty(xy)
     xy = unique(xy, 'rows', 'stable');
@@ -1290,16 +1464,16 @@ for c = 1:nXml
         if is_cache_entry_compatible(cachedOut, parserOpts)
             outChunks{c} = cachedOut;
             useCacheEntry = true;
-            fprintf("  Using cache entry %d/%d for XML chunk %d/%d\n", ...
+            fprintf("  Using cache entry %d/%d for XML sample %d/%d\n", ...
                 idxCache, numel(cacheDB.key), c, nXml);
         else
-            fprintf("  Cache entry %d/%d incompatible for XML chunk %d/%d. Reparsing.\n", ...
+            fprintf("  Cache entry %d/%d incompatible for XML sample %d/%d. Reparsing.\n", ...
                 idxCache, numel(cacheDB.key), c, nXml);
         end
     end
 
     if ~useCacheEntry
-        fprintf("  Parsing XML chunk %d/%d: %s\n", c, nXml, xmlFiles{c});
+        fprintf("  Parsing XML sample %d/%d: %s\n", c, nXml, xmlFiles{c});
         outChunks{c} = analyze_trackmate_xml_arc( ...
             xmlFiles{c}, ...
             pixelSize = caseDef.pixelSize, ...

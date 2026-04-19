@@ -4,9 +4,44 @@ if nargin < 3 || ~isfield(plotOpts, 'themes') || isempty(plotOpts.themes)
     plotOpts.themes = "normal";
 end
 
+locationField = 'inception2x_xy';
+if isfield(plotOpts, 'inceptionLocationField') && ~isempty(plotOpts.inceptionLocationField)
+    locationField = char(string(plotOpts.inceptionLocationField));
+end
+
+outputStem = 'Inception2x_locations';
+if isfield(plotOpts, 'inceptionLocationOutputStem') && ~isempty(plotOpts.inceptionLocationOutputStem)
+    outputStem = char(string(plotOpts.inceptionLocationOutputStem));
+end
+
+warningLabel = 'activation points on left-moving tracks';
+if isfield(plotOpts, 'inceptionLocationWarningLabel') && ~isempty(plotOpts.inceptionLocationWarningLabel)
+    warningLabel = char(string(plotOpts.inceptionLocationWarningLabel));
+end
+
+plotDimensional = true;
+if isfield(plotOpts, 'inceptionLocationPlotDimensional')
+    plotDimensional = logical(plotOpts.inceptionLocationPlotDimensional);
+end
+
+plotNormalized = true;
+if isfield(plotOpts, 'inceptionLocationPlotNormalized')
+    plotNormalized = logical(plotOpts.inceptionLocationPlotNormalized);
+end
+
+if ~plotDimensional && ~plotNormalized
+    warning('Both dimensional and normalized inception location plots are disabled. Skipping.');
+    return;
+end
+
 nCases = numel(allLoc.caseName);
 if nCases == 0
     warning('No cases in allLoc. Skipping inception location plot.');
+    return;
+end
+
+if ~isfield(allLoc, locationField)
+    warning('allLoc.%s was not found. Skipping inception location plot.', locationField);
     return;
 end
 
@@ -44,21 +79,21 @@ yLimNorm = yLim / throatHeight_mm;
 
 hasPoints = false;
 for i = 1:nCases
-    if ~isempty(allLoc.inception2x_xy{i})
+    if ~isempty(allLoc.(locationField){i})
         hasPoints = true;
         break;
     end
 end
 if ~hasPoints
-    warning('No activation points found on left-moving tracks.');
+    warning('No %s found.', warningLabel);
     return;
 end
 
-% Marginal histogram settings
-nBinsX = 50;
-nBinsY = 40;
-histAlpha = 0.40;
-histFrac = 0.12; % fraction of figure for marginal panels
+% Marginal PDF settings
+nPdfGridX = 200;
+nPdfGridY = 200;
+pdfLineWidth = 1.8;
+marginalFrac = 0.12; % fraction of figure for marginal panels
 plotVariants = resolve_inception_plot_variants(plotOpts);
 
 for theme = reshape(plotOpts.themes, 1, [])
@@ -71,20 +106,24 @@ for theme = reshape(plotOpts.themes, 1, [])
             variant = plotVariants(vi);
 
             % --- Plot 1: dimensional (mm) ---
-            plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
-                throatHeight_mm, xLim, yLim, false, nBinsX, nBinsY, histAlpha, histFrac, ...
-                '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
-                char(theme), ...
-                fullfile(outDir, sprintf('Inception2x_locations%s_Re_%g_%s', variant.fileSuffix, Rei, theme)), ...
-                plotOpts, variant.maxAct);
+            if plotDimensional
+                plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+                    throatHeight_mm, xLim, yLim, false, nPdfGridX, nPdfGridY, pdfLineWidth, marginalFrac, ...
+                    '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
+                    char(theme), ...
+                    fullfile(outDir, sprintf('%s%s_Re_%g_%s', outputStem, variant.fileSuffix, Rei, theme)), ...
+                    plotOpts, variant.maxAct, locationField);
+            end
 
             % --- Plot 2: normalized by throat height (x/H, y/H) ---
-            plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
-                throatHeight_mm, xLimNorm, yLimNorm, true, nBinsX, nBinsY, histAlpha, histFrac, ...
-                '$x/H$', '$y/H$', ...
-                char(theme), ...
-                fullfile(outDir, sprintf('Inception2x_locations_normalized%s_Re_%g_%s', variant.fileSuffix, Rei, theme)), ...
-                plotOpts, variant.maxAct);
+            if plotNormalized
+                plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
+                    throatHeight_mm, xLimNorm, yLimNorm, true, nPdfGridX, nPdfGridY, pdfLineWidth, marginalFrac, ...
+                    '$x/H$', '$y/H$', ...
+                    char(theme), ...
+                    fullfile(outDir, sprintf('%s_normalized%s_Re_%g_%s', outputStem, variant.fileSuffix, Rei, theme)), ...
+                    plotOpts, variant.maxAct, locationField);
+            end
         end
     end
 end
@@ -93,8 +132,13 @@ end
 
 %% ---- main plotting helper ----
 function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
-    throatHeight_mm, xLim, yLim, doNormalize, nBinsX, nBinsY, histAlpha, histFrac, ...
-    xLabel, yLabel, theme, outBase, plotOpts, maxAct)
+    throatHeight_mm, xLim, yLim, doNormalize, nPdfGridX, nPdfGridY, pdfLineWidth, marginalFrac, ...
+    xLabel, yLabel, theme, outBase, plotOpts, maxAct, locationField)
+
+if nargin < 20 || isempty(locationField)
+    locationField = 'inception2x_xy';
+end
+locationField = char(string(locationField));
 
 fontName = resolve_plot_font_name();
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
@@ -109,10 +153,10 @@ gapX = gapPx / figW;
 gapY = gapPx / figH;
 padR = 0.01; padT = 0.01;
 mainL = 0.08; mainB = 0.18;
-mainW = 1 - mainL - histFrac - gapX - padR;
-mainH = 1 - mainB - histFrac - gapY - padT;
-topL = mainL; topB = mainB + mainH + gapY; topW = mainW; topH = histFrac;
-rightL = mainL + mainW + gapX; rightB = mainB; rightW = histFrac; rightH = mainH;
+mainW = 1 - mainL - marginalFrac - gapX - padR;
+mainH = 1 - mainB - marginalFrac - gapY - padT;
+topL = mainL; topB = mainB + mainH + gapY; topW = mainW; topH = marginalFrac;
+rightL = mainL + mainW + gapX; rightB = mainB; rightW = marginalFrac; rightH = mainH;
 
 axMain  = axes(f, 'Position', [mainL  mainB  mainW  mainH]);
 axTop   = axes(f, 'Position', [topL   topB   topW   topH]);
@@ -126,8 +170,8 @@ lgd = gobjects(0,1);
 lgdTxt = strings(0,1);
 contourOverlays = struct('Xg', {}, 'Yg', {}, 'density', {}, 'color', {});
 
-xEdges = linspace(xLim(1), xLim(2), nBinsX+1);
-yEdges = linspace(yLim(1), yLim(2), nBinsY+1);
+xPdfGrid = linspace(xLim(1), xLim(2), nPdfGridX);
+yPdfGrid = linspace(yLim(1), yLim(2), nPdfGridY);
 
 % --- Draw wall region if ROI data provided ---
 hasROI = isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData);
@@ -138,7 +182,7 @@ end
 
 for j = 1:nReCases
     ci = idxRe(j);
-    xy = allLoc.inception2x_xy{ci};
+    xy = allLoc.(locationField){ci};
     if isempty(xy), continue; end
 
     % Filter out points in unwanted track area
@@ -187,16 +231,13 @@ for j = 1:nReCases
         contourOverlays(end).color = cmap(j,:);
     end
 
-    % Marginal histograms
-    nxCounts = histcounts(xPts, xEdges);
-    nyCounts = histcounts(yPts, yEdges);
-    xCenters = (xEdges(1:end-1) + xEdges(2:end)) / 2;
-    yCenters = (yEdges(1:end-1) + yEdges(2:end)) / 2;
-
-    bar(axTop, xCenters, nxCounts, 1, ...
-        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
-    barh(axRight, yCenters, nyCounts, 1, ...
-        'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
+    % Marginal PDFs as smooth line curves for each case.
+    xPdf = kde1d_simple(xPts, xPdfGrid);
+    yPdf = kde1d_simple(yPts, yPdfGrid);
+    plot(axTop, xPdfGrid, xPdf, ...
+        'Color', cmap(j,:), 'LineWidth', pdfLineWidth, 'HandleVisibility', 'off');
+    plot(axRight, yPdf, yPdfGrid, ...
+        'Color', cmap(j,:), 'LineWidth', pdfLineWidth, 'HandleVisibility', 'off');
 end
 
 % Draw density/cluster contours last so they sit above every marker.
@@ -333,6 +374,27 @@ for i = 1:n
     density = density + exp(-0.5 * (dx.^2 + dy.^2));
 end
 density = density / (n * 2 * pi * hx * hy);
+end
+
+function density = kde1d_simple(x, xGrid)
+% Gaussian KDE evaluated on a 1D grid for marginal location PDFs.
+x = x(:);
+x = x(isfinite(x));
+xGrid = xGrid(:).';
+n = numel(x);
+
+if n == 0
+    density = nan(size(xGrid));
+    return;
+end
+
+h = silverman_bw(x);
+density = zeros(size(xGrid));
+for i = 1:n
+    dx = (xGrid - x(i)) / h;
+    density = density + exp(-0.5 * dx.^2);
+end
+density = density / (n * sqrt(2 * pi) * h);
 end
 
 function h = silverman_bw(x)
