@@ -11,15 +11,16 @@ This script mirrors the MATLAB breakup test as closely as practical:
 
 Data source order:
 1. breakup_analysis_by_case.mat from the latest plot data directory
-2. breakup_events.xlsx from Testing/test_outputs as a fallback
+2. breakup_events.csv from Testing/test_outputs as a fallback
 
 The fallback exists so the plot can still be generated on a Python install
-without SciPy, as long as the Excel export exists.
+without SciPy, as long as the CSV export exists.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import re
 import zipfile
@@ -44,7 +45,7 @@ except ImportError as exc:  # pragma: no cover - environment-dependent.
         "Optional extras:\n"
         "  py -3.13 -m pip install scipy seaborn\n"
         "SciPy is only needed if you want to load the MAT file instead of the\n"
-        "Excel fallback; seaborn is only used for a nicer style when available."
+        "CSV fallback; seaborn is only used for a nicer style when available."
     ) from exc
 
 try:  # Optional dependency used when the MAT file is available.
@@ -65,7 +66,7 @@ MATLAB_LINES = [
 ]
 
 DEFAULT_MAT_DIR = r"C:\Users\kbsanjayvasanth\Downloads\plot_data_mat"
-DEFAULT_XLSX = Path(__file__).resolve().parent / "test_outputs" / "breakup_events.xlsx"
+DEFAULT_CSV = Path(__file__).resolve().parent / "test_outputs" / "breakup_events.csv"
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "test_outputs" / "BreakupAnalysisMatplotlib"
 
 
@@ -93,9 +94,9 @@ def main() -> int:
         help="Directory containing breakup_analysis_by_case.mat",
     )
     parser.add_argument(
-        "--xlsx",
-        default=str(DEFAULT_XLSX),
-        help="Fallback breakup_events.xlsx file",
+        "--csv",
+        default=str(DEFAULT_CSV),
+        help="Fallback breakup_events.csv file",
     )
     parser.add_argument(
         "--out-dir",
@@ -155,11 +156,11 @@ def main() -> int:
     configure_matplotlib()
 
     mat_dir = resolve_existing_path(args.mat_dir)
-    xlsx_path = resolve_existing_path(args.xlsx)
+    csv_path = resolve_existing_path(args.csv)
     out_dir = Path(args.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cases, source_label = load_breakup_cases(mat_dir, xlsx_path)
+    cases, source_label = load_breakup_cases(mat_dir, csv_path)
     if not cases:
         raise RuntimeError("No breakup cases could be loaded.")
 
@@ -254,8 +255,8 @@ def resolve_existing_path(path_like: str) -> Path:
     return path
 
 
-def load_breakup_cases(mat_dir: Path, xlsx_path: Path) -> Tuple[List[BreakupCase], str]:
-    """Load breakup cases from the MAT file, falling back to the Excel export."""
+def load_breakup_cases(mat_dir: Path, csv_path: Path) -> Tuple[List[BreakupCase], str]:
+    """Load breakup cases from the MAT file, falling back to the CSV export."""
 
     mat_file = mat_dir / "breakup_analysis_by_case.mat"
     if mat_file.exists():
@@ -263,13 +264,36 @@ def load_breakup_cases(mat_dir: Path, xlsx_path: Path) -> Tuple[List[BreakupCase
         if cases is not None:
             return cases, str(mat_file)
 
-    if xlsx_path.exists():
-        cases = load_breakup_cases_from_xlsx(xlsx_path)
-        return cases, str(xlsx_path)
+    if csv_path.exists():
+        cases = load_breakup_cases_from_csv(csv_path)
+        return cases, str(csv_path)
 
     raise FileNotFoundError(
-        "Could not find breakup_analysis_by_case.mat or breakup_events.xlsx."
+        "Could not find breakup_analysis_by_case.mat or breakup_events.csv."
     )
+
+
+def load_breakup_cases_from_csv(csv_path: Path) -> List[BreakupCase]:
+    """Parse the combined CSV export produced by write_breakup_analysis_csv."""
+
+    grouped: Dict[Tuple[str, float, float], List[BreakupEvent]] = {}
+    with csv_path.open("r", newline="", encoding="utf-8-sig") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            case_name = str(row.get("Case", "")).strip() or "Case"
+            re_val = _safe_float(row.get("Re"))
+            k_val = _safe_float(row.get("kD"))
+            gamma = _safe_float(row.get("gamma"))
+            d_ratio = _safe_float(row.get("dRatio"))
+            if not (math.isfinite(gamma) and math.isfinite(d_ratio)):
+                continue
+            key = (case_name, re_val, k_val)
+            grouped.setdefault(key, []).append(BreakupEvent(gamma=gamma, dRatio=d_ratio))
+
+    cases: List[BreakupCase] = []
+    for (case_name, re_val, k_val), events in grouped.items():
+        cases.append(BreakupCase(case_name=case_name, Re=re_val, kD=k_val, events=events))
+    return cases
 
 
 def load_breakup_cases_from_mat(mat_file: Path) -> Optional[List[BreakupCase]]:

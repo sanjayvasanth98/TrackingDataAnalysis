@@ -16,7 +16,7 @@ hasPixelSize = isfield(allCollapse, 'pixelSize') && numel(allCollapse.pixelSize)
 
 headers = {'Case','Re','kD','dt_s','frameRate_Hz', ...
     'nTotal','nQualified','nTruncated','nROIRejected', ...
-    'ratePerFrame','ratePerSec', ...
+    'ratePerFrame','ratePerMs','ratePerSec', ...
     'peakArea_mean_px2','peakArea_median_px2','peakArea_std_px2'};
 if hasPixelSize
     headers = [headers, {'peakDiam_mean_um','peakDiam_median_um'}];
@@ -68,6 +68,7 @@ for ci = 1:nCases
         cd.nTruncated, ...
         cd.nROIRejected, ...
         cd.ratePerFrame, ...
+        get_collapse_rate_per_ms(cd), ...
         cd.ratePerSec, ...
         paMean, paMedian, paStd};
 
@@ -79,4 +80,14 @@ for ci = 1:nCases
 end
 
 T = cell2table(rows, 'VariableNames', headers);
+end
+
+
+function ratePerMs = get_collapse_rate_per_ms(cd)
+ratePerMs = NaN;
+if isfield(cd, 'ratePerMs') && ~isempty(cd.ratePerMs) && isfinite(cd.ratePerMs)
+    ratePerMs = cd.ratePerMs;
+elseif isfield(cd, 'ratePerSec') && ~isempty(cd.ratePerSec) && isfinite(cd.ratePerSec)
+    ratePerMs = cd.ratePerSec / 1000;
+end
 end

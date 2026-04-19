@@ -44,8 +44,8 @@ for theme = reshape(plotOpts.themes, 1, [])
                 'Color', col, 'LineWidth', 2.2);
 
             lgd(end+1,1)    = h; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('k/d=%.4g  (n=%d, %.3g/s)', ...
-                allCollapse.kD(ci), cd.nQualified, cd.ratePerSec); %#ok<AGROW>
+            lgdTxt(end+1,1) = sprintf('k/d=%.4g  (n=%d, %.3g/ms)', ...
+                allCollapse.kD(ci), cd.nQualified, get_collapse_rate_per_ms(cd)); %#ok<AGROW>
         end
 
         xlabel(ax, 'Time (ms)', 'Interpreter','latex');
@@ -119,5 +119,16 @@ if strcmp(theme,'poster')
 else
     leg.TextColor = [0 0 0];
     leg.Color     = 'none';
+end
+end
+
+
+% =========================================================================
+function ratePerMs = get_collapse_rate_per_ms(cd)
+ratePerMs = NaN;
+if isfield(cd, 'ratePerMs') && ~isempty(cd.ratePerMs) && isfinite(cd.ratePerMs)
+    ratePerMs = cd.ratePerMs;
+elseif isfield(cd, 'ratePerSec') && ~isempty(cd.ratePerSec) && isfinite(cd.ratePerSec)
+    ratePerMs = cd.ratePerSec / 1000;
 end
 end

@@ -32,8 +32,8 @@ if ~isfield(allCollapse, 'pixelSize')
 end
 
 %% Print per-case summary
-fprintf('%-12s  %6s  %8s  %10s  %10s  %12s  %12s\n', ...
-    'Case','Re','k/d','nTotal','nQualified','rate/frame','rate/s');
+fprintf('%-12s  %6s  %8s  %10s  %10s  %12s  %12s  %12s\n', ...
+    'Case','Re','k/d','nTotal','nQualified','rate/frame','rate/ms','rate/s');
 fprintf('%s\n', repmat('-',1,80));
 for ci = 1:nCases
     cd = allCollapse.data{ci};
@@ -41,13 +41,14 @@ for ci = 1:nCases
         fprintf('%-12s  (no data)\n', allCollapse.caseName{ci});
         continue;
     end
-    fprintf('%-12s  %6g  %8.4g  %10d  %10d  %12.4g  %12.4g\n', ...
+    fprintf('%-12s  %6g  %8.4g  %10d  %10d  %12.4g  %12.4g  %12.4g\n', ...
         allCollapse.caseName{ci}, ...
         allCollapse.Re(ci), ...
         allCollapse.kD(ci), ...
         cd.nTotal, ...
         cd.nQualified, ...
         cd.ratePerFrame, ...
+        get_collapse_rate_per_ms(cd), ...
         cd.ratePerSec);
     if cd.nQualified > 0
         pa = cd.peakArea_px2(:);
@@ -84,3 +85,14 @@ fprintf('Writing CSV...\n');
 write_collapse_analysis_csv(allCollapse, csvOut);
 
 fprintf('\nDone. Output in:\n  %s\n  %s\n', outDir, csvOut);
+
+
+%% ========================================================================
+function ratePerMs = get_collapse_rate_per_ms(cd)
+ratePerMs = NaN;
+if isfield(cd, 'ratePerMs') && ~isempty(cd.ratePerMs) && isfinite(cd.ratePerMs)
+    ratePerMs = cd.ratePerMs;
+elseif isfield(cd, 'ratePerSec') && ~isempty(cd.ratePerSec) && isfinite(cd.ratePerSec)
+    ratePerMs = cd.ratePerSec / 1000;
+end
+end

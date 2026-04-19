@@ -1,12 +1,26 @@
 %% test_lagrangian_acceleration_plots.m
-% Standalone synthetic test for Lagrangian acceleration publication plots.
-% This does not require TrackMate XML data; it exercises the plotting and
-% summary-table paths with realistic-shaped synthetic distributions.
+% Standalone test for Lagrangian acceleration publication plots.
+% Preferred use: point matDir or matFile to a completed main run and
+% regenerate plots from lagrangian_acceleration_by_case.mat. If no saved
+% .mat file is found, the script falls back to synthetic smoke-test data.
 
 clear; clc;
 
 repoRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(repoRoot);
+
+%% Paths
+% Option 1: point this to your plot_data_mat folder from a completed run.
+% Example:
+% matDir = "E:\March Re 90,000 inception data\Processed images\results\results 33 local\plot_data_mat";
+matDir = "";
+
+% Option 2: or point directly to the .mat file. If this is non-empty it
+% takes priority over matDir.
+% Valid files are either:
+%   resultsDir\plot_data_mat\lagrangian_acceleration_by_case.mat
+%   resultsDir\Figures_PNG_SVG\lagrangian acceleration\lagrangian_acceleration_by_case.mat
+matFile = "";
 
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'LagrangianAcceleration');
 if ~isfolder(outDir), mkdir(outDir); end
@@ -20,6 +34,70 @@ plotOpts.saveSVG = false;
 plotOpts.themes = "normal";
 plotOpts.keepFiguresOpen = true;
 
+%% Load saved result .mat if available; otherwise build synthetic demo data
+[allLagAccel, lagAccelOpts, dataLabel] = load_or_make_lagrangian_data(matDir, matFile);
+
+fprintf('Using %s Lagrangian acceleration data.\n', dataLabel);
+if ~isempty(allLagAccel)
+    fprintf('Loaded %d case(s).\n', numel(allLagAccel));
+    for i = 1:numel(allLagAccel)
+        nSamples = 0;
+        nTrigger = 0;
+        if isfield(allLagAccel(i), 'sampleAstar')
+            nSamples = numel(allLagAccel(i).sampleAstar);
+        end
+        if isfield(allLagAccel(i), 'activatedTriggerAstar')
+            nTrigger = numel(allLagAccel(i).activatedTriggerAstar);
+        end
+        fprintf('  %s: Re=%g, k/d=%.4g, all-frame samples=%d, trigger samples=%d\n', ...
+            string(allLagAccel(i).caseName), allLagAccel(i).Re, allLagAccel(i).kD, nSamples, nTrigger);
+    end
+end
+
+summaryTable = lagrangian_acceleration_to_table(allLagAccel);
+write_table_csv_compat(summaryTable, fullfile(outDir, 'lagrangian_acceleration_summary_test.csv'));
+save(fullfile(outDir, 'lagrangian_acceleration_test_input.mat'), 'allLagAccel', 'lagAccelOpts', 'dataLabel');
+
+fprintf('Generating Lagrangian acceleration plots...\n');
+plot_lagrangian_acceleration_analysis(allLagAccel, outDir, plotOpts, lagAccelOpts);
+fprintf('Done. Output in: %s\n', outDir);
+
+
+% =========================================================================
+function [allLagAccel, lagAccelOpts, dataLabel] = load_or_make_lagrangian_data(matDir, matFile)
+matDir = string(matDir);
+matFile = string(matFile);
+
+if strlength(strtrim(matFile)) == 0 && strlength(strtrim(matDir)) > 0
+    matFile = fullfile(matDir, "lagrangian_acceleration_by_case.mat");
+end
+
+if strlength(strtrim(matFile)) > 0 && isfile(matFile)
+    S = load(matFile);
+    if ~isfield(S, 'allLagAccel')
+        error('MAT file does not contain allLagAccel: %s', matFile);
+    end
+    allLagAccel = S.allLagAccel;
+    if isfield(S, 'lagAccelOpts')
+        lagAccelOpts = S.lagAccelOpts;
+    else
+        lagAccelOpts = default_lag_accel_plot_opts();
+    end
+    lagAccelOpts = complete_lag_accel_plot_opts(lagAccelOpts);
+    dataLabel = "saved .mat";
+    fprintf('Loaded: %s\n', matFile);
+    return;
+elseif strlength(strtrim(matFile)) > 0
+    warning('Requested Lagrangian acceleration .mat file not found: %s\nFalling back to synthetic data.', matFile);
+end
+
+[allLagAccel, lagAccelOpts] = make_synthetic_dataset();
+dataLabel = "synthetic fallback";
+end
+
+
+% =========================================================================
+function lagAccelOpts = default_lag_accel_plot_opts()
 lagAccelOpts = struct();
 lagAccelOpts.throatHeight_mm = 10;
 lagAccelOpts.xLimNorm = [0 0.5];
@@ -30,6 +108,24 @@ lagAccelOpts.heatmapMinSamplesPerBin = 2;
 lagAccelOpts.activationOverlayPerCase = 75;
 lagAccelOpts.randomSeed = 42;
 lagAccelOpts.minSpearmanN = 8;
+end
+
+
+% =========================================================================
+function lagAccelOpts = complete_lag_accel_plot_opts(lagAccelOpts)
+defaults = default_lag_accel_plot_opts();
+names = fieldnames(defaults);
+for i = 1:numel(names)
+    if ~isfield(lagAccelOpts, names{i}) || isempty(lagAccelOpts.(names{i}))
+        lagAccelOpts.(names{i}) = defaults.(names{i});
+    end
+end
+end
+
+
+% =========================================================================
+function [allLagAccel, lagAccelOpts] = make_synthetic_dataset()
+lagAccelOpts = default_lag_accel_plot_opts();
 
 rng(7, 'twister');
 caseSpecs = { ...
@@ -43,14 +139,7 @@ for i = 1:size(caseSpecs, 1)
     allLagAccel(i) = make_synthetic_case(caseSpecs{i,1}, caseSpecs{i,2}, caseSpecs{i,3}, ...
         caseSpecs{i,4}, caseSpecs{i,5}, lagAccelOpts);
 end
-
-summaryTable = lagrangian_acceleration_to_table(allLagAccel);
-write_table_csv_compat(summaryTable, fullfile(outDir, 'lagrangian_acceleration_summary_synthetic.csv'));
-save(fullfile(outDir, 'lagrangian_acceleration_synthetic.mat'), 'allLagAccel', 'lagAccelOpts');
-
-fprintf('Generating synthetic Lagrangian acceleration plots...\n');
-plot_lagrangian_acceleration_analysis(allLagAccel, outDir, plotOpts, lagAccelOpts);
-fprintf('Done. Output in: %s\n', outDir);
+end
 
 
 % =========================================================================

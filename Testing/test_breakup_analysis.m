@@ -2,7 +2,7 @@
 % Standalone test for the breakup analysis pipeline.
 % Loads saved .mat data from a completed main run and re-runs:
 %   - breakup plots (saved as square-format outputs only)
-%   - write_breakup_analysis_xlsx
+%   - write_breakup_analysis_csv
 %
 % Edit matDir below to point to the latest results run.
 
@@ -11,7 +11,7 @@ clear; clc;
 %% Paths — edit matDir to point to your latest results run
 matDir  = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
 outDir  = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'BreakupAnalysis');
-xlsxOut = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'breakup_events.xlsx');
+csvOut = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'breakup_events.csv');
 if ~isfolder(outDir), mkdir(outDir); end
 
 addpath(fileparts(fileparts(mfilename('fullpath'))));
@@ -93,11 +93,11 @@ for arThr = arThresholds
     save_square_only(gcf, outDir, "Breakup_gamma_beeswarm_kD_" + arTag + "_normal", plotOpts);
 end
 
-%% Write XLSX (full dataset)
-fprintf('Writing XLSX...\n');
-write_breakup_analysis_xlsx(allBreakup, xlsxOut);
+%% Write CSVs (full dataset + one CSV per case)
+fprintf('Writing breakup CSVs...\n');
+write_breakup_analysis_csv(allBreakup, csvOut);
 
-fprintf('\nDone. Output in:\n  %s\n  %s\n', outDir, xlsxOut);
+fprintf('\nDone. Output in:\n  %s\n  %s\n', outDir, csvOut);
 
 
 %% ========================================================================

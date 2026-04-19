@@ -197,13 +197,14 @@ end
 % ---- Rate summaries -----------------------------------------------------
 ratePerFrame = nQualified / max(nFrames, 1);
 ratePerSec   = ratePerFrame / max(dt, eps);
+ratePerMs    = ratePerSec / 1000;
 
 % ---- FFT ----------------------------------------------------------------
 [fftFreq_Hz, fftPower, domFreqs_Hz, domFreqPowers] = ...
     compute_collapse_fft(collapseCount, dt, opts.fftNDomFreqs);
 
-fprintf('  Collapse: %d qualified | %d truncated | %d ROI-rejected | %.4g/frame | %.4g/s\n', ...
-    nQualified, nTruncated, nROIRejected, ratePerFrame, ratePerSec);
+fprintf('  Collapse: %d qualified | %d truncated | %d ROI-rejected | %.4g/frame | %.4g/ms (%.4g/s)\n', ...
+    nQualified, nTruncated, nROIRejected, ratePerFrame, ratePerMs, ratePerSec);
 
 % ---- Pack output --------------------------------------------------------
 collapseData.collapseFrame   = cfFrame;
@@ -222,6 +223,7 @@ collapseData.nTruncated      = nTruncated;
 collapseData.nROIRejected    = nROIRejected;
 collapseData.ratePerFrame    = ratePerFrame;
 collapseData.ratePerSec      = ratePerSec;
+collapseData.ratePerMs       = ratePerMs;
 collapseData.dt              = dt;
 collapseData.fftFreq_Hz      = fftFreq_Hz;
 collapseData.fftPower        = fftPower;

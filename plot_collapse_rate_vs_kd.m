@@ -1,7 +1,7 @@
 function plot_collapse_rate_vs_kd(allCollapse, figDir, plotOpts)
-%PLOT_COLLAPSE_RATE_VS_KD  Collapse rate (events/s) vs k/d for all cases.
+%PLOT_COLLAPSE_RATE_VS_KD  Collapse event frequency vs k/d for all cases.
 %
-%   One marker per case.  Y-axis: collapse rate in events per second.
+%   One marker per case.  Y-axis: collapse rate in events per millisecond.
 %   An exponential fit (log-linear in k/d) is overlaid when >= 2 valid cases.
 %   Mirrors the style of plot_void_fraction_vs_kd.
 
@@ -15,14 +15,29 @@ if nCases == 0
     return;
 end
 
-% Collect valid collapse rates
-kD_all   = allCollapse.kD(:);
-Re_all   = allCollapse.Re(:);
-rate_all = nan(nCases, 1);
+% Collect valid collapse rates.  The analysis stores ratePerSec for
+% backward compatibility, but per millisecond is the clearer display unit
+% for the high-speed recordings used here.
+kD_all         = allCollapse.kD(:);
+Re_all         = allCollapse.Re(:);
+ratePerFrame   = nan(nCases, 1);
+ratePerSec_all = nan(nCases, 1);
+rate_all       = nan(nCases, 1);
 for ci = 1:nCases
     d = allCollapse.data{ci};
-    if ~isempty(d) && isfield(d,'ratePerSec') && isfinite(d.ratePerSec)
-        rate_all(ci) = d.ratePerSec;
+    if isempty(d)
+        continue;
+    end
+    if isfield(d,'ratePerFrame') && ~isempty(d.ratePerFrame) && isfinite(d.ratePerFrame)
+        ratePerFrame(ci) = d.ratePerFrame;
+    end
+    if isfield(d,'ratePerSec') && ~isempty(d.ratePerSec) && isfinite(d.ratePerSec)
+        ratePerSec_all(ci) = d.ratePerSec;
+    end
+    if isfield(d,'ratePerMs') && ~isempty(d.ratePerMs) && isfinite(d.ratePerMs)
+        rate_all(ci) = d.ratePerMs;
+    elseif isfinite(ratePerSec_all(ci))
+        rate_all(ci) = ratePerSec_all(ci) / 1000;
     end
 end
 
@@ -31,6 +46,38 @@ if ~any(valid)
     warning('plot_collapse_rate_vs_kd: no cases with finite positive collapse rate. Skipping.');
     return;
 end
+
+ReVals = unique(Re_all(valid));
+fitByRe = repmat(struct('Re', NaN, 'nPoints', 0, ...
+    'slopeLog10PerKD', NaN, 'interceptLog10', NaN), numel(ReVals), 1);
+for r = 1:numel(ReVals)
+    Rei = ReVals(r);
+    mask = valid & Re_all == Rei;
+    kD_v = kD_all(mask);
+    rt_v = rate_all(mask);
+    fitByRe(r).Re = Rei;
+    fitByRe(r).nPoints = numel(kD_v);
+    if numel(kD_v) >= 2
+        p = polyfit(kD_v, log10(rt_v), 1);
+        fitByRe(r).slopeLog10PerKD = p(1);
+        fitByRe(r).interceptLog10 = p(2);
+    end
+end
+
+collapseRatePlotData = struct();
+collapseRatePlotData.caseName = allCollapse.caseName(:);
+collapseRatePlotData.Re = Re_all;
+collapseRatePlotData.kD = kD_all;
+collapseRatePlotData.ratePerFrame = ratePerFrame;
+collapseRatePlotData.ratePerMs = rate_all;
+collapseRatePlotData.ratePerSec = ratePerSec_all;
+collapseRatePlotData.valid = valid;
+collapseRatePlotData.ylabel = 'Collapse rate \dot{N}_c (ms^{-1})';
+collapseRatePlotData.description = ...
+    'Collapse event frequency per millisecond; ratePerMs = ratePerSec / 1000.';
+collapseRatePlotData.fitByRe = fitByRe;
+if ~isfolder(figDir), mkdir(figDir); end
+save(fullfile(figDir, "CollapseRate_vs_kD_plot_data.mat"), 'collapseRatePlotData');
 
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
@@ -41,7 +88,6 @@ for theme = reshape(plotOpts.themes, 1, [])
     lgd    = gobjects(0,1);
     lgdTxt = strings(0,1);
 
-    ReVals = unique(Re_all(valid));
     cmap = lines(max(numel(ReVals), 1));
     markerStyles = {'o', 's', '^', 'd', 'v', '>', '<', 'p', 'h'};
 
@@ -76,7 +122,7 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
 
     xlabel(ax, '$k/d$', 'Interpreter','latex');
-    ylabel(ax, 'Collapse rate $\dot{N}_c\;(\mathrm{s}^{-1})$', 'Interpreter','latex');
+    ylabel(ax, 'Collapse rate $\dot{N}_c\;(\mathrm{ms}^{-1})$', 'Interpreter','latex');
     title(ax,  '');
     set(ax, 'YScale','linear', 'FontName', fontName);
     grid(ax, 'off');

@@ -239,6 +239,28 @@ lagAccelOpts.makeStationarySanityCheck = true;
 lagAccelOpts.stationaryMaxNetDisplacement_px = 2;
 lagAccelOpts.stationaryMaxPathLength_px = 5;
 
+%% ---- Proximity activation / neighbor-response options ------------------
+proximityActivationOpts = struct();
+proximityActivationOpts.maxGamma = 20; % main interaction-zone limit, d/Rmax
+proximityActivationOpts.extendedMaxGamma = 40; % saved/plotted supplemental range
+proximityActivationOpts.gammaBins = [0 2 5 10 20 40];
+proximityActivationOpts.similarSizeRatioRange = [0.5 2.0]; % neighbor R0 / primary R0
+proximityActivationOpts.baselineFrames = 5;
+proximityActivationOpts.postCollapseFrames = 5;
+proximityActivationOpts.secondaryStartLagFrames = 1;
+proximityActivationOpts.secondaryPostCollapseFrames = 5;
+proximityActivationOpts.referenceFrameTolerance = 2;
+proximityActivationOpts.minNeighborFramesInWindow = 3;
+proximityActivationOpts.minCorrelationFrames = 5;
+proximityActivationOpts.smoothingWindowFrames = 5;
+proximityActivationOpts.smoothingPolyOrder = 2;
+proximityActivationOpts.maxCrossCorrelationLagFrames = 5;
+proximityActivationOpts.useOnlyActivatedPrimaryCollapses = true;
+proximityActivationOpts.requireBasicValidNeighbors = true;
+proximityActivationOpts.requireNeighborBaselineBeforePeak = true;
+proximityActivationOpts.excludeAlreadyActivatedNeighbors = true;
+proximityActivationOpts.randomSeed = 42;
+
 %% ---------------- DEFINE CASES (ONE OR MULTIPLE RE) ----------------
 % Required fields per case:
 %   name, Re, kD, xmlFile, pixelSize, dt
@@ -446,6 +468,7 @@ allGrowthCollapse.U_m_s = nan(0,1);
 allGrowthCollapse.data = cell(0,1);
 
 allLagAccel = [];
+allProximityActivation = [];
 
 allVoidFrac = struct();
 allVoidFrac.caseName = {};
@@ -558,6 +581,10 @@ for i = 1:numel(cases)
         out, metrics, collapseResult, cases(i), collapseRecirculationOpts);
     allCollapseRecirculation(end+1,1) = struct('caseName', string(cases(i).name), ...
         'Re', cases(i).Re, 'kD', cases(i).kD, 'data', collapseRecirculationResult);
+
+    proximityActivationResult = analyze_proximity_activation( ...
+        outChunks, xmlFiles_i, cases(i), qcOpts, flowOpts, activationOpts, collapseOpts, proximityActivationOpts);
+    allProximityActivation(end+1,1) = proximityActivationResult; %#ok<AGROW>
 
     % Growth/collapse axial length-rate analysis
     growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
@@ -708,6 +735,7 @@ save(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');
 save(fullfile(matDir, "collapse_recirculation_by_case.mat"), 'allCollapseRecirculation');
 save(fullfile(matDir, "growth_collapse_rate_by_case.mat"), 'allGrowthCollapse');
 save(fullfile(matDir, "lagrangian_acceleration_by_case.mat"), 'allLagAccel', 'lagAccelOpts', '-v7.3');
+save(fullfile(matDir, "proximity_activation_by_case.mat"), 'allProximityActivation', 'proximityActivationOpts', '-v7.3');
 save(fullfile(matDir, "void_fraction_by_case.mat"), 'allVoidFrac');
 % breakup_analysis_by_case.mat saved later with per-AR-threshold variants
 normParams = struct('U_throat_ms', 13.32, 'H_throat_m', 10e-3, ...
@@ -724,6 +752,28 @@ lagAccelSummaryRows = lagrangian_acceleration_to_table(allLagAccel);
 write_table_csv_compat(lagAccelSummaryRows, fullfile(lagAccelFigDir, "lagrangian_acceleration_summary.csv"));
 save(fullfile(lagAccelFigDir, "lagrangian_acceleration_by_case.mat"), 'allLagAccel', 'lagAccelOpts', '-v7.3');
 plot_lagrangian_acceleration_analysis(allLagAccel, lagAccelFigDir, plotOpts, lagAccelOpts);
+
+%% ---------------- PROXIMITY ACTIVATION / NEIGHBOR RESPONSE --------------
+proximityFigDir = fullfile(figDir, "Proximity activation");
+if ~isfolder(proximityFigDir), mkdir(proximityFigDir); end
+[proximityPairRows, proximityEventRows, proximityBinnedRows, proximitySummaryRows] = ...
+    proximity_activation_to_tables(allProximityActivation);
+if ~isempty(proximityPairRows) && height(proximityPairRows) > 0
+    write_table_csv_compat(proximityPairRows, fullfile(proximityFigDir, "proximity_activation_pairs.csv"));
+end
+if ~isempty(proximityEventRows) && height(proximityEventRows) > 0
+    write_table_csv_compat(proximityEventRows, fullfile(proximityFigDir, "proximity_activation_events.csv"));
+end
+if ~isempty(proximityBinnedRows) && height(proximityBinnedRows) > 0
+    write_table_csv_compat(proximityBinnedRows, fullfile(proximityFigDir, "proximity_activation_binned_stats.csv"));
+end
+if ~isempty(proximitySummaryRows) && height(proximitySummaryRows) > 0
+    write_table_csv_compat(proximitySummaryRows, fullfile(proximityFigDir, "proximity_activation_summary.csv"));
+end
+save(fullfile(proximityFigDir, "proximity_activation_by_case.mat"), ...
+    'allProximityActivation', 'proximityActivationOpts', ...
+    'proximityPairRows', 'proximityEventRows', 'proximityBinnedRows', 'proximitySummaryRows', '-v7.3');
+plot_proximity_activation_analysis(allProximityActivation, proximityFigDir, plotOpts, proximityActivationOpts);
 
 %% ---------------- PLOT 1: A/I vs k/d (per Re) ----------------
 fitTxtFile = fullfile(resultsDir, "fit_AI_vs_kD_by_Re.txt");
@@ -757,7 +807,7 @@ plot_upstream_size_distribution_by_re(allSize, distFigOutDir, binSize_phys, plot
 collapseFigDir = fullfile(figDir, "CollapseAnalysis");
 if ~isfolder(collapseFigDir), mkdir(collapseFigDir); end
 plot_collapse_rate_vs_frame(allCollapse, collapseFigDir, plotOpts);
-plot_collapse_rate_vs_kd(allCollapse, figDir, plotOpts);
+plot_collapse_rate_vs_kd(allCollapse, collapseFigDir, plotOpts);
 plot_collapse_size_distribution(allCollapse, collapseFigDir, plotOpts);
 write_collapse_analysis_csv(allCollapse, fullfile(resultsDir, "collapse_analysis.csv"));
 
@@ -776,7 +826,7 @@ if ~isfolder(breakupFigDir), mkdir(breakupFigDir); end
 % Save the full breakup dataset. Plots are split by Re when multiple
 % Reynolds numbers are present, so identical k/d values do not pool.
 save(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');
-write_breakup_analysis_xlsx(allBreakup, fullfile(resultsDir, "breakup_events.xlsx"));
+write_breakup_analysis_csv(allBreakup, fullfile(resultsDir, "breakup_events.csv"));
 plot_breakup_analysis_by_re(allBreakup, breakupFigDir, plotOpts, matDir, breakupOpts.arThresholds);
 
 %% ================ INDEPENDENT-SAMPLE CONVERGENCE RESULTS ================
