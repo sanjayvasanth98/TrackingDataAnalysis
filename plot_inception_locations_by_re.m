@@ -124,6 +124,7 @@ hold(axRight, 'on');
 
 lgd = gobjects(0,1);
 lgdTxt = strings(0,1);
+contourOverlays = struct('Xg', {}, 'Yg', {}, 'density', {}, 'color', {});
 
 xEdges = linspace(xLim(1), xLim(2), nBinsX+1);
 yEdges = linspace(yLim(1), yLim(2), nBinsY+1);
@@ -180,8 +181,10 @@ for j = 1:nReCases
         yGrid = linspace(yLim(1), yLim(2), nGrid);
         [Xg, Yg] = meshgrid(xGrid, yGrid);
         density = kde2d_simple(xPts, yPts, Xg, Yg);
-        contour(axMain, Xg, Yg, density, 1, ...
-            'LineColor', cmap(j,:), 'LineWidth', 2.0);
+        contourOverlays(end+1).Xg = Xg; %#ok<AGROW>
+        contourOverlays(end).Yg = Yg;
+        contourOverlays(end).density = density;
+        contourOverlays(end).color = cmap(j,:);
     end
 
     % Marginal histograms
@@ -194,6 +197,15 @@ for j = 1:nReCases
         'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
     barh(axRight, yCenters, nyCounts, 1, ...
         'FaceColor', cmap(j,:), 'FaceAlpha', histAlpha, 'EdgeColor', cmap(j,:), 'LineWidth', 0.5);
+end
+
+% Draw density/cluster contours last so they sit above every marker.
+for ci = 1:numel(contourOverlays)
+    contour(axMain, contourOverlays(ci).Xg, contourOverlays(ci).Yg, ...
+        contourOverlays(ci).density, 1, ...
+        'LineColor', contourOverlays(ci).color, ...
+        'LineWidth', 2.0, ...
+        'HandleVisibility', 'off');
 end
 
 % Main axes styling

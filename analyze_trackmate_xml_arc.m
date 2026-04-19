@@ -25,6 +25,7 @@ if opts.verbose
 end
 
 doc = read_trackmate_xml_document(xmlFile);
+imageMeta = parse_image_data_meta(doc);
 
 %% -------------------------
 %  Parse Tracks + Edges
@@ -298,7 +299,7 @@ if isempty(edges) || height(edges) == 0
     out.edges = edges;
     out.trajectories = struct('TRACK_ID',{},'spotIds',{},'frame',{},'t',{},'x',{},'y',{}, ...
         'x_phys',{},'y_phys',{},'speed_phys',{},'ds_phys',{},'dt',{});
-    out.meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots);
+    out.meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots, imageMeta);
     return;
 end
 
@@ -427,16 +428,16 @@ out.spots = spots;
 out.tracks = tracks;
 out.edges = edges;
 out.trajectories = traj;
-out.meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots);
+out.meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots, imageMeta);
 
 end
 
 %% -------------------------
 % Helpers
 % --------------------------
-function meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots)
+function meta = build_parser_meta(opts, useFilteredTrackSet, hasFilteredTracks, filteredTrackIds, nTracksAll, tracks, edges, spots, imageMeta)
 meta = struct();
-meta.parserVersion = 3;
+meta.parserVersion = 4;
 meta.parseTrackedSpotsOnly = logical(opts.parseTrackedSpotsOnly);
 meta.parseFilteredTracksOnly = logical(useFilteredTrackSet);
 meta.hasFilteredTracks = logical(hasFilteredTracks);
@@ -445,6 +446,43 @@ meta.nTracksAll = nTracksAll;
 meta.nTracksParsed = height(tracks);
 meta.nEdgesParsed = height(edges);
 meta.nSpotsParsed = height(spots);
+meta.imageWidth_px = imageMeta.width;
+meta.imageHeight_px = imageMeta.height;
+meta.imageNSlices = imageMeta.nSlices;
+meta.imageNFrames = imageMeta.nFrames;
+meta.imagePixelWidth = imageMeta.pixelWidth;
+meta.imagePixelHeight = imageMeta.pixelHeight;
+meta.imageTimeInterval = imageMeta.timeInterval;
+end
+
+function imageMeta = parse_image_data_meta(doc)
+imageMeta = struct('width', NaN, 'height', NaN, 'nSlices', NaN, 'nFrames', NaN, ...
+    'pixelWidth', NaN, 'pixelHeight', NaN, 'timeInterval', NaN);
+
+nodes = doc.getElementsByTagName('ImageData');
+if nodes.getLength < 1
+    return;
+end
+
+n = nodes.item(0);
+imageMeta.width = first_finite_attr(n, {'width', 'WIDTH'});
+imageMeta.height = first_finite_attr(n, {'height', 'HEIGHT'});
+imageMeta.nSlices = first_finite_attr(n, {'nslices', 'NSLICES', 'nSlices'});
+imageMeta.nFrames = first_finite_attr(n, {'nframes', 'NFRAMES', 'nFrames'});
+imageMeta.pixelWidth = first_finite_attr(n, {'pixelwidth', 'pixelWidth', 'PIXEL_WIDTH'});
+imageMeta.pixelHeight = first_finite_attr(n, {'pixelheight', 'pixelHeight', 'PIXEL_HEIGHT'});
+imageMeta.timeInterval = first_finite_attr(n, {'timeinterval', 'timeInterval', 'TIME_INTERVAL'});
+end
+
+function val = first_finite_attr(node, attrNames)
+val = NaN;
+for ai = 1:numel(attrNames)
+    v = getAttrNum(node, attrNames{ai});
+    if isfinite(v)
+        val = v;
+        return;
+    end
+end
 end
 
 function [trackIds, hasFilteredTracks] = parse_filtered_track_ids(doc)

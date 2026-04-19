@@ -3,10 +3,10 @@ function outMerged = merge_parsed_outputs(outs, xmlFiles)
 %
 %   outMerged = merge_parsed_outputs(outs, xmlFiles)
 %
-%   Merges the parsed outputs returned by analyze_trackmate_xml_arc so the
-%   combined case behaves like one longer sequential record. Spot and track
-%   identifiers are offset to avoid collisions across chunks, while frame
-%   and time axes are offset so later chunks follow earlier ones.
+%   Merges parsed outputs returned by analyze_trackmate_xml_arc without
+%   linking tracks across XML files. Spot and track identifiers are offset
+%   to avoid collisions, while frame and time axes are offset only so pooled
+%   framewise counting can use one non-overlapping index.
 
 if nargin < 1 || isempty(outs)
     error('merge_parsed_outputs:MissingInput', ...
@@ -54,7 +54,7 @@ for c = 1:nChunks
     outChunk = outs{c};
     if ~isstruct(outChunk)
         error('merge_parsed_outputs:InvalidChunk', ...
-            'Chunk %d is not a parsed output struct.', c);
+            'Input %d is not a parsed output struct.', c);
     end
 
     spots = outChunk.spots;
