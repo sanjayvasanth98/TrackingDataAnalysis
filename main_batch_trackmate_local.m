@@ -68,7 +68,9 @@ caseSelection = "all"; % <---edit
 % written under resultsDir/results individual/<caseName>/.
 convergenceFrameStep = 2000; % <---edit: cumulative frame interval for convergence CSVs
 
-% Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
+% Cache parsed outputs (.mat) to avoid re-parsing XML on reruns.
+% Each parsed XML is also checkpointed immediately under
+% resultsDir/xml_parse_checkpoints/ so failed long runs can resume.
 useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
@@ -324,6 +326,8 @@ cases(6).pixelSize = 0.00375009375;
 cases(6).dt        = 1/102247;
 cases(6).videoFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\P10S20 2000.avi";
 
+validate_batch_case_definitions(cases);
+
 for ci = 1:numel(cases)
     cases(ci).diagnosticTrackIds = []; % empty = all parsed tracks in this case; otherwise list TRACK_IDs
     if ~isfield(cases, 'videoFile') || isempty(cases(ci).videoFile) || ...
@@ -499,7 +503,7 @@ for i = 1:numel(cases)
 
     [xmlFiles_i, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
         cases(i), maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
-        cacheDB, cacheUpdated, cachePolicyTag, ~isArc);
+        cacheDB, cacheUpdated, cachePolicyTag, cacheFile, ~isArc);
     nXmlChunks_i = numel(xmlFiles_i);
     hasMultipleXmlSamples = nXmlChunks_i > 1;
     if hasMultipleXmlSamples
@@ -566,7 +570,11 @@ for i = 1:numel(cases)
 
     % Lagrangian acceleration / pressure-gradient proxy analysis
     lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
-    allLagAccel(end+1,1) = lagAccelResult; %#ok<AGROW>
+    if isempty(allLagAccel)
+        allLagAccel = lagAccelResult;
+    else
+        allLagAccel(end+1,1) = lagAccelResult; %#ok<AGROW>
+    end
 
     % Collapse frequency analysis (all tracks, no direction filter)
     collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
@@ -584,7 +592,11 @@ for i = 1:numel(cases)
 
     proximityActivationResult = analyze_proximity_activation( ...
         outChunks, xmlFiles_i, cases(i), qcOpts, flowOpts, activationOpts, collapseOpts, proximityActivationOpts);
-    allProximityActivation(end+1,1) = proximityActivationResult; %#ok<AGROW>
+    if isempty(allProximityActivation)
+        allProximityActivation = proximityActivationResult;
+    else
+        allProximityActivation(end+1,1) = proximityActivationResult; %#ok<AGROW>
+    end
 
     % Growth/collapse axial length-rate analysis
     growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
@@ -611,7 +623,8 @@ for i = 1:numel(cases)
             'roiData',                roiArg, ...
             'aspectRatioMin',         breakupOpts.aspectRatioMin, ...
             'childAreaMin_px2',       breakupOpts.childAreaMin_px2, ...
-            'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm);
+            'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm, ...
+            'maxTracks',              maxTracksToParse);
     end
     bkEvents = combine_breakup_event_chunks(breakupEventsByChunk, chunkInfo);
     allBreakup(end+1,1) = struct('caseName', string(cases(i).name), ...
@@ -1496,7 +1509,7 @@ end
 
 function [xmlFiles, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
     caseDef, maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
-    cacheDB, cacheUpdated, cachePolicyTag, verboseFlag)
+    cacheDB, cacheUpdated, cachePolicyTag, cacheFile, verboseFlag)
 xmlFiles = detect_chunk_xml_files(caseDef.xmlFile);
 nXml = numel(xmlFiles);
 outChunks = cell(nXml, 1);
@@ -1522,6 +1535,23 @@ for c = 1:nXml
         end
     end
 
+    if useMatCache && ~forceReparse && ~useCacheEntry
+        [okCheckpoint, checkpointOut, checkpointFile] = trackmate_xml_cache_checkpoint( ...
+            'load', cacheFile, caseKey, parserOpts);
+        if okCheckpoint
+            outChunks{c} = checkpointOut;
+            useCacheEntry = true;
+            fprintf("  Using XML checkpoint for sample %d/%d: %s\n", c, nXml, checkpointFile);
+            if isempty(idxCache)
+                cacheDB.key(end+1,1) = caseKey;
+                cacheDB.out{end+1,1} = outChunks{c};
+            else
+                cacheDB.out{idxCache,1} = outChunks{c};
+            end
+            cacheUpdated = true;
+        end
+    end
+
     if ~useCacheEntry
         fprintf("  Parsing XML sample %d/%d: %s\n", c, nXml, xmlFiles{c});
         outChunks{c} = analyze_trackmate_xml_arc( ...
@@ -1543,6 +1573,11 @@ for c = 1:nXml
                 cacheDB.out{idxCache,1} = outChunks{c};
             end
             cacheUpdated = true;
+            [okCheckpoint, checkpointFile] = trackmate_xml_cache_checkpoint( ...
+                'save', cacheFile, caseKey, outChunks{c});
+            if okCheckpoint
+                fprintf("  Saved XML checkpoint after sample %d/%d: %s\n", c, nXml, checkpointFile);
+            end
         end
     end
 end
@@ -1804,5 +1839,40 @@ if isfolder(userCodeRoot)
     fprintf('Headless mode: added user MATLAB root:\n  %s\n', userCodeRoot);
 elseif ~loadedPathdef
     warning('Headless mode: user MATLAB root not found: %s', userCodeRoot);
+end
+end
+
+function validate_batch_case_definitions(cases)
+requiredFields = {'name', 'Re', 'kD', 'xmlFile', 'pixelSize', 'dt'};
+if isempty(cases)
+    error('No cases are defined.');
+end
+
+for fi = 1:numel(requiredFields)
+    if ~isfield(cases, requiredFields{fi})
+        error('Case definitions are missing required field: %s', requiredFields{fi});
+    end
+end
+
+for ci = 1:numel(cases)
+    if strlength(string(cases(ci).name)) < 1
+        error('Case %d has an empty name.', ci);
+    end
+    if ~(isnumeric(cases(ci).Re) && isscalar(cases(ci).Re) && isfinite(cases(ci).Re))
+        error('Case %s has invalid Re.', char(string(cases(ci).name)));
+    end
+    if ~(isnumeric(cases(ci).kD) && isscalar(cases(ci).kD) && isfinite(cases(ci).kD))
+        error('Case %s has invalid kD.', char(string(cases(ci).name)));
+    end
+    if strlength(string(cases(ci).xmlFile)) < 1
+        error('Case %s has an empty xmlFile.', char(string(cases(ci).name)));
+    end
+    if ~(isnumeric(cases(ci).pixelSize) && isscalar(cases(ci).pixelSize) && ...
+            isfinite(cases(ci).pixelSize) && cases(ci).pixelSize > 0)
+        error('Case %s has invalid pixelSize.', char(string(cases(ci).name)));
+    end
+    if ~(isnumeric(cases(ci).dt) && isscalar(cases(ci).dt) && isfinite(cases(ci).dt) && cases(ci).dt > 0)
+        error('Case %s has invalid dt.', char(string(cases(ci).name)));
+    end
 end
 end

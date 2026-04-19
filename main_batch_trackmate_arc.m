@@ -65,7 +65,9 @@ caseSelection = "all"; % <---edit
 % written under resultsDir/results individual/<caseName>/.
 convergenceFrameStep = 2000; % <---edit: cumulative frame interval for convergence CSVs
 
-% Cache parsed outputs (.mat) to avoid re-parsing XML on reruns
+% Cache parsed outputs (.mat) to avoid re-parsing XML on reruns.
+% Each parsed XML is also checkpointed immediately under
+% resultsDir/xml_parse_checkpoints/ so failed long ARC jobs can resume.
 
 useMatCache = true; % <---edit
 forceReparse = false; % <---edit
@@ -494,7 +496,7 @@ for i = 1:numel(cases)
 
     [xmlFiles_i, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
         cases(i), maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
-        cacheDB, cacheUpdated, cachePolicyTag, ~isArc);
+        cacheDB, cacheUpdated, cachePolicyTag, cacheFile, ~isArc);
     nXmlChunks_i = numel(xmlFiles_i);
     hasMultipleXmlSamples = nXmlChunks_i > 1;
     if hasMultipleXmlSamples
@@ -541,7 +543,11 @@ for i = 1:numel(cases)
 
     % Lagrangian acceleration / pressure-gradient proxy analysis
     lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
-    allLagAccel(end+1,1) = lagAccelResult; %#ok<AGROW>
+    if isempty(allLagAccel)
+        allLagAccel = lagAccelResult;
+    else
+        allLagAccel(end+1,1) = lagAccelResult; %#ok<AGROW>
+    end
 
     % Collapse frequency analysis (all tracks, no direction filter)
     collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
@@ -559,7 +565,11 @@ for i = 1:numel(cases)
 
     proximityActivationResult = analyze_proximity_activation( ...
         outChunks, xmlFiles_i, cases(i), qcOpts, flowOpts, activationOpts, collapseOpts, proximityActivationOpts);
-    allProximityActivation(end+1,1) = proximityActivationResult; %#ok<AGROW>
+    if isempty(allProximityActivation)
+        allProximityActivation = proximityActivationResult;
+    else
+        allProximityActivation(end+1,1) = proximityActivationResult; %#ok<AGROW>
+    end
 
     growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
     allGrowthCollapse.caseName(end+1,1) = string(cases(i).name);
@@ -585,7 +595,8 @@ for i = 1:numel(cases)
             'roiData',                roiArg, ...
             'aspectRatioMin',         breakupOpts.aspectRatioMin, ...
             'childAreaMin_px2',       breakupOpts.childAreaMin_px2, ...
-            'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm);
+            'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm, ...
+            'maxTracks',              maxTracksToParse);
     end
     bkEvents = combine_breakup_event_chunks(breakupEventsByChunk, chunkInfo);
     allBreakup(end+1,1) = struct('caseName', string(cases(i).name), ...
@@ -1437,7 +1448,7 @@ end
 
 function [xmlFiles, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
     caseDef, maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
-    cacheDB, cacheUpdated, cachePolicyTag, verboseFlag)
+    cacheDB, cacheUpdated, cachePolicyTag, cacheFile, verboseFlag)
 xmlFiles = detect_chunk_xml_files(caseDef.xmlFile);
 nXml = numel(xmlFiles);
 outChunks = cell(nXml, 1);
@@ -1463,6 +1474,23 @@ for c = 1:nXml
         end
     end
 
+    if useMatCache && ~forceReparse && ~useCacheEntry
+        [okCheckpoint, checkpointOut, checkpointFile] = trackmate_xml_cache_checkpoint( ...
+            'load', cacheFile, caseKey, parserOpts);
+        if okCheckpoint
+            outChunks{c} = checkpointOut;
+            useCacheEntry = true;
+            fprintf("  Using XML checkpoint for sample %d/%d: %s\n", c, nXml, checkpointFile);
+            if isempty(idxCache)
+                cacheDB.key(end+1,1) = caseKey;
+                cacheDB.out{end+1,1} = outChunks{c};
+            else
+                cacheDB.out{idxCache,1} = outChunks{c};
+            end
+            cacheUpdated = true;
+        end
+    end
+
     if ~useCacheEntry
         fprintf("  Parsing XML sample %d/%d: %s\n", c, nXml, xmlFiles{c});
         outChunks{c} = analyze_trackmate_xml_arc( ...
@@ -1484,6 +1512,11 @@ for c = 1:nXml
                 cacheDB.out{idxCache,1} = outChunks{c};
             end
             cacheUpdated = true;
+            [okCheckpoint, checkpointFile] = trackmate_xml_cache_checkpoint( ...
+                'save', cacheFile, caseKey, outChunks{c});
+            if okCheckpoint
+                fprintf("  Saved XML checkpoint after sample %d/%d: %s\n", c, nXml, checkpointFile);
+            end
         end
     end
 end

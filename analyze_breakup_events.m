@@ -34,12 +34,14 @@ addParameter(p, 'roiData',                 []);
 addParameter(p, 'aspectRatioMin',          4.0);
 addParameter(p, 'childAreaMin_px2',        100.0);
 addParameter(p, 'dRoughnessSpacing_mm',    0.384);
+addParameter(p, 'maxTracks',               Inf);
 parse(p, varargin{:});
 
 roiData    = p.Results.roiData;
 arMin      = p.Results.aspectRatioMin;
 childMin   = p.Results.childAreaMin_px2;
 dRough     = p.Results.dRoughnessSpacing_mm;
+maxTracks  = p.Results.maxTracks;
 
 % Pre-allocate output as empty struct array with correct fields.
 emptyEv = struct('gamma',[], 'dRatio',[], 'parentAR',[], ...
@@ -54,11 +56,6 @@ events = emptyEv([]);
 fprintf('  Parsing XML: %s\n', xmlFile);
 xDoc = xmlread(xmlFile);
 
-% ---- Build spot lookup (ID -> spot data) --------------------------------
-fprintf('  Building spot map...\n');
-spotMap = build_spot_map(xDoc);
-fprintf('  Loaded %d spots.\n', spotMap.Count);
-
 % ---- Walk tracks with splits --------------------------------------------
 allTracksEl = xDoc.getElementsByTagName('AllTracks');
 if allTracksEl.getLength == 0
@@ -67,11 +64,29 @@ if allTracksEl.getLength == 0
 end
 trackList = allTracksEl.item(0).getElementsByTagName('Track');
 nTracks = trackList.getLength;
+nTracksToInspect = nTracks;
+if isfinite(maxTracks)
+    nTracksToInspect = min(nTracks, max(0, floor(maxTracks)));
+end
+
+% ---- Build spot lookup (ID -> spot data) --------------------------------
+% In smoke-test mode, restrict the map to spots referenced by the inspected
+% tracks so the breakup pass follows the same small-track limit as the main
+% TrackMate parser.
+keepSpotIds = [];
+restrictSpotMap = false;
+if nTracksToInspect < nTracks
+    keepSpotIds = collect_track_spot_ids(trackList, nTracksToInspect);
+    restrictSpotMap = true;
+end
+fprintf('  Building spot map...\n');
+spotMap = build_spot_map(xDoc, keepSpotIds, restrictSpotMap);
+fprintf('  Loaded %d spots.\n', spotMap.Count);
 
 nSplitTracks = 0;
 nRawEvents   = 0;
 
-for ti = 0:nTracks-1
+for ti = 0:nTracksToInspect-1
     track = trackList.item(ti);
     nSplits = str2double(track.getAttribute('NUMBER_SPLITS'));
     if ~(isfinite(nSplits) && nSplits > 0), continue; end
@@ -163,9 +178,42 @@ end
 
 
 % =========================================================================
-function spotMap = build_spot_map(xDoc)
+function spotIds = collect_track_spot_ids(trackList, nTracksToInspect)
+spotIds = nan(0,1);
+for ti = 0:nTracksToInspect-1
+    track = trackList.item(ti);
+    edgeEls = track.getElementsByTagName('Edge');
+    for ei = 0:edgeEls.getLength-1
+        e = edgeEls.item(ei);
+        src = str2double(e.getAttribute('SPOT_SOURCE_ID'));
+        tgt = str2double(e.getAttribute('SPOT_TARGET_ID'));
+        if isfinite(src), spotIds(end+1,1) = src; end %#ok<AGROW>
+        if isfinite(tgt), spotIds(end+1,1) = tgt; end %#ok<AGROW>
+    end
+end
+spotIds = unique(spotIds(isfinite(spotIds)));
+end
+
+
+% =========================================================================
+function spotMap = build_spot_map(xDoc, keepSpotIds, restrictSpotMap)
 % Returns containers.Map: spot_ID (double) -> struct(x,y,area,aspectRatio,...)
 spotMap = containers.Map('KeyType', 'double', 'ValueType', 'any');
+if nargin < 2
+    keepSpotIds = [];
+end
+if nargin < 3
+    restrictSpotMap = false;
+end
+keepAll = ~restrictSpotMap;
+if ~keepAll
+    keepMap = containers.Map('KeyType', 'double', 'ValueType', 'logical');
+    for ii = 1:numel(keepSpotIds)
+        keepMap(double(keepSpotIds(ii))) = true;
+    end
+else
+    keepMap = containers.Map('KeyType', 'double', 'ValueType', 'logical');
+end
 
 allSpotsEl = xDoc.getElementsByTagName('AllSpots');
 if allSpotsEl.getLength == 0, return; end
@@ -177,6 +225,7 @@ for fi = 0:frames.getLength-1
         s  = spotEls.item(si);
         id = str2double(s.getAttribute('ID'));
         if isnan(id), continue; end
+        if ~keepAll && ~isKey(keepMap, id), continue; end
         sp.x           = str2double(s.getAttribute('POSITION_X'));
         sp.y           = str2double(s.getAttribute('POSITION_Y'));
         sp.frame       = str2double(s.getAttribute('FRAME'));
