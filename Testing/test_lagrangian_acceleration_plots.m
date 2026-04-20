@@ -13,7 +13,7 @@ addpath(repoRoot);
 % Option 1: point this to your plot_data_mat folder from a completed run.
 % Example:
 % matDir = "E:\March Re 90,000 inception data\Processed images\results\results 33 local\plot_data_mat";
-matDir = "";
+matDir = "E:\March Re 90,000 inception data\Processed images\results\results 34\plot_data_mat";
 
 % Option 2: or point directly to the .mat file. If this is non-empty it
 % takes priority over matDir.
@@ -21,6 +21,12 @@ matDir = "";
 %   resultsDir\plot_data_mat\lagrangian_acceleration_by_case.mat
 %   resultsDir\Figures_PNG_SVG\lagrangian acceleration\lagrangian_acceleration_by_case.mat
 matFile = "";
+
+% Optional: point this to the ROI_throat.mat used by the main batch run so
+% the heatmap test also shows the fixed-color wall overlay.
+% If this file is missing, the test creates a synthetic wall mask so the
+% plotting path is still exercised.
+roiFile = "E:\March Re 90,000 inception data\Processed images\results\2000 frames\Smooth variation 2000\ROI_throat.mat";
 
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'LagrangianAcceleration');
 if ~isfolder(outDir), mkdir(outDir); end
@@ -33,9 +39,25 @@ plotOpts.savePNG = true;
 plotOpts.saveSVG = false;
 plotOpts.themes = "normal";
 plotOpts.keepFiguresOpen = true;
+plotOpts.inceptionImageSize_px = [1280 320];
+plotOpts.lagrangianHeatmapImageSize_px = [1280 512];
+
+%% Plot selection
+% Set any of these to false when you only want to regenerate specific plots.
+makeAllFramePdfPlot = false;
+makeTriggerWindowPdfPlot = false;
+makePeakTriggerGrowthPlot = false;
+makeHeatmapPlots = true;
+makeSanityCheckPlots = false;
 
 %% Load saved result .mat if available; otherwise build synthetic demo data
 [allLagAccel, lagAccelOpts, dataLabel] = load_or_make_lagrangian_data(matDir, matFile);
+lagAccelOpts.makeAllFramePdfPlot = makeAllFramePdfPlot;
+lagAccelOpts.makeTriggerWindowPdfPlot = makeTriggerWindowPdfPlot;
+lagAccelOpts.makePeakTriggerGrowthPlot = makePeakTriggerGrowthPlot;
+lagAccelOpts.makeHeatmapPlots = makeHeatmapPlots;
+lagAccelOpts.makeSanityCheckPlots = makeSanityCheckPlots;
+plotOpts.roiData = load_or_make_lagrangian_roi(roiFile, allLagAccel, lagAccelOpts);
 
 fprintf('Using %s Lagrangian acceleration data.\n', dataLabel);
 if ~isempty(allLagAccel)
@@ -102,12 +124,23 @@ lagAccelOpts = struct();
 lagAccelOpts.throatHeight_mm = 10;
 lagAccelOpts.xLimNorm = [0 0.5];
 lagAccelOpts.yLimNorm = [0 0.12];
-lagAccelOpts.heatmapGridSize = [25 25];
+lagAccelOpts.makeAllFramePdfPlot = false;
+lagAccelOpts.makeTriggerWindowPdfPlot = false;
+lagAccelOpts.makePeakTriggerGrowthPlot = false;
+lagAccelOpts.makeHeatmapPlots = true;
+lagAccelOpts.makeSanityCheckPlots = false;
+lagAccelOpts.heatmapGridSize = [50 50]; % with square bins, 2nd value sets y-bin count; x-bin count is auto
 lagAccelOpts.heatmapStats = ["median", "p90"];
+lagAccelOpts.heatmapColormap = "sky";
+lagAccelOpts.heatmapPreserveSpatialAspect = true;
+lagAccelOpts.heatmapSquareBins = true;
 lagAccelOpts.heatmapMinSamplesPerBin = 2;
 lagAccelOpts.activationOverlayPerCase = 75;
 lagAccelOpts.randomSeed = 42;
 lagAccelOpts.minSpearmanN = 8;
+lagAccelOpts.maxSanityTracks = 250;
+lagAccelOpts.maxSanityTracksToPlot = 250;
+lagAccelOpts.imageSize_px = [1280 320];
 end
 
 
@@ -120,6 +153,103 @@ for i = 1:numel(names)
         lagAccelOpts.(names{i}) = defaults.(names{i});
     end
 end
+end
+
+
+% =========================================================================
+function roiData = load_or_make_lagrangian_roi(roiFile, allLagAccel, lagAccelOpts)
+roiFile = string(roiFile);
+pixelSize = infer_lagrangian_pixel_size(allLagAccel);
+
+if strlength(strtrim(roiFile)) > 0 && isfile(roiFile)
+    R = load(roiFile);
+    roiData = struct();
+    roiData.wallMask = extract_roi_mask(R, 'wallMask');
+    roiData.unwantedTrackMask = extract_roi_mask(R, 'unwantedTrackMask');
+    roiData.throat_xy_px = extract_roi_throat(R);
+    roiData.maskPixelSize = pixelSize;
+    fprintf('Loaded ROI wall overlay for heatmap test: %s\n', roiFile);
+    fprintf('  Wall mask: %d pixels\n', sum(roiData.wallMask(:)));
+    return;
+end
+
+roiData = make_synthetic_lagrangian_roi(pixelSize, lagAccelOpts);
+fprintf('ROI file not found for heatmap test; using synthetic wall overlay.\n');
+end
+
+
+% =========================================================================
+function pixelSize = infer_lagrangian_pixel_size(allLagAccel)
+pixelSize = 0.00375009375;
+if isempty(allLagAccel)
+    return;
+end
+
+vals = nan(0, 1);
+for i = 1:numel(allLagAccel)
+    if isfield(allLagAccel(i), 'pixelSize_mm') && isfinite(allLagAccel(i).pixelSize_mm) && allLagAccel(i).pixelSize_mm > 0
+        vals(end+1, 1) = allLagAccel(i).pixelSize_mm; %#ok<AGROW>
+    end
+end
+if ~isempty(vals)
+    pixelSize = median(vals);
+end
+end
+
+
+% =========================================================================
+function mask = extract_roi_mask(R, fieldName)
+mask = [];
+if isfield(R, fieldName)
+    mask = R.(fieldName);
+elseif isfield(R, 'ROI_throat') && isfield(R.ROI_throat, fieldName)
+    mask = R.ROI_throat.(fieldName);
+end
+
+if isempty(mask)
+    mask = false(320, 1400);
+end
+mask = logical(mask);
+end
+
+
+% =========================================================================
+function throat_xy_px = extract_roi_throat(R)
+throat_xy_px = [NaN NaN];
+if isfield(R, 'ROI_throat') && isfield(R.ROI_throat, 'throat_xy_px')
+    throat_xy_px = R.ROI_throat.throat_xy_px;
+elseif isfield(R, 'x_throat') && isfield(R, 'y_throat')
+    throat_xy_px = [R.x_throat R.y_throat];
+end
+end
+
+
+% =========================================================================
+function roiData = make_synthetic_lagrangian_roi(pixelSize, lagAccelOpts)
+if isfield(lagAccelOpts, 'imageSize_px') && numel(lagAccelOpts.imageSize_px) >= 2
+    nRows = max(32, round(lagAccelOpts.imageSize_px(2)));
+    nCols = max(32, round(lagAccelOpts.imageSize_px(1)));
+else
+    nRows = 320;
+    nCols = 1400;
+end
+
+wallMask = false(nRows, nCols);
+yExtent_mm = nRows * pixelSize;
+x = linspace(0, 1, nCols);
+surface_mm = 0.10 + 0.035 * sin(2*pi*x) + 0.018 * exp(-((x - 0.55) / 0.18).^2);
+surface_mm = max(0.04, min(0.22, surface_mm));
+topRows = round((yExtent_mm - surface_mm) ./ pixelSize);
+topRows = max(1, min(nRows, topRows));
+for c = 1:nCols
+    wallMask(topRows(c):end, c) = true;
+end
+
+roiData = struct();
+roiData.wallMask = wallMask;
+roiData.unwantedTrackMask = false(nRows, nCols);
+roiData.throat_xy_px = [NaN NaN];
+roiData.maskPixelSize = pixelSize;
 end
 
 

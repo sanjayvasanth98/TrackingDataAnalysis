@@ -75,7 +75,7 @@ useMatCache = true; % <---edit
 forceReparse = false; % <---edit
 
 % Where to save all results
-resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 33 local"; % <---edit
+resultsDir = "E:\March Re 90,000 inception data\Processed images\results\results 34"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end
@@ -187,6 +187,7 @@ plotOpts.videoOverlayMarkerSize = 15; % <---edit
 plotOpts.videoOverlayXLim_mm = [0 4.8]; % <---edit
 plotOpts.upstreamSizeXLim_um = []; % <---edit
 plotOpts.inceptionImageSize_px = [1280 320]; % [width height]
+plotOpts.lagrangianHeatmapImageSize_px = [1280 512]; % [width height] for Lagrangian colormaps
 plotOpts.inceptionXLim_mm = [0 4.8]; % <---edit
 plotOpts.inceptionYLim_mm = [0 1.2]; % <---edit
 plotOpts.maxActivationsPerCase = 250; % cap activation points shown per case in capped inception plot
@@ -229,14 +230,18 @@ lagAccelOpts.xLimNorm(2) = min(lagAccelOpts.xLimNorm(2), 0.5);
 lagAccelOpts.yLimNorm = plotOpts.inceptionYLim_mm ./ lagAccelOpts.throatHeight_mm;
 lagAccelOpts.fallbackURef_m_s = 13.32;
 lagAccelOpts.fallbackDiameter_m = 100e-6;
-lagAccelOpts.heatmapGridSize = [25 25];
+lagAccelOpts.heatmapGridSize = [20 20]; % with square bins, 2nd value sets y-bin count; x-bin count is auto
 lagAccelOpts.heatmapStats = ["median", "p90"];
+lagAccelOpts.heatmapColormap = "sky"; % <---edit: Lagrangian heatmap colormap
+lagAccelOpts.heatmapPreserveSpatialAspect = true; % keep x/H and y/H geometry honest
+lagAccelOpts.heatmapSquareBins = true; % use y-bin count above and auto x-bins for square cells
 lagAccelOpts.heatmapMinSamplesPerBin = 10;
 lagAccelOpts.activationOverlayPerCase = 75;
 lagAccelOpts.randomSeed = 42;
 lagAccelOpts.minSpearmanN = 10;
 lagAccelOpts.makeSanityPlots = true;
-lagAccelOpts.nSanityTracks = 5;
+lagAccelOpts.nSanityTracks = 5; % <---edit: requested sanity tracks per case
+lagAccelOpts.maxSanityTracks = 250; % <---edit: hard cap saved/plotted per case
 lagAccelOpts.makeStationarySanityCheck = true;
 lagAccelOpts.stationaryMaxNetDisplacement_px = 2;
 lagAccelOpts.stationaryMaxPathLength_px = 5;

@@ -21,11 +21,21 @@ if ~isfolder(outDir)
     mkdir(outDir);
 end
 
-plot_accel_pdf_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts, "allframe");
-plot_accel_pdf_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts, "trigger");
-plot_peak_trigger_vs_growth(allLagAccel, outDir, plotOpts, lagAccelOpts);
-plot_accel_heatmaps_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts);
-plot_accel_sanity_checks(allLagAccel, fullfile(outDir, "SanityChecks"), plotOpts, lagAccelOpts);
+if lagAccelOpts.makeAllFramePdfPlot
+    plot_accel_pdf_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts, "allframe");
+end
+if lagAccelOpts.makeTriggerWindowPdfPlot
+    plot_accel_pdf_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts, "trigger");
+end
+if lagAccelOpts.makePeakTriggerGrowthPlot
+    plot_peak_trigger_vs_growth(allLagAccel, outDir, plotOpts, lagAccelOpts);
+end
+if lagAccelOpts.makeHeatmapPlots
+    plot_accel_heatmaps_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts);
+end
+if lagAccelOpts.makeSanityCheckPlots
+    plot_accel_sanity_checks(allLagAccel, fullfile(outDir, "SanityChecks"), plotOpts, lagAccelOpts);
+end
 fprintf('Saved Lagrangian acceleration plots to: %s\n', outDir);
 end
 
@@ -37,12 +47,26 @@ opts = default_field(opts, 'xLimNorm', [0 0.5]);
 opts = default_field(opts, 'yLimNorm', [0 0.12]);
 opts = default_field(opts, 'pdfGridN', 260);
 opts = default_field(opts, 'pdfPercentileRange', [0.5 99.5]);
-opts = default_field(opts, 'heatmapGridSize', [25 25]);
+opts = default_field(opts, 'makeAllFramePdfPlot', true);
+opts = default_field(opts, 'makeTriggerWindowPdfPlot', true);
+opts = default_field(opts, 'makePeakTriggerGrowthPlot', true);
+opts = default_field(opts, 'makeHeatmapPlots', true);
+opts = default_field(opts, 'makeSanityCheckPlots', true);
+opts = default_field(opts, 'heatmapGridSize', [20 20]);
 opts = default_field(opts, 'heatmapStats', ["median", "p90"]);
 opts = default_field(opts, 'heatmapMinSamplesPerBin', 10);
+opts = default_field(opts, 'heatmapColormap', "sky");
+opts = default_field(opts, 'heatmapPreserveSpatialAspect', true);
+opts = default_field(opts, 'heatmapSquareBins', true);
 opts = default_field(opts, 'activationOverlayPerCase', 75);
 opts = default_field(opts, 'randomSeed', 42);
 opts = default_field(opts, 'minSpearmanN', 10);
+opts = default_field(opts, 'maxSanityTracks', 250);
+opts = default_field(opts, 'maxSanityTracksToPlot', opts.maxSanityTracks);
+if ~(isfinite(opts.maxSanityTracksToPlot) && opts.maxSanityTracksToPlot >= 0)
+    opts.maxSanityTracksToPlot = 250;
+end
+opts.maxSanityTracksToPlot = max(0, round(opts.maxSanityTracksToPlot));
 end
 
 
@@ -286,18 +310,27 @@ end
 % =========================================================================
 function plot_one_heatmap(caseData, Z, xCenters, yCenters, Rei, statName, outDir, plotOpts, opts, theme)
 fontName = resolve_plot_font_name();
-f = figure('Color', 'w', 'Position', [80 100 1180 760]);
-ax = axes(f);
+figSize = heatmap_figure_size(plotOpts);
+f = figure('Color', 'w', 'Position', [120 120 figSize]);
+ax = axes(f, 'Position', heatmap_axes_position());
 hold(ax, 'on');
 
-imagesc(ax, xCenters, yCenters, Z);
-set(ax, 'YDir', 'normal');
+hImg = imagesc(ax, xCenters, yCenters, Z);
+set(hImg, 'AlphaData', isfinite(Z));
+set(ax, 'YDir', 'normal', 'Color', 'w');
 axis(ax, 'tight');
-colormap(ax, scientific_heat_colormap(256));
+colormap(ax, lagrangian_heat_colormap(256, opts));
 cb = colorbar(ax);
 cb.Label.String = sprintf('%s |a^*| per bin', upper(statName));
 cb.Label.Interpreter = 'tex';
 cb.FontName = fontName;
+
+hasROI = isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData);
+if hasROI
+    yExtent_mm = heatmap_y_extent_mm(caseData, opts);
+    draw_lagrangian_wall_patch(ax, plotOpts.roiData, yExtent_mm, opts.throatHeight_mm, ...
+        opts.xLimNorm, opts.yLimNorm, true);
+end
 
 cmap = scientific_line_colormap(numel(caseData));
 markers = {'o', 'd', 'p', 's', '^', 'v', 'h', '>', '<', '*'};
@@ -351,10 +384,13 @@ end
 
 xlim(ax, opts.xLimNorm);
 ylim(ax, opts.yLimNorm);
+if opts.heatmapPreserveSpatialAspect
+    pbaspect(ax, [diff(opts.xLimNorm) diff(opts.yLimNorm) 1]);
+end
 xlabel(ax, '$x/H$', 'Interpreter', 'latex');
 ylabel(ax, '$y/H$', 'Interpreter', 'latex');
 title(ax, sprintf('Lagrangian acceleration heatmap (%s), Re = %g', upper(statName), Rei), 'FontName', fontName);
-set(ax, 'FontName', fontName);
+set(ax, 'FontName', fontName, 'Layer', 'top');
 grid(ax, 'off');
 box(ax, 'on');
 
@@ -366,8 +402,9 @@ else
 end
 
 apply_plot_theme(ax, theme);
-style_colorbar_for_theme(cb, theme);
+style_heatmap_white_theme(f, ax, cb);
 style_legend_for_theme(leg, theme);
+style_legend_for_heatmap_white(leg);
 save_fig_dual_safe(f, fullfile(outDir, sprintf('LagrangianAccel_heatmap_%s_Re_%g_%s', statName, Rei, theme)), plotOpts);
 close_if_needed(f, plotOpts);
 end
@@ -375,8 +412,7 @@ end
 
 % =========================================================================
 function [Z, xCenters, yCenters] = binned_stat_2d(x, y, a, opts, statName)
-nx = opts.heatmapGridSize(1);
-ny = opts.heatmapGridSize(2);
+[nx, ny] = heatmap_bin_counts(opts);
 xEdges = linspace(opts.xLimNorm(1), opts.xLimNorm(2), nx + 1);
 yEdges = linspace(opts.yLimNorm(1), opts.yLimNorm(2), ny + 1);
 xCenters = (xEdges(1:end-1) + xEdges(2:end)) / 2;
@@ -405,6 +441,33 @@ for ix = 1:nx
         end
     end
 end
+end
+
+
+% =========================================================================
+function [nx, ny] = heatmap_bin_counts(opts)
+gridSize = opts.heatmapGridSize;
+if numel(gridSize) < 2
+    gridSize = [gridSize gridSize];
+end
+
+nx = max(1, round(gridSize(1)));
+ny = max(1, round(gridSize(2)));
+
+if ~isfield(opts, 'heatmapSquareBins') || ~opts.heatmapSquareBins
+    return;
+end
+
+xSpan = diff(opts.xLimNorm);
+ySpan = diff(opts.yLimNorm);
+if ~(isfinite(xSpan) && isfinite(ySpan) && xSpan > 0 && ySpan > 0)
+    return;
+end
+
+% Keep the requested vertical resolution and choose the horizontal count so
+% each heatmap cell has the same size in x/H and y/H units.
+targetBinSize = ySpan / ny;
+nx = max(1, round(xSpan / targetBinSize));
 end
 
 
@@ -474,32 +537,49 @@ function plot_raw_vs_smoothed_tracks(d, sanityDir, plotOpts, opts)
 if ~isfield(d, 'sanityTracks') || isempty(d.sanityTracks)
     return;
 end
+totalTracks = numel(d.sanityTracks);
+maxPlotTracks = max(0, round(opts.maxSanityTracksToPlot));
+nPlotTracks = min(totalTracks, maxPlotTracks);
+if nPlotTracks < 1
+    return;
+end
+sanityTracks = d.sanityTracks(1:nPlotTracks);
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
     f = figure('Color', 'w', 'Position', [80 100 1120 640]);
     ax = axes(f);
     hold(ax, 'on');
-    cmap = scientific_line_colormap(numel(d.sanityTracks));
-    lgd = gobjects(0,1);
-    lgdTxt = strings(0,1);
-    for i = 1:numel(d.sanityTracks)
-        tr = d.sanityTracks(i);
+    cmap = scientific_line_colormap(nPlotTracks);
+
+    hRawLegend = plot(ax, nan, nan, 'o-', ...
+        'Color', [0.56 0.56 0.56], ...
+        'MarkerSize', 4, ...
+        'LineWidth', 0.9);
+    hSmoothLegend = plot(ax, nan, nan, '-', ...
+        'Color', [0.05 0.05 0.05], ...
+        'LineWidth', 2.5);
+    hActLegend = scatter(ax, nan, nan, 80, ...
+        'Marker', '*', ...
+        'MarkerFaceColor', [0.05 0.05 0.05], ...
+        'MarkerEdgeColor', [0 0 0]);
+
+    for i = 1:nPlotTracks
+        tr = sanityTracks(i);
         col = cmap(i,:);
         plot(ax, tr.xRawNorm, tr.yRawNorm, 'o-', ...
             'Color', lighten_color(col, 0.55), ...
             'MarkerSize', 3.5, ...
             'LineWidth', 0.8, ...
             'HandleVisibility', 'off');
-        h = plot(ax, tr.xSmoothNorm, tr.ySmoothNorm, '-', ...
+        plot(ax, tr.xSmoothNorm, tr.ySmoothNorm, '-', ...
             'Color', col, ...
-            'LineWidth', 2.4);
+            'LineWidth', 2.4, ...
+            'HandleVisibility', 'off');
         if all(isfinite(tr.activationXYNorm))
             scatter(ax, tr.activationXYNorm(1), tr.activationXYNorm(2), 70, ...
                 'Marker', '*', 'MarkerFaceColor', col, 'MarkerEdgeColor', [0 0 0], ...
                 'HandleVisibility', 'off');
         end
-        lgd(end+1,1) = h; %#ok<AGROW>
-        lgdTxt(end+1,1) = sprintf('Track %.0f', tr.TRACK_ID); %#ok<AGROW>
     end
     xlim(ax, opts.xLimNorm);
     ylim(ax, opts.yLimNorm);
@@ -507,12 +587,24 @@ for theme = reshape(plotOpts.themes, 1, [])
     ylabel(ax, '$y/H$', 'Interpreter', 'latex');
     title(ax, sprintf('Raw vs smoothed trajectories, %s', char(d.caseName)), 'FontName', fontName);
     grid(ax, 'off'); box(ax, 'on');
-    if ~isempty(lgd)
-        leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'southoutside', ...
-            'NumColumns', min(5, numel(lgdTxt)), 'Box', 'off');
+    if totalTracks > nPlotTracks
+        noteTxt = sprintf('Showing %d of %d sanity tracks; colors separate tracks.', nPlotTracks, totalTracks);
     else
-        leg = [];
+        noteTxt = sprintf('Showing %d sanity tracks; colors separate tracks.', nPlotTracks);
     end
+    text(ax, 0.02, 0.97, noteTxt, ...
+        'Units', 'normalized', ...
+        'VerticalAlignment', 'top', ...
+        'FontName', fontName, ...
+        'FontSize', 9, ...
+        'Color', theme_text_color(char(theme)), ...
+        'BackgroundColor', theme_background_color(char(theme)), ...
+        'Margin', 4);
+    leg = legend(ax, [hRawLegend hSmoothLegend hActLegend], ...
+        {'Raw position: pale circles', 'Smoothed position: thick line', 'Activation location: star'}, ...
+        'Location', 'southoutside', ...
+        'NumColumns', 3, ...
+        'Box', 'off');
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
     save_fig_dual_safe(f, fullfile(sanityDir, sprintf('Sanity_raw_vs_smoothed_tracks_%s_Re_%g_kD_%g_%s', ...
@@ -735,6 +827,198 @@ x = linspace(0, 1, size(anchors, 1));
 xi = linspace(0, 1, n);
 cmap = interp1(x, anchors, xi, 'linear');
 cmap = max(0, min(1, cmap));
+end
+
+
+% =========================================================================
+function cmap = lagrangian_heat_colormap(n, opts)
+mapName = "sky";
+if isfield(opts, 'heatmapColormap') && ~isempty(opts.heatmapColormap)
+    mapName = string(opts.heatmapColormap);
+end
+
+switch lower(char(mapName))
+    case 'abyss'
+        cmap = abyss_colormap_compat(n);
+        return;
+    case 'sky'
+        cmap = sky_colormap_compat(n);
+        return;
+end
+
+try
+    cmap = feval(char(mapName), n);
+catch
+    cmap = scientific_heat_colormap(n);
+end
+end
+
+
+% =========================================================================
+function cmap = sky_colormap_compat(n)
+% Use MATLAB's sky map when available; otherwise use a readable blue ramp.
+if nargin < 1 || isempty(n)
+    n = 256;
+end
+
+try
+    cmap = sky(n);
+    return;
+catch
+end
+
+anchors = [ ...
+    0.925 0.975 1.000
+    0.760 0.910 1.000
+    0.500 0.760 0.960
+    0.230 0.560 0.850
+    0.075 0.330 0.680
+    0.020 0.120 0.360];
+x = linspace(0, 1, size(anchors, 1));
+xi = linspace(0, 1, n);
+cmap = interp1(x, anchors, xi, 'pchip');
+cmap = max(0, min(1, cmap));
+end
+
+
+% =========================================================================
+function cmap = abyss_colormap_compat(n)
+% Use MATLAB's abyss map when available; otherwise use a close dark-blue ramp.
+if nargin < 1 || isempty(n)
+    n = 256;
+end
+
+try
+    cmap = abyss(n);
+    return;
+catch
+end
+
+anchors = [ ...
+    0.000 0.000 0.020
+    0.000 0.020 0.080
+    0.010 0.070 0.180
+    0.020 0.150 0.320
+    0.030 0.260 0.500
+    0.050 0.420 0.660
+    0.170 0.610 0.780
+    0.500 0.820 0.900];
+x = linspace(0, 1, size(anchors, 1));
+xi = linspace(0, 1, n);
+cmap = interp1(x, anchors, xi, 'pchip');
+cmap = max(0, min(1, cmap));
+end
+
+
+% =========================================================================
+function figSize = heatmap_figure_size(plotOpts)
+figSize = [1280 512];
+if isfield(plotOpts, 'lagrangianHeatmapImageSize_px') && numel(plotOpts.lagrangianHeatmapImageSize_px) >= 2
+    figSize = double(plotOpts.lagrangianHeatmapImageSize_px(1:2));
+elseif isfield(plotOpts, 'inceptionImageSize_px') && numel(plotOpts.inceptionImageSize_px) >= 2
+    figSize = double([plotOpts.inceptionImageSize_px(1), 512]);
+end
+figSize = reshape(figSize, 1, []);
+if any(~isfinite(figSize)) || any(figSize <= 0)
+    figSize = [1280 512];
+end
+end
+
+
+% =========================================================================
+function pos = heatmap_axes_position()
+% Match the wide inception-location canvas while leaving room for colorbar/legend.
+pos = [0.08 0.24 0.78 0.58];
+end
+
+
+% =========================================================================
+function yExtent_mm = heatmap_y_extent_mm(caseData, opts)
+pixelSizeVals = nan(0, 1);
+for i = 1:numel(caseData)
+    if isfield(caseData(i), 'pixelSize_mm') && isfinite(caseData(i).pixelSize_mm) && caseData(i).pixelSize_mm > 0
+        pixelSizeVals(end+1, 1) = caseData(i).pixelSize_mm; %#ok<AGROW>
+    end
+end
+
+if ~isempty(pixelSizeVals) && isfield(opts, 'imageSize_px') && numel(opts.imageSize_px) >= 2
+    yExtent_mm = double(opts.imageSize_px(2)) * median(pixelSizeVals);
+else
+    yExtent_mm = opts.yLimNorm(2) * opts.throatHeight_mm;
+end
+end
+
+
+% =========================================================================
+function draw_lagrangian_wall_patch(ax, roiData, yExtent_mm, throatHeight_mm, xLimNorm, yLimNorm, doNormalize)
+if nargin < 7
+    doNormalize = true;
+end
+if ~isfield(roiData, 'wallMask') || ~isfield(roiData, 'maskPixelSize')
+    return;
+end
+
+wallMask = roiData.wallMask;
+ps = roiData.maskPixelSize;
+wallCols = find(any(wallMask, 1));
+if isempty(wallCols) || ~(isfinite(ps) && ps > 0) || ~(isfinite(throatHeight_mm) && throatHeight_mm > 0)
+    return;
+end
+
+wallTopRow = zeros(size(wallCols));
+for i = 1:numel(wallCols)
+    wallTopRow(i) = find(wallMask(:, wallCols(i)), 1, 'first');
+end
+
+wallX_mm = wallCols(:) * ps;
+wallYSurface_mm = yExtent_mm - wallTopRow(:) * ps;
+if doNormalize
+    wallX = wallX_mm / throatHeight_mm;
+    wallYSurface = wallYSurface_mm / throatHeight_mm;
+else
+    wallX = wallX_mm;
+    wallYSurface = wallYSurface_mm;
+end
+
+inRange = wallX >= xLimNorm(1) & wallX <= xLimNorm(2);
+wallX = wallX(inRange);
+wallYSurface = wallYSurface(inRange);
+if isempty(wallX)
+    return;
+end
+
+patchX = [wallX; flipud(wallX)];
+patchY = [wallYSurface; repmat(yLimNorm(1), numel(wallX), 1)];
+patch(ax, patchX, patchY, [0.80 0.80 0.80], ...
+    'EdgeColor', 'none', ...
+    'FaceAlpha', 1.0, ...
+    'HandleVisibility', 'off');
+end
+
+
+% =========================================================================
+function style_heatmap_white_theme(f, ax, cb)
+set(f, 'Color', 'w', 'InvertHardcopy', 'off');
+set(ax, 'Color', 'w', 'XColor', 'k', 'YColor', 'k', 'Layer', 'top');
+if isgraphics(ax.Title), ax.Title.Color = [0 0 0]; end
+if isgraphics(ax.XLabel), ax.XLabel.Color = [0 0 0]; end
+if isgraphics(ax.YLabel), ax.YLabel.Color = [0 0 0]; end
+if ~isempty(cb) && isgraphics(cb)
+    cb.Color = [0 0 0];
+    if isprop(cb, 'Label') && isgraphics(cb.Label)
+        cb.Label.Color = [0 0 0];
+    end
+end
+end
+
+
+% =========================================================================
+function style_legend_for_heatmap_white(leg)
+if isempty(leg) || ~isgraphics(leg)
+    return;
+end
+leg.TextColor = [0 0 0];
+leg.Color = 'none';
 end
 
 

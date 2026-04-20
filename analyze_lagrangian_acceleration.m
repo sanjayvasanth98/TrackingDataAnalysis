@@ -219,6 +219,12 @@ opts = default_field(opts, 'fallbackURef_m_s', 13.32);
 opts = default_field(opts, 'fallbackDiameter_m', 100e-6);
 opts = default_field(opts, 'makeSanityPlots', true);
 opts = default_field(opts, 'nSanityTracks', 5);
+opts = default_field(opts, 'maxSanityTracks', 250);
+if ~(isfinite(opts.maxSanityTracks) && opts.maxSanityTracks >= 0)
+    opts.maxSanityTracks = 250;
+end
+opts.maxSanityTracks = max(0, round(opts.maxSanityTracks));
+opts.nSanityTracks = min(max(0, round(opts.nSanityTracks)), opts.maxSanityTracks);
 opts = default_field(opts, 'makeStationarySanityCheck', true);
 opts = default_field(opts, 'stationaryMaxNetDisplacement_px', 2);
 opts = default_field(opts, 'stationaryMaxPathLength_px', 5);
