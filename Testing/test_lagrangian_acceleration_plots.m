@@ -47,8 +47,17 @@ plotOpts.lagrangianHeatmapImageSize_px = [1280 512];
 makeAllFramePdfPlot = false;
 makeTriggerWindowPdfPlot = false;
 makePeakTriggerGrowthPlot = false;
-makeHeatmapPlots = true;
-makeSanityCheckPlots = false;
+makeHeatmapPlots = false;
+makeSanityCheckPlots = true;
+
+%% Heatmap appearance overrides
+% Edit these top-level values for testing. They are applied after loading
+% the saved .mat, so they override any lagAccelOpts stored in the run file.
+% With square bins on, the 2nd value controls square size:
+%   larger 2nd value = more y-bins = smaller square cells
+%   smaller 2nd value = fewer y-bins = larger square cells
+heatmapGridSizeOverride = [12 12];
+heatmapSquareBinsOverride = true;
 
 %% Load saved result .mat if available; otherwise build synthetic demo data
 [allLagAccel, lagAccelOpts, dataLabel] = load_or_make_lagrangian_data(matDir, matFile);
@@ -57,6 +66,8 @@ lagAccelOpts.makeTriggerWindowPdfPlot = makeTriggerWindowPdfPlot;
 lagAccelOpts.makePeakTriggerGrowthPlot = makePeakTriggerGrowthPlot;
 lagAccelOpts.makeHeatmapPlots = makeHeatmapPlots;
 lagAccelOpts.makeSanityCheckPlots = makeSanityCheckPlots;
+lagAccelOpts.heatmapGridSize = heatmapGridSizeOverride;
+lagAccelOpts.heatmapSquareBins = heatmapSquareBinsOverride;
 plotOpts.roiData = load_or_make_lagrangian_roi(roiFile, allLagAccel, lagAccelOpts);
 
 fprintf('Using %s Lagrangian acceleration data.\n', dataLabel);
@@ -129,7 +140,7 @@ lagAccelOpts.makeTriggerWindowPdfPlot = false;
 lagAccelOpts.makePeakTriggerGrowthPlot = false;
 lagAccelOpts.makeHeatmapPlots = true;
 lagAccelOpts.makeSanityCheckPlots = false;
-lagAccelOpts.heatmapGridSize = [50 50]; % with square bins, 2nd value sets y-bin count; x-bin count is auto
+lagAccelOpts.heatmapGridSize = [20 20]; % with square bins, 2nd value sets y-bin count; x-bin count is auto
 lagAccelOpts.heatmapStats = ["median", "p90"];
 lagAccelOpts.heatmapColormap = "sky";
 lagAccelOpts.heatmapPreserveSpatialAspect = true;

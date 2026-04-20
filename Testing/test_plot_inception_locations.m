@@ -56,6 +56,9 @@ plotOpts.inceptionImageSize_px = [1280 320];
 plotOpts.inceptionXLim_mm = [0 4.8];
 plotOpts.inceptionYLim_mm = [0 1.2];
 plotOpts.roiData = roiData;
+plotOpts.makeRandom100InceptionPlot = true;
+plotOpts.randomInceptionTotalPoints = 100;
+plotOpts.randomInceptionSeed = 42;
 
 %% Generate plot
 fprintf('\nGenerating inception location plots...\n');

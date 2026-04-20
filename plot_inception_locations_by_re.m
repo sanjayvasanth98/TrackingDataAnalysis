@@ -112,7 +112,7 @@ for theme = reshape(plotOpts.themes, 1, [])
                     '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
                     char(theme), ...
                     fullfile(outDir, sprintf('%s%s_Re_%g_%s', outputStem, variant.fileSuffix, Rei, theme)), ...
-                    plotOpts, variant.maxAct, locationField);
+                    plotOpts, variant, locationField);
             end
 
             % --- Plot 2: normalized by throat height (x/H, y/H) ---
@@ -122,7 +122,7 @@ for theme = reshape(plotOpts.themes, 1, [])
                     '$x/H$', '$y/H$', ...
                     char(theme), ...
                     fullfile(outDir, sprintf('%s_normalized%s_Re_%g_%s', outputStem, variant.fileSuffix, Rei, theme)), ...
-                    plotOpts, variant.maxAct, locationField);
+                    plotOpts, variant, locationField);
             end
         end
     end
@@ -133,12 +133,13 @@ end
 %% ---- main plotting helper ----
 function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
     throatHeight_mm, xLim, yLim, doNormalize, nPdfGridX, nPdfGridY, pdfLineWidth, marginalFrac, ...
-    xLabel, yLabel, theme, outBase, plotOpts, maxAct, locationField)
+    xLabel, yLabel, theme, outBase, plotOpts, variant, locationField)
 
 if nargin < 20 || isempty(locationField)
     locationField = 'inception2x_xy';
 end
 locationField = char(string(locationField));
+variant = complete_inception_plot_variant(variant);
 
 fontName = resolve_plot_font_name();
 f = figure('Color', 'w', 'Position', [120 120 plotOpts.inceptionImageSize_px]);
@@ -169,6 +170,7 @@ hold(axRight, 'on');
 lgd = gobjects(0,1);
 lgdTxt = strings(0,1);
 contourOverlays = struct('Xg', {}, 'Yg', {}, 'density', {}, 'color', {});
+caseData = struct('caseOrder', {}, 'caseIndex', {}, 'xAll', {}, 'yAll', {}, 'displayMask', {});
 
 xPdfGrid = linspace(xLim(1), xLim(2), nPdfGridX);
 yPdfGrid = linspace(yLim(1), yLim(2), nPdfGridY);
@@ -191,40 +193,67 @@ for j = 1:nReCases
         if isempty(xy), continue; end
     end
 
-    % Subsample to maxActivationsPerCase for visual fairness
-    if nargin < 19 || isempty(maxAct)
-        maxAct = Inf;
-    end
-    if isfinite(maxAct) && size(xy, 1) > maxAct
-        rng(42 + j, 'twister');
-        idx = sort(randperm(size(xy, 1), maxAct));
-        xy = xy(idx, :);
-    end
-
     if doNormalize
-        xPts = xy(:,1) / throatHeight_mm;
-        yPts = (yExtent_mm - xy(:,2)) / throatHeight_mm;
+        xAll = xy(:,1) / throatHeight_mm;
+        yAll = (yExtent_mm - xy(:,2)) / throatHeight_mm;
     else
-        xPts = xy(:,1);
-        yPts = yExtent_mm - xy(:,2);
+        xAll = xy(:,1);
+        yAll = yExtent_mm - xy(:,2);
     end
 
-    h = scatter(axMain, xPts, yPts, 12, ...
-        'Marker', 'o', ...
-        'MarkerEdgeColor', 'none', ...
-        'MarkerFaceColor', cmap(j,:), ...
-        'MarkerFaceAlpha', 0.50);
+    caseData(end+1).caseOrder = j; %#ok<AGROW>
+    caseData(end).caseIndex = ci;
+    caseData(end).xAll = xAll;
+    caseData(end).yAll = yAll;
+    caseData(end).displayMask = true(size(xAll));
+end
+
+caseData = mark_display_points_by_variant(caseData, variant);
+
+for dataIdx = 1:numel(caseData)
+    j = caseData(dataIdx).caseOrder;
+    ci = caseData(dataIdx).caseIndex;
+    xAll = caseData(dataIdx).xAll;
+    yAll = caseData(dataIdx).yAll;
+    displayMask = caseData(dataIdx).displayMask;
+    xPts = xAll(displayMask);
+    yPts = yAll(displayMask);
+
+    if variant.useAllForDensity
+        xDensity = xAll;
+        yDensity = yAll;
+    else
+        xDensity = xPts;
+        yDensity = yPts;
+    end
+
+    marker = marker_for_case(j, variant);
+    if isempty(xPts)
+        h = scatter(axMain, NaN, NaN, variant.markerSize, ...
+            'Marker', marker, ...
+            'MarkerEdgeColor', marker_edge_color(variant), ...
+            'MarkerFaceColor', cmap(j,:), ...
+            'MarkerFaceAlpha', variant.markerAlpha, ...
+            'LineWidth', variant.markerLineWidth);
+    else
+        h = scatter(axMain, xPts, yPts, variant.markerSize, ...
+            'Marker', marker, ...
+            'MarkerEdgeColor', marker_edge_color(variant), ...
+            'MarkerFaceColor', cmap(j,:), ...
+            'MarkerFaceAlpha', variant.markerAlpha, ...
+            'LineWidth', variant.markerLineWidth);
+    end
 
     lgd(end+1,1) = h; %#ok<AGROW>
     lgdTxt(end+1,1) = sprintf('k/d=%.4g', allLoc.kD(ci)); %#ok<AGROW>
 
     % 2D KDE density contour overlay
-    if numel(xPts) >= 10
+    if numel(xDensity) >= 10
         nGrid = 80;
         xGrid = linspace(xLim(1), xLim(2), nGrid);
         yGrid = linspace(yLim(1), yLim(2), nGrid);
         [Xg, Yg] = meshgrid(xGrid, yGrid);
-        density = kde2d_simple(xPts, yPts, Xg, Yg);
+        density = kde2d_simple(xDensity, yDensity, Xg, Yg);
         contourOverlays(end+1).Xg = Xg; %#ok<AGROW>
         contourOverlays(end).Yg = Yg;
         contourOverlays(end).density = density;
@@ -232,8 +261,8 @@ for j = 1:nReCases
     end
 
     % Marginal PDFs as smooth line curves for each case.
-    xPdf = kde1d_simple(xPts, xPdfGrid);
-    yPdf = kde1d_simple(yPts, yPdfGrid);
+    xPdf = kde1d_simple(xDensity, xPdfGrid);
+    yPdf = kde1d_simple(yDensity, yPdfGrid);
     plot(axTop, xPdfGrid, xPdf, ...
         'Color', cmap(j,:), 'LineWidth', pdfLineWidth, 'HandleVisibility', 'off');
     plot(axRight, yPdf, yPdfGrid, ...
@@ -294,7 +323,9 @@ end
 
 %% ---- theme helpers ----
 function plotVariants = resolve_inception_plot_variants(plotOpts)
-plotVariants = struct('fileSuffix', {}, 'maxAct', {});
+plotVariants = struct('fileSuffix', {}, 'maxAct', {}, 'useAllForDensity', {}, ...
+    'markerByCase', {}, 'randomSeed', {}, 'markerSize', {}, ...
+    'markerAlpha', {}, 'markerLineWidth', {}, 'sampleMode', {});
 
 makeCapped = true;
 if isfield(plotOpts, 'makeCappedActivationInceptionPlots')
@@ -306,23 +337,143 @@ if isfield(plotOpts, 'makeAllActivationInceptionPlots')
     makeAll = logical(plotOpts.makeAllActivationInceptionPlots);
 end
 
+makeRandom100 = true;
+if isfield(plotOpts, 'makeRandom100InceptionPlot')
+    makeRandom100 = logical(plotOpts.makeRandom100InceptionPlot);
+end
+
 maxAct = Inf;
 if isfield(plotOpts, 'maxActivationsPerCase') && isfinite(plotOpts.maxActivationsPerCase)
     maxAct = plotOpts.maxActivationsPerCase;
 end
 
+randomN = 100;
+if isfield(plotOpts, 'randomInceptionTotalPoints') && isfinite(plotOpts.randomInceptionTotalPoints)
+    randomN = max(0, round(plotOpts.randomInceptionTotalPoints));
+elseif isfield(plotOpts, 'randomInceptionPointsPerCase') && isfinite(plotOpts.randomInceptionPointsPerCase)
+    % Backward-compatible alias. The random100 plot now samples this many
+    % points from the pooled Re group, not this many per k/d case.
+    randomN = max(0, round(plotOpts.randomInceptionPointsPerCase));
+end
+
+randomSeed = 42;
+if isfield(plotOpts, 'randomInceptionSeed') && isfinite(plotOpts.randomInceptionSeed)
+    randomSeed = round(plotOpts.randomInceptionSeed);
+end
+
 if makeCapped
-    plotVariants(end+1).fileSuffix = ''; %#ok<AGROW>
-    plotVariants(end).maxAct = maxAct;
+    plotVariants(end+1) = make_inception_plot_variant('', maxAct, false, false, randomSeed, 12, 0.50, 0.50, 'perCase'); %#ok<AGROW>
 end
 
 if makeAll
-    plotVariants(end+1).fileSuffix = '_allactivations'; %#ok<AGROW>
-    plotVariants(end).maxAct = Inf;
+    plotVariants(end+1) = make_inception_plot_variant('_allactivations', Inf, false, false, randomSeed, 12, 0.50, 0.50, 'perCase'); %#ok<AGROW>
+end
+
+if makeRandom100
+    plotVariants(end+1) = make_inception_plot_variant('_random100_inception', randomN, true, true, randomSeed, 26, 0.78, 0.75, 'total'); %#ok<AGROW>
 end
 
 if isempty(plotVariants)
-    plotVariants = struct('fileSuffix', '', 'maxAct', maxAct);
+    plotVariants = make_inception_plot_variant('', maxAct, false, false, randomSeed, 12, 0.50, 0.50, 'perCase');
+end
+end
+
+function variant = make_inception_plot_variant(fileSuffix, maxAct, useAllForDensity, markerByCase, randomSeed, markerSize, markerAlpha, markerLineWidth, sampleMode)
+variant = struct();
+variant.fileSuffix = fileSuffix;
+variant.maxAct = maxAct;
+variant.useAllForDensity = useAllForDensity;
+variant.markerByCase = markerByCase;
+variant.randomSeed = randomSeed;
+variant.markerSize = markerSize;
+variant.markerAlpha = markerAlpha;
+variant.markerLineWidth = markerLineWidth;
+variant.sampleMode = sampleMode;
+end
+
+function variant = complete_inception_plot_variant(variant)
+if isempty(variant) || ~isstruct(variant)
+    variant = make_inception_plot_variant('', Inf, false, false, 42, 12, 0.50, 0.50, 'perCase');
+    return;
+end
+variant = default_variant_field(variant, 'fileSuffix', '');
+variant = default_variant_field(variant, 'maxAct', Inf);
+variant = default_variant_field(variant, 'useAllForDensity', false);
+variant = default_variant_field(variant, 'markerByCase', false);
+variant = default_variant_field(variant, 'randomSeed', 42);
+variant = default_variant_field(variant, 'markerSize', 12);
+variant = default_variant_field(variant, 'markerAlpha', 0.50);
+variant = default_variant_field(variant, 'markerLineWidth', 0.50);
+variant = default_variant_field(variant, 'sampleMode', 'perCase');
+end
+
+function s = default_variant_field(s, name, value)
+if ~isfield(s, name) || isempty(s.(name))
+    s.(name) = value;
+end
+end
+
+function caseData = mark_display_points_by_variant(caseData, variant)
+if isempty(caseData)
+    return;
+end
+maxAct = variant.maxAct;
+if ~(isfinite(maxAct) && maxAct >= 0)
+    return;
+end
+maxAct = round(maxAct);
+
+if strcmpi(char(variant.sampleMode), 'total')
+    totalCount = 0;
+    for i = 1:numel(caseData)
+        n = numel(caseData(i).xAll);
+        caseData(i).displayMask = false(n, 1);
+        totalCount = totalCount + n;
+    end
+    if totalCount == 0
+        return;
+    end
+    nShow = min(maxAct, totalCount);
+    rng(variant.randomSeed, 'twister');
+    selectedGlobal = sort(randperm(totalCount, nShow));
+
+    startIdx = 1;
+    for i = 1:numel(caseData)
+        n = numel(caseData(i).xAll);
+        stopIdx = startIdx + n - 1;
+        localIdx = selectedGlobal(selectedGlobal >= startIdx & selectedGlobal <= stopIdx) - startIdx + 1;
+        caseData(i).displayMask(localIdx) = true;
+        startIdx = stopIdx + 1;
+    end
+    return;
+end
+
+for i = 1:numel(caseData)
+    n = numel(caseData(i).xAll);
+    caseData(i).displayMask = true(n, 1);
+    if n > maxAct
+        rng(variant.randomSeed + 1009 * caseData(i).caseOrder, 'twister');
+        idx = sort(randperm(n, maxAct));
+        caseData(i).displayMask = false(n, 1);
+        caseData(i).displayMask(idx) = true;
+    end
+end
+end
+
+function marker = marker_for_case(caseIndex, variant)
+if ~variant.markerByCase
+    marker = 'o';
+    return;
+end
+markers = {'o', 'd', 's', '^', 'v', 'p', 'h', '>', '<'};
+marker = markers{mod(caseIndex - 1, numel(markers)) + 1};
+end
+
+function edgeColor = marker_edge_color(variant)
+if variant.markerByCase
+    edgeColor = [0.05 0.05 0.05];
+else
+    edgeColor = 'none';
 end
 end
 

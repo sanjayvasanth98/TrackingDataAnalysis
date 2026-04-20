@@ -537,19 +537,25 @@ function plot_raw_vs_smoothed_tracks(d, sanityDir, plotOpts, opts)
 if ~isfield(d, 'sanityTracks') || isempty(d.sanityTracks)
     return;
 end
-totalTracks = numel(d.sanityTracks);
 maxPlotTracks = max(0, round(opts.maxSanityTracksToPlot));
-nPlotTracks = min(totalTracks, maxPlotTracks);
+nPlotTracks = min(numel(d.sanityTracks), maxPlotTracks);
 if nPlotTracks < 1
     return;
 end
 sanityTracks = d.sanityTracks(1:nPlotTracks);
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
-    f = figure('Color', 'w', 'Position', [80 100 1120 640]);
-    ax = axes(f);
+    figSize = heatmap_figure_size(plotOpts);
+    f = figure('Color', 'w', 'Position', [120 120 figSize]);
+    ax = axes(f, 'Position', heatmap_axes_position());
     hold(ax, 'on');
     cmap = scientific_line_colormap(nPlotTracks);
+
+    if isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData)
+        yExtent_mm = heatmap_y_extent_mm(d, opts);
+        draw_lagrangian_wall_patch(ax, plotOpts.roiData, yExtent_mm, opts.throatHeight_mm, ...
+            opts.xLimNorm, opts.yLimNorm, true);
+    end
 
     hRawLegend = plot(ax, nan, nan, 'o-', ...
         'Color', [0.56 0.56 0.56], ...
@@ -587,25 +593,16 @@ for theme = reshape(plotOpts.themes, 1, [])
     ylabel(ax, '$y/H$', 'Interpreter', 'latex');
     title(ax, sprintf('Raw vs smoothed trajectories, %s', char(d.caseName)), 'FontName', fontName);
     grid(ax, 'off'); box(ax, 'on');
-    if totalTracks > nPlotTracks
-        noteTxt = sprintf('Showing %d of %d sanity tracks; colors separate tracks.', nPlotTracks, totalTracks);
-    else
-        noteTxt = sprintf('Showing %d sanity tracks; colors separate tracks.', nPlotTracks);
+    if opts.heatmapPreserveSpatialAspect
+        pbaspect(ax, [diff(opts.xLimNorm) diff(opts.yLimNorm) 1]);
     end
-    text(ax, 0.02, 0.97, noteTxt, ...
-        'Units', 'normalized', ...
-        'VerticalAlignment', 'top', ...
-        'FontName', fontName, ...
-        'FontSize', 9, ...
-        'Color', theme_text_color(char(theme)), ...
-        'BackgroundColor', theme_background_color(char(theme)), ...
-        'Margin', 4);
     leg = legend(ax, [hRawLegend hSmoothLegend hActLegend], ...
         {'Raw position: pale circles', 'Smoothed position: thick line', 'Activation location: star'}, ...
         'Location', 'southoutside', ...
         'NumColumns', 3, ...
         'Box', 'off');
     apply_plot_theme(ax, char(theme));
+    set(ax, 'Layer', 'top');
     style_legend_for_theme(leg, char(theme));
     save_fig_dual_safe(f, fullfile(sanityDir, sprintf('Sanity_raw_vs_smoothed_tracks_%s_Re_%g_kD_%g_%s', ...
         sanitize_case_token(d.caseName), d.Re, d.kD, char(theme))), plotOpts);

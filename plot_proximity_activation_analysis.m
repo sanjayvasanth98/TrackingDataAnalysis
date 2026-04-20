@@ -50,7 +50,7 @@ end
 
 
 % =========================================================================
-function plot_standoff_response(pairTable, binnedStats, outDir, plotOpts, opts)
+function plot_standoff_response(pairTable, ~, outDir, plotOpts, opts)
 ReVals = unique(double(pairTable.Re));
 ReVals = ReVals(isfinite(ReVals));
 if isempty(ReVals), return; end
@@ -85,37 +85,24 @@ for theme = reshape(plotOpts.themes, 1, [])
         for ci = 1:height(caseKeys)
             cName = string(caseKeys.Case(ci));
             kD = double(caseKeys.kD(ci));
-            mask = reMask & string(pairTable.Case) == cName & double(pairTable.kD) == kD;
-            x = double(pairTable.gammaForPlot(mask));
-            y = double(pairTable.maxAbsDeltaR_over_R0(mask));
-            valid = isfinite(x) & isfinite(y) & x >= 0 & x <= opts.extendedMaxGamma & y >= 0;
-            x = x(valid);
-            y = y(valid);
-            if isempty(x)
+            [xBin, yMed, yQ25, yQ75, yP90] = deformation_bin_summary(pairTable, reMask, cName, kD, opts);
+            if isempty(xBin)
                 continue;
             end
             col = cmap(ci, :);
-            h = scatter(ax, x, y, 42, ...
-                'Marker', 'o', ...
-                'MarkerFaceColor', col, ...
+            yNeg = max(yMed - yQ25, 0);
+            yPos = max(yQ75 - yMed, 0);
+            h = errorbar(ax, xBin, yMed, yNeg, yPos, 'o-', ...
+                'Color', col, ...
+                'MarkerFaceColor', lighten_color(col, 0.12), ...
                 'MarkerEdgeColor', [0.05 0.05 0.05], ...
-                'LineWidth', 0.55, ...
-                'MarkerFaceAlpha', 0.42);
+                'MarkerSize', 6.5, ...
+                'CapSize', 8, ...
+                'LineWidth', 2.2);
             lgd(end+1,1) = h; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', cName, kD); %#ok<AGROW>
-
-            trend = case_binned_rows(binnedStats, cName, Rei, kD);
-            if ~isempty(trend) && height(trend) > 0
-                nPairs = double(trend.nPairs);
-                trend = trend(nPairs >= opts.minPairsForTrend, :);
-                if height(trend) > 0
-                    xTrend = double(trend.gammaBinCenter);
-                    yMed = double(trend.medianMaxAbsDeltaR_over_R0);
-                    yP90 = double(trend.p90MaxAbsDeltaR_over_R0);
-                    plot(ax, xTrend, yMed, '-', 'Color', col, 'LineWidth', 2.4, 'HandleVisibility', 'off');
-                    plot(ax, xTrend, yP90, '--', 'Color', lighten_color(col, 0.25), 'LineWidth', 1.7, 'HandleVisibility', 'off');
-                end
-            end
+            lgdTxt(end+1,1) = sprintf('k/d = %.4g', kD); %#ok<AGROW>
+            plot(ax, xBin, yP90, '--', 'Color', lighten_color(col, 0.25), ...
+                'LineWidth', 1.7, 'HandleVisibility', 'off');
         end
 
         xlim(ax, [0 opts.extendedMaxGamma]);
@@ -130,7 +117,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         draw_gamma_reference_lines(ax, opts);
         xlabel(ax, 'Projected standoff $\gamma=d/R_{\max}$', 'Interpreter', 'latex');
         ylabel(ax, '$\max|\Delta R|/R_0$', 'Interpreter', 'latex');
-        title(ax, sprintf('Neighbor radius response, Re = %g', Rei), 'FontName', fontName);
+        title(ax, sprintf('Binned neighbor deformation (median, IQR), Re = %g', Rei), 'FontName', fontName);
         set(ax, 'FontName', fontName);
         grid(ax, 'off');
         box(ax, 'on');
@@ -144,6 +131,44 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     save_fig_dual_safe(f, fullfile(outDir, "Standoff_Deformation_Map_" + theme), plotOpts);
     close_if_needed(f, plotOpts);
+end
+end
+
+
+% =========================================================================
+function [xBin, yMed, yQ25, yQ75, yP90, nBin] = deformation_bin_summary(pairTable, reMask, caseName, kD, opts)
+xBin = nan(0, 1);
+yMed = nan(0, 1);
+yQ25 = nan(0, 1);
+yQ75 = nan(0, 1);
+yP90 = nan(0, 1);
+nBin = nan(0, 1);
+
+caseMask = reMask & string(pairTable.Case) == string(caseName) & ...
+    abs(double(pairTable.kD) - kD) <= eps(max(1, abs(kD)));
+gamma = double(pairTable.gammaForPlot);
+y = double(pairTable.maxAbsDeltaR_over_R0);
+
+for bi = 1:(numel(opts.gammaBins) - 1)
+    lo = opts.gammaBins(bi);
+    hi = opts.gammaBins(bi + 1);
+    inBin = caseMask & gamma >= lo & gamma < hi;
+    if bi == (numel(opts.gammaBins) - 1)
+        inBin = caseMask & gamma >= lo & gamma <= hi;
+    end
+
+    vals = y(inBin);
+    vals = vals(isfinite(vals) & vals >= 0);
+    if numel(vals) < opts.minPairsForTrend
+        continue;
+    end
+
+    xBin(end+1, 1) = (lo + hi) / 2; %#ok<AGROW>
+    yMed(end+1, 1) = finite_median(vals); %#ok<AGROW>
+    yQ25(end+1, 1) = finite_prctile(vals, 25); %#ok<AGROW>
+    yQ75(end+1, 1) = finite_prctile(vals, 75); %#ok<AGROW>
+    yP90(end+1, 1) = finite_prctile(vals, 90); %#ok<AGROW>
+    nBin(end+1, 1) = numel(vals); %#ok<AGROW>
 end
 end
 
@@ -222,7 +247,7 @@ end
 
 
 % =========================================================================
-function plot_radius_rate_coupling(pairTable, binnedStats, outDir, plotOpts, opts)
+function plot_radius_rate_coupling(pairTable, ~, outDir, plotOpts, opts)
 ReVals = unique(double(pairTable.Re));
 ReVals = ReVals(isfinite(ReVals));
 if isempty(ReVals), return; end
@@ -245,34 +270,22 @@ for theme = reshape(plotOpts.themes, 1, [])
         for ci = 1:height(caseKeys)
             cName = string(caseKeys.Case(ci));
             kD = double(caseKeys.kD(ci));
-            mask = reMask & string(pairTable.Case) == cName & double(pairTable.kD) == kD;
-            x = double(pairTable.gammaForPlot(mask));
-            y = double(pairTable.rdotRmsRatio(mask));
-            valid = isfinite(x) & isfinite(y) & x >= 0 & x <= opts.extendedMaxGamma & y > 0;
-            x = x(valid);
-            y = y(valid);
-            if isempty(x)
+            [xBin, yMed, yQ25, yQ75] = radius_rate_bin_summary(pairTable, reMask, cName, kD, opts);
+            if isempty(xBin)
                 continue;
             end
             col = cmap(ci, :);
-            h = scatter(ax, x, y, 44, ...
-                'Marker', 'd', ...
-                'MarkerFaceColor', col, ...
+            yNeg = max(yMed - yQ25, 0);
+            yPos = max(yQ75 - yMed, 0);
+            h = errorbar(ax, xBin, yMed, yNeg, yPos, 'o-', ...
+                'Color', col, ...
+                'MarkerFaceColor', lighten_color(col, 0.12), ...
                 'MarkerEdgeColor', [0.05 0.05 0.05], ...
-                'LineWidth', 0.55, ...
-                'MarkerFaceAlpha', 0.48);
+                'MarkerSize', 6.5, ...
+                'CapSize', 8, ...
+                'LineWidth', 2.2);
             lgd(end+1,1) = h; %#ok<AGROW>
-            lgdTxt(end+1,1) = sprintf('%s, k/d=%.4g', cName, kD); %#ok<AGROW>
-
-            trend = case_binned_rows(binnedStats, cName, Rei, kD);
-            if ~isempty(trend) && height(trend) > 0
-                nPairs = double(trend.nPairs);
-                trend = trend(nPairs >= opts.minPairsForTrend, :);
-                if height(trend) > 0
-                    plot(ax, double(trend.gammaBinCenter), double(trend.medianRdotRmsRatio), '-', ...
-                        'Color', col, 'LineWidth', 2.3, 'HandleVisibility', 'off');
-                end
-            end
+            lgdTxt(end+1,1) = sprintf('k/d = %.4g', kD); %#ok<AGROW>
         end
 
         plot(ax, [0 opts.extendedMaxGamma], [1 1], ':', 'Color', [0.2 0.2 0.2], ...
@@ -285,7 +298,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         draw_gamma_reference_lines(ax, opts);
         xlabel(ax, 'Projected standoff $\gamma=d/R_{\max}$', 'Interpreter', 'latex');
         ylabel(ax, '$\mathrm{RMS}(\dot R_n)/\mathrm{RMS}(\dot R_p)$', 'Interpreter', 'latex');
-        title(ax, sprintf('Radius-rate coupling, Re = %g', Rei), 'FontName', fontName);
+        title(ax, sprintf('Binned radius-rate response (median, IQR), Re = %g', Rei), 'FontName', fontName);
         grid(ax, 'off');
         box(ax, 'on');
         apply_plot_theme(ax, char(theme));
@@ -297,6 +310,42 @@ for theme = reshape(plotOpts.themes, 1, [])
     end
     save_fig_dual_safe(f, fullfile(outDir, "Radius_Rate_Coupling_vs_Standoff_" + theme), plotOpts);
     close_if_needed(f, plotOpts);
+end
+end
+
+
+% =========================================================================
+function [xBin, yMed, yQ25, yQ75, nBin] = radius_rate_bin_summary(pairTable, reMask, caseName, kD, opts)
+xBin = nan(0, 1);
+yMed = nan(0, 1);
+yQ25 = nan(0, 1);
+yQ75 = nan(0, 1);
+nBin = nan(0, 1);
+
+caseMask = reMask & string(pairTable.Case) == string(caseName) & ...
+    abs(double(pairTable.kD) - kD) <= eps(max(1, abs(kD)));
+gamma = double(pairTable.gammaForPlot);
+y = double(pairTable.rdotRmsRatio);
+
+for bi = 1:(numel(opts.gammaBins) - 1)
+    lo = opts.gammaBins(bi);
+    hi = opts.gammaBins(bi + 1);
+    inBin = caseMask & gamma >= lo & gamma < hi;
+    if bi == (numel(opts.gammaBins) - 1)
+        inBin = caseMask & gamma >= lo & gamma <= hi;
+    end
+
+    vals = y(inBin);
+    vals = vals(isfinite(vals) & vals > 0);
+    if numel(vals) < opts.minPairsForTrend
+        continue;
+    end
+
+    xBin(end+1, 1) = (lo + hi) / 2; %#ok<AGROW>
+    yMed(end+1, 1) = finite_median(vals); %#ok<AGROW>
+    yQ25(end+1, 1) = finite_prctile(vals, 25); %#ok<AGROW>
+    yQ75(end+1, 1) = finite_prctile(vals, 75); %#ok<AGROW>
+    nBin(end+1, 1) = numel(vals); %#ok<AGROW>
 end
 end
 
@@ -319,41 +368,52 @@ for theme = reshape(plotOpts.themes, 1, [])
         reMask = double(eventTable.Re) == Rei;
         caseKeys = case_key_table(eventTable(reMask, :));
         cmap = scientific_line_colormap(height(caseKeys));
-        lgd = gobjects(0, 1);
-        lgdTxt = strings(0, 1);
+        colorLgd = gobjects(0, 1);
+        colorLgdTxt = strings(0, 1);
         for ci = 1:height(caseKeys)
             cName = string(caseKeys.Case(ci));
             kD = double(caseKeys.kD(ci));
             mask = reMask & string(eventTable.Case) == cName & double(eventTable.kD) == kD;
             stableGamma = double(eventTable.nearestStableGamma(mask));
             stableGamma = stableGamma(isfinite(stableGamma) & stableGamma >= 0 & stableGamma <= opts.extendedMaxGamma);
+            colorHandle = gobjects(0);
             if ~isempty(stableGamma)
                 [x, y] = empirical_cdf(stableGamma);
                 h = plot(ax, x, y, '-', 'Color', cmap(ci,:), 'LineWidth', 2.4);
-                lgd(end+1,1) = h; %#ok<AGROW>
-                lgdTxt(end+1,1) = sprintf('%s stable, k/d=%.4g', cName, kD); %#ok<AGROW>
+                colorHandle = h;
             end
             activatedGamma = double(eventTable.nearestActivatedGamma(mask));
             activatedGamma = activatedGamma(isfinite(activatedGamma) & activatedGamma >= 0 & activatedGamma <= opts.extendedMaxGamma);
             if ~isempty(activatedGamma)
                 [x, y] = empirical_cdf(activatedGamma);
-                plot(ax, x, y, '--', 'Color', lighten_color(cmap(ci,:), 0.25), ...
+                hAct = plot(ax, x, y, '--', 'Color', lighten_color(cmap(ci,:), 0.25), ...
                     'LineWidth', 1.8, 'HandleVisibility', 'off');
+                if isempty(colorHandle)
+                    colorHandle = hAct;
+                end
+            end
+            if ~isempty(colorHandle) && isgraphics(colorHandle)
+                colorLgd(end+1,1) = colorHandle; %#ok<AGROW>
+                colorLgdTxt(end+1,1) = sprintf('k/d = %.4g', kD); %#ok<AGROW>
             end
         end
+        hStableStyle = plot(ax, nan, nan, '-', 'Color', [0 0 0], 'LineWidth', 2.4);
+        hActivatedStyle = plot(ax, nan, nan, '--', 'Color', [0 0 0], 'LineWidth', 1.8);
         xlim(ax, [0 opts.extendedMaxGamma]);
         ylim(ax, [0 1]);
         draw_gamma_reference_lines(ax, opts);
         xlabel(ax, 'Nearest viable neighbor standoff $\gamma$', 'Interpreter', 'latex');
         ylabel(ax, 'Empirical CDF', 'Interpreter', 'latex');
-        title(ax, sprintf('Nearest stable viable nuclei, Re = %g', Rei), 'FontName', fontName);
+        title(ax, sprintf('CDF of nearest viable neighbor, Re = %g', Rei), 'FontName', fontName);
         set(ax, 'FontName', fontName);
         grid(ax, 'off');
         box(ax, 'on');
         apply_plot_theme(ax, char(theme));
+        lgd = [colorLgd; hStableStyle; hActivatedStyle];
+        lgdTxt = [colorLgdTxt; "non-activated"; "secondary activated"];
         if ~isempty(lgd)
             leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'southoutside', ...
-                'NumColumns', min(2, numel(lgdTxt)), 'Box', 'off');
+                'NumColumns', min(3, numel(lgdTxt)), 'Box', 'off');
             style_legend_for_theme(leg, char(theme));
         end
     end
