@@ -124,8 +124,13 @@ for c = 1:nChunks
     end
 
     for k = 1:numel(traj)
-        if isfield(traj, 'TRACK_ID') && isfinite(traj(k).TRACK_ID)
-            traj(k).TRACK_ID = traj(k).TRACK_ID + trackIdOffset;
+        if isfield(traj, 'TRACK_ID')
+            trackId = first_finite_numeric_scalar(traj(k).TRACK_ID);
+            if isfinite(trackId)
+                traj(k).TRACK_ID = trackId + trackIdOffset;
+            else
+                traj(k).TRACK_ID = NaN;
+            end
         end
         if isfield(traj, 'spotIds') && ~isempty(traj(k).spotIds)
             traj(k).spotIds = traj(k).spotIds + spotIdOffset;
@@ -263,8 +268,21 @@ for k = 1:numel(traj)
     if isempty(raw)
         continue;
     end
-    vals(k) = raw(1);
+    vals(k) = first_finite_numeric_scalar(raw);
 end
+end
+
+function val = first_finite_numeric_scalar(raw)
+val = NaN;
+if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
+    return;
+end
+raw = double(raw(:));
+raw = raw(isfinite(raw));
+if isempty(raw)
+    return;
+end
+val = raw(1);
 end
 
 function dtVal = estimate_time_step(outChunk)
