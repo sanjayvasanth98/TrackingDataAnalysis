@@ -71,6 +71,8 @@ convergenceFrameStep = 2000; % <---edit: cumulative frame interval for convergen
 
 useMatCache = true; % <---edit
 forceReparse = false; % <---edit
+useAnalysisCheckpoints = true; % <---edit: reuse completed per-case analysis payloads
+forceAnalysisRecompute = false; % <---edit: true ignores per-case/breakup analysis checkpoints
 
 % ----------- ROI DATA (unwanted area + wall mask) ----------------
 % Set to the ROI_throat.mat saved by Testing/ROI_and_throatloader.m.
@@ -494,13 +496,111 @@ gateSummaryRows = table();
 individualInstanceSummaryRows = table();
 individualConvergenceRows = table();
 
+analysisRoiData = [];
+if exist('roiData','var') && isstruct(roiData)
+    analysisRoiData = roiData;
+end
 cachePolicyTag = build_cache_policy_tag(parserOpts, qcOpts, flowOpts, activationOpts);
+analysisPolicyTag = build_case_analysis_policy_tag(cachePolicyTag, convergenceFrameStep, ...
+    'collapse', collapseOpts, ...
+    'collapseRecirculation', collapseRecirculationOpts, ...
+    'proximityActivation', proximityActivationOpts, ...
+    'growthCollapse', growthCollapseOpts, ...
+    'voidFraction', voidFracOpts, ...
+    'breakup', breakupOpts, ...
+    'lagrangianAcceleration', lagAccelOpts, ...
+    'roiData', analysisRoiData);
 runTimer = tic;
 
 for i = 1:numel(cases)
     caseTimer = tic;
     fprintf("\n=== Case %d/%d: %s (Re=%g, k/d=%.6g) ===\n", ...
         i, numel(cases), cases(i).name, cases(i).Re, cases(i).kD);
+
+    xmlFilesForCaseCheckpoint = detect_chunk_xml_files(cases(i).xmlFile);
+    caseAnalysisKey = build_case_analysis_cache_key( ...
+        cases(i), xmlFilesForCaseCheckpoint, maxTracksToParse, analysisPolicyTag);
+    canUseAnalysisCheckpoint = useAnalysisCheckpoints && ~forceAnalysisRecompute && ~forceReparse && ...
+        ~plotOpts.makeTrackDiagnostics && ~plotOpts.saveDiagnosticGifs && ~plotOpts.makeVideoOverlayGifs;
+    if canUseAnalysisCheckpoint
+        [okCaseAnalysis, casePayload, caseCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'case_analysis', caseAnalysisKey);
+        if okCaseAnalysis && isstruct(casePayload) && ...
+                isfield(casePayload, 'summaryRow') && isfield(casePayload, 'gateRow') && ...
+                isfield(casePayload, 'caseInstanceRows') && isfield(casePayload, 'caseConvergenceRows') && ...
+                isfield(casePayload, 'locCase') && isfield(casePayload, 'lagAccelResult') && ...
+                isfield(casePayload, 'collapseCase') && isfield(casePayload, 'collapseRecirculationCase') && ...
+                isfield(casePayload, 'proximityActivationResult') && isfield(casePayload, 'growthCollapseCase') && ...
+                isfield(casePayload, 'voidFracCase') && isfield(casePayload, 'breakupCase') && ...
+                isfield(casePayload, 'sizeCase')
+            fprintf("  Using case analysis checkpoint: %s\n", caseCheckpointFile);
+
+            locCase = casePayload.locCase;
+            allLoc.caseName(end+1,1) = locCase.caseName;
+            allLoc.Re(end+1,1) = locCase.Re;
+            allLoc.kD(end+1,1) = locCase.kD;
+            allLoc.pixelSize(end+1,1) = locCase.pixelSize;
+            allLoc.nActivated(end+1,1) = locCase.nActivated;
+            allLoc.nInjected(end+1,1) = locCase.nInjected;
+            allLoc.inception2x_xy{end+1,1} = locCase.inception2x_xy;
+            allLoc.leftMovingActivation_xy{end+1,1} = locCase.leftMovingActivation_xy;
+
+            if isempty(allLagAccel)
+                allLagAccel = casePayload.lagAccelResult;
+            else
+                allLagAccel(end+1,1) = casePayload.lagAccelResult; %#ok<AGROW>
+            end
+
+            collapseCase = casePayload.collapseCase;
+            allCollapse.caseName{end+1} = char(collapseCase.caseName);
+            allCollapse.kD(end+1) = collapseCase.kD;
+            allCollapse.Re(end+1) = collapseCase.Re;
+            allCollapse.dt(end+1) = collapseCase.dt;
+            allCollapse.pixelSize(end+1) = collapseCase.pixelSize;
+            allCollapse.data{end+1} = collapseCase.data;
+
+            allCollapseRecirculation(end+1,1) = casePayload.collapseRecirculationCase; %#ok<AGROW>
+
+            if isempty(allProximityActivation)
+                allProximityActivation = casePayload.proximityActivationResult;
+            else
+                allProximityActivation(end+1,1) = casePayload.proximityActivationResult; %#ok<AGROW>
+            end
+
+            growthCase = casePayload.growthCollapseCase;
+            allGrowthCollapse.caseName(end+1,1) = growthCase.caseName;
+            allGrowthCollapse.kD(end+1,1) = growthCase.kD;
+            allGrowthCollapse.Re(end+1,1) = growthCase.Re;
+            allGrowthCollapse.U_m_s(end+1,1) = growthCase.U_m_s;
+            allGrowthCollapse.data{end+1,1} = growthCase.data;
+
+            voidCase = casePayload.voidFracCase;
+            allVoidFrac.caseName{end+1} = char(voidCase.caseName);
+            allVoidFrac.kD(end+1) = voidCase.kD;
+            allVoidFrac.Re(end+1) = voidCase.Re;
+            allVoidFrac.data{end+1} = voidCase.data;
+
+            allBreakup(end+1,1) = casePayload.breakupCase; %#ok<AGROW>
+
+            sizeCase = casePayload.sizeCase;
+            allSize.caseName(end+1,1) = sizeCase.caseName;
+            allSize.Re(end+1,1) = sizeCase.Re;
+            allSize.kD(end+1,1) = sizeCase.kD;
+            allSize.size_eqd{end+1,1} = sizeCase.size_eqd;
+
+            gateSummaryRows = append_table_compat(gateSummaryRows, casePayload.gateRow);
+            summaryRows = append_table_compat(summaryRows, casePayload.summaryRow);
+            individualInstanceSummaryRows = append_table_compat(individualInstanceSummaryRows, casePayload.caseInstanceRows);
+            individualConvergenceRows = append_table_compat(individualConvergenceRows, casePayload.caseConvergenceRows);
+
+            elapsed_case_sec = toc(caseTimer);
+            fprintf('Case checkpoint load elapsed: %.2f s (%s)\n', elapsed_case_sec, format_elapsed_hms(elapsed_case_sec));
+            close all force;
+            continue;
+        elseif okCaseAnalysis
+            warning('Ignoring incomplete case analysis checkpoint: %s', caseCheckpointFile);
+        end
+    end
 
     [xmlFiles_i, outChunks, cacheDB, cacheUpdated] = load_case_chunk_outputs( ...
         cases(i), maxTracksToParse, parserOpts, useMatCache, forceReparse, ...
@@ -528,9 +628,30 @@ for i = 1:numel(cases)
         end
     end
 
+    loadStageCheckpoint = useAnalysisCheckpoints && ~forceAnalysisRecompute && ~forceReparse;
+
     % Compute injection/activation metrics + locations
     activationOpts.pixelSize = cases(i).pixelSize;
-    metrics = trackmate_case_metrics(out, qcOpts, flowOpts, activationOpts);
+    metricsStageKey = string(caseAnalysisKey) + "|stage=metrics";
+    if loadStageCheckpoint
+        [okMetricsCheckpoint, metrics, metricsCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'case_metrics', metricsStageKey);
+        if okMetricsCheckpoint
+            fprintf("  Using metrics checkpoint: %s\n", metricsCheckpointFile);
+        else
+            metrics = trackmate_case_metrics(out, qcOpts, flowOpts, activationOpts);
+        end
+    else
+        okMetricsCheckpoint = false;
+        metrics = trackmate_case_metrics(out, qcOpts, flowOpts, activationOpts);
+    end
+    if useAnalysisCheckpoints && ~okMetricsCheckpoint
+        [okMetricsSave, metricsCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'case_metrics', metricsStageKey, metrics);
+        if okMetricsSave
+            fprintf("  Saved metrics checkpoint: %s\n", metricsCheckpointFile);
+        end
+    end
     g = metrics.gateStats;
     fprintf(['Strict gate summary: total=%d, injected=%d, activated=%d, ', ...
         'reject(originBox=%d short=%d nonfinite=%d nonmonoT=%d yStep=%d topo=%d flow=%d origin=%d noAct=%d wall=%d)\n'], ...
@@ -550,7 +671,26 @@ for i = 1:numel(cases)
     allLoc.leftMovingActivation_xy{end+1,1} = choose_left_moving_activation_xy(metrics);
 
     % Lagrangian acceleration / pressure-gradient proxy analysis
-    lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
+    lagAccelStageKey = string(caseAnalysisKey) + "|stage=lagrangian_acceleration";
+    if loadStageCheckpoint
+        [okLagAccelCheckpoint, lagAccelResult, lagAccelCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'lagrangian_acceleration', lagAccelStageKey);
+        if okLagAccelCheckpoint
+            fprintf("  Using Lagrangian acceleration checkpoint: %s\n", lagAccelCheckpointFile);
+        else
+            lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
+        end
+    else
+        okLagAccelCheckpoint = false;
+        lagAccelResult = analyze_lagrangian_acceleration(out, metrics, cases(i), lagAccelOpts);
+    end
+    if useAnalysisCheckpoints && ~okLagAccelCheckpoint
+        [okLagAccelSave, lagAccelCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'lagrangian_acceleration', lagAccelStageKey, lagAccelResult);
+        if okLagAccelSave
+            fprintf("  Saved Lagrangian acceleration checkpoint: %s\n", lagAccelCheckpointFile);
+        end
+    end
     if isempty(allLagAccel)
         allLagAccel = lagAccelResult;
     else
@@ -558,7 +698,26 @@ for i = 1:numel(cases)
     end
 
     % Collapse frequency analysis (all tracks, no direction filter)
-    collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
+    collapseStageKey = string(caseAnalysisKey) + "|stage=collapse_events";
+    if loadStageCheckpoint
+        [okCollapseCheckpoint, collapseResult, collapseCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'collapse_events', collapseStageKey);
+        if okCollapseCheckpoint
+            fprintf("  Using collapse-events checkpoint: %s\n", collapseCheckpointFile);
+        else
+            collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
+        end
+    else
+        okCollapseCheckpoint = false;
+        collapseResult = analyze_collapse_events(out, cases(i).pixelSize, cases(i).dt, collapseOpts);
+    end
+    if useAnalysisCheckpoints && ~okCollapseCheckpoint
+        [okCollapseSave, collapseCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'collapse_events', collapseStageKey, collapseResult);
+        if okCollapseSave
+            fprintf("  Saved collapse-events checkpoint: %s\n", collapseCheckpointFile);
+        end
+    end
     allCollapse.caseName{end+1} = char(cases(i).name);
     allCollapse.kD(end+1)       = cases(i).kD;
     allCollapse.Re(end+1)       = cases(i).Re;
@@ -566,20 +725,79 @@ for i = 1:numel(cases)
     allCollapse.pixelSize(end+1) = cases(i).pixelSize;
     allCollapse.data{end+1}     = collapseResult;
 
-    collapseRecirculationResult = analyze_collapse_recirculation( ...
-        out, metrics, collapseResult, cases(i), collapseRecirculationOpts);
+    collapseRecircStageKey = string(caseAnalysisKey) + "|stage=collapse_recirculation";
+    if loadStageCheckpoint
+        [okCollapseRecircCheckpoint, collapseRecirculationResult, collapseRecircCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'collapse_recirculation', collapseRecircStageKey);
+        if okCollapseRecircCheckpoint
+            fprintf("  Using collapse-recirculation checkpoint: %s\n", collapseRecircCheckpointFile);
+        else
+            collapseRecirculationResult = analyze_collapse_recirculation( ...
+                out, metrics, collapseResult, cases(i), collapseRecirculationOpts);
+        end
+    else
+        okCollapseRecircCheckpoint = false;
+        collapseRecirculationResult = analyze_collapse_recirculation( ...
+            out, metrics, collapseResult, cases(i), collapseRecirculationOpts);
+    end
+    if useAnalysisCheckpoints && ~okCollapseRecircCheckpoint
+        [okCollapseRecircSave, collapseRecircCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'collapse_recirculation', collapseRecircStageKey, collapseRecirculationResult);
+        if okCollapseRecircSave
+            fprintf("  Saved collapse-recirculation checkpoint: %s\n", collapseRecircCheckpointFile);
+        end
+    end
     allCollapseRecirculation(end+1,1) = struct('caseName', string(cases(i).name), ...
         'Re', cases(i).Re, 'kD', cases(i).kD, 'data', collapseRecirculationResult);
 
-    proximityActivationResult = analyze_proximity_activation( ...
-        outChunks, xmlFiles_i, cases(i), qcOpts, flowOpts, activationOpts, collapseOpts, proximityActivationOpts);
+    proximityStageKey = string(caseAnalysisKey) + "|stage=proximity_activation";
+    if loadStageCheckpoint
+        [okProximityCheckpoint, proximityActivationResult, proximityCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'proximity_activation', proximityStageKey);
+        if okProximityCheckpoint
+            fprintf("  Using proximity-activation checkpoint: %s\n", proximityCheckpointFile);
+        else
+            proximityActivationResult = analyze_proximity_activation( ...
+                outChunks, xmlFiles_i, cases(i), qcOpts, flowOpts, activationOpts, collapseOpts, proximityActivationOpts);
+        end
+    else
+        okProximityCheckpoint = false;
+        proximityActivationResult = analyze_proximity_activation( ...
+            outChunks, xmlFiles_i, cases(i), qcOpts, flowOpts, activationOpts, collapseOpts, proximityActivationOpts);
+    end
+    if useAnalysisCheckpoints && ~okProximityCheckpoint
+        [okProximitySave, proximityCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'proximity_activation', proximityStageKey, proximityActivationResult);
+        if okProximitySave
+            fprintf("  Saved proximity-activation checkpoint: %s\n", proximityCheckpointFile);
+        end
+    end
     if isempty(allProximityActivation)
         allProximityActivation = proximityActivationResult;
     else
         allProximityActivation(end+1,1) = proximityActivationResult; %#ok<AGROW>
     end
 
-    growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
+    growthCollapseStageKey = string(caseAnalysisKey) + "|stage=growth_collapse";
+    if loadStageCheckpoint
+        [okGrowthCheckpoint, growthCollapseResult, growthCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'growth_collapse', growthCollapseStageKey);
+        if okGrowthCheckpoint
+            fprintf("  Using growth/collapse-rate checkpoint: %s\n", growthCheckpointFile);
+        else
+            growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
+        end
+    else
+        okGrowthCheckpoint = false;
+        growthCollapseResult = analyze_growth_collapse_rates(out, metrics, cases(i), growthCollapseOpts);
+    end
+    if useAnalysisCheckpoints && ~okGrowthCheckpoint
+        [okGrowthSave, growthCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'growth_collapse', growthCollapseStageKey, growthCollapseResult);
+        if okGrowthSave
+            fprintf("  Saved growth/collapse-rate checkpoint: %s\n", growthCheckpointFile);
+        end
+    end
     allGrowthCollapse.caseName(end+1,1) = string(cases(i).name);
     allGrowthCollapse.kD(end+1,1)       = cases(i).kD;
     allGrowthCollapse.Re(end+1,1)       = cases(i).Re;
@@ -588,7 +806,26 @@ for i = 1:numel(cases)
 
     % Void fraction analysis (all detected spots, no filter)
     voidFracOpts.cameraPixelSize = cases(i).pixelSize;
-    vfResult = analyze_void_fraction(out, voidFracOpts);
+    voidFracStageKey = string(caseAnalysisKey) + "|stage=void_fraction";
+    if loadStageCheckpoint
+        [okVoidCheckpoint, vfResult, voidCheckpointFile] = analysis_stage_checkpoint( ...
+            'load', cacheFile, 'void_fraction', voidFracStageKey);
+        if okVoidCheckpoint
+            fprintf("  Using void-fraction checkpoint: %s\n", voidCheckpointFile);
+        else
+            vfResult = analyze_void_fraction(out, voidFracOpts);
+        end
+    else
+        okVoidCheckpoint = false;
+        vfResult = analyze_void_fraction(out, voidFracOpts);
+    end
+    if useAnalysisCheckpoints && ~okVoidCheckpoint
+        [okVoidSave, voidCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'void_fraction', voidFracStageKey, vfResult);
+        if okVoidSave
+            fprintf("  Saved void-fraction checkpoint: %s\n", voidCheckpointFile);
+        end
+    end
     allVoidFrac.caseName{end+1} = char(cases(i).name);
     allVoidFrac.kD(end+1)       = cases(i).kD;
     allVoidFrac.Re(end+1)       = cases(i).Re;
@@ -599,12 +836,35 @@ for i = 1:numel(cases)
     if exist('roiData','var') && isstruct(roiData), roiArg = roiData; end
     breakupEventsByChunk = cell(nXmlChunks_i, 1);
     for c = 1:nXmlChunks_i
+        breakupPolicyTag = build_case_analysis_policy_tag("breakup_xml", 0, ...
+            'breakup', breakupOpts, 'roiData', roiArg);
+        breakupKey = build_case_analysis_cache_key(cases(i), xmlFiles_i(c), maxTracksToParse, breakupPolicyTag);
+        loadBreakupCheckpoint = useAnalysisCheckpoints && ~forceAnalysisRecompute && ~forceReparse;
+        if loadBreakupCheckpoint
+            [okBreakupCheckpoint, breakupEvents, breakupCheckpointFile] = analysis_stage_checkpoint( ...
+                'load', cacheFile, 'breakup_xml', breakupKey);
+            if okBreakupCheckpoint
+                fprintf("  Using breakup XML checkpoint for sample %d/%d: %s\n", ...
+                    c, nXmlChunks_i, breakupCheckpointFile);
+                breakupEventsByChunk{c} = breakupEvents;
+                continue;
+            end
+        end
+
         breakupEventsByChunk{c} = analyze_breakup_events(xmlFiles_i{c}, cases(i).pixelSize, ...
             'roiData',                roiArg, ...
             'aspectRatioMin',         breakupOpts.aspectRatioMin, ...
             'childAreaMin_px2',       breakupOpts.childAreaMin_px2, ...
             'dRoughnessSpacing_mm',   breakupOpts.dRoughnessSpacing_mm, ...
             'maxTracks',              maxTracksToParse);
+        if useAnalysisCheckpoints
+            [okBreakupSave, breakupCheckpointFile] = analysis_stage_checkpoint( ...
+                'save', cacheFile, 'breakup_xml', breakupKey, breakupEventsByChunk{c});
+            if okBreakupSave
+                fprintf("  Saved breakup XML checkpoint for sample %d/%d: %s\n", ...
+                    c, nXmlChunks_i, breakupCheckpointFile);
+            end
+        end
     end
     bkEvents = combine_breakup_event_chunks(breakupEventsByChunk, chunkInfo);
     allBreakup(end+1,1) = struct('caseName', string(cases(i).name), ...
@@ -659,6 +919,67 @@ for i = 1:numel(cases)
         convergenceFrameStep, qcOpts, flowOpts, activationOpts);
     individualInstanceSummaryRows = append_table_compat(individualInstanceSummaryRows, caseInstanceRows);
     individualConvergenceRows = append_table_compat(individualConvergenceRows, caseConvergenceRows);
+
+    if useAnalysisCheckpoints
+        casePayload = struct();
+        casePayload.checkpointVersion = 2;
+        casePayload.caseName = string(cases(i).name);
+        casePayload.Re = cases(i).Re;
+        casePayload.kD = cases(i).kD;
+        casePayload.summaryRow = row;
+        casePayload.gateRow = gateRow;
+        casePayload.caseInstanceRows = caseInstanceRows;
+        casePayload.caseConvergenceRows = caseConvergenceRows;
+        casePayload.locCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'pixelSize', cases(i).pixelSize, ...
+            'nActivated', g.nActivated, ...
+            'nInjected', g.nInjected, ...
+            'inception2x_xy', choose_inception_activation_xy(metrics), ...
+            'leftMovingActivation_xy', choose_left_moving_activation_xy(metrics));
+        casePayload.lagAccelResult = lagAccelResult;
+        casePayload.collapseCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'dt', cases(i).dt, ...
+            'pixelSize', cases(i).pixelSize, ...
+            'data', collapseResult);
+        casePayload.collapseRecirculationCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'data', collapseRecirculationResult);
+        casePayload.proximityActivationResult = proximityActivationResult;
+        casePayload.growthCollapseCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'U_m_s', growthCollapseOpts.U_m_s, ...
+            'data', growthCollapseResult);
+        casePayload.voidFracCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'data', vfResult);
+        casePayload.breakupCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'events', bkEvents);
+        casePayload.sizeCase = struct( ...
+            'caseName', string(cases(i).name), ...
+            'Re', cases(i).Re, ...
+            'kD', cases(i).kD, ...
+            'size_eqd', metrics.upstreamSize_eqd);
+        [okCaseSave, caseCheckpointFile] = analysis_stage_checkpoint( ...
+            'save', cacheFile, 'case_analysis', caseAnalysisKey, casePayload);
+        if okCaseSave
+            fprintf("  Saved case analysis checkpoint: %s\n", caseCheckpointFile);
+        end
+    end
 
     % Close any accidental figures
     close all force;
