@@ -79,7 +79,7 @@ forceReparse = false; % <---edit
 roiFile = "/home/kbsanjayvasanth/Tracking dataanlaysis/roi/ROI_throat.mat";  % <---edit: ARC path
 
 % Where to save all results
-resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results10"; % <---edit
+resultsDir = "/home/kbsanjayvasanth/Tracking dataanlaysis/results/results11"; % <---edit
 figDir     = fullfile(resultsDir, "Figures_PNG_SVG");
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figDir), mkdir(figDir); end

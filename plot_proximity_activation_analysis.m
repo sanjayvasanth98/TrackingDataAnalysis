@@ -515,6 +515,17 @@ end
 
 
 % =========================================================================
+function m = finite_median(x)
+x = x(isfinite(x(:)));
+if isempty(x)
+    m = NaN;
+else
+    m = median(x);
+end
+end
+
+
+% =========================================================================
 function cmap = scientific_line_colormap(n)
 base = [ ...
     0.05 0.28 0.63
