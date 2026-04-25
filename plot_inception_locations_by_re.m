@@ -29,6 +29,12 @@ if isfield(plotOpts, 'inceptionLocationPlotNormalized')
     plotNormalized = logical(plotOpts.inceptionLocationPlotNormalized);
 end
 
+contourMassFraction = 0.50;
+if isfield(plotOpts, 'inceptionDensityContourMassFraction') && ~isempty(plotOpts.inceptionDensityContourMassFraction)
+    contourMassFraction = double(plotOpts.inceptionDensityContourMassFraction);
+end
+contourMassFraction = min(max(contourMassFraction, 0.05), 0.95);
+
 if ~plotDimensional && ~plotNormalized
     warning('Both dimensional and normalized inception location plots are disabled. Skipping.');
     return;
@@ -112,7 +118,7 @@ for theme = reshape(plotOpts.themes, 1, [])
                     '$x\;(\mathrm{mm})$', '$y\;(\mathrm{mm})$', ...
                     char(theme), ...
                     fullfile(outDir, sprintf('%s%s_Re_%g_%s', outputStem, variant.fileSuffix, Rei, theme)), ...
-                    plotOpts, variant, locationField);
+                    plotOpts, variant, contourMassFraction, locationField);
             end
 
             % --- Plot 2: normalized by throat height (x/H, y/H) ---
@@ -122,7 +128,7 @@ for theme = reshape(plotOpts.themes, 1, [])
                     '$x/H$', '$y/H$', ...
                     char(theme), ...
                     fullfile(outDir, sprintf('%s_normalized%s_Re_%g_%s', outputStem, variant.fileSuffix, Rei, theme)), ...
-                    plotOpts, variant, locationField);
+                    plotOpts, variant, contourMassFraction, locationField);
             end
         end
     end
@@ -133,9 +139,9 @@ end
 %% ---- main plotting helper ----
 function plot_one_inception(allLoc, idxRe, nReCases, cmap, yExtent_mm, ...
     throatHeight_mm, xLim, yLim, doNormalize, nPdfGridX, nPdfGridY, pdfLineWidth, marginalFrac, ...
-    xLabel, yLabel, theme, outBase, plotOpts, variant, locationField)
+    xLabel, yLabel, theme, outBase, plotOpts, variant, contourMassFraction, locationField)
 
-if nargin < 20 || isempty(locationField)
+if nargin < 21 || isempty(locationField)
     locationField = 'inception2x_xy';
 end
 locationField = char(string(locationField));
@@ -169,7 +175,7 @@ hold(axRight, 'on');
 
 lgd = gobjects(0,1);
 lgdTxt = strings(0,1);
-contourOverlays = struct('Xg', {}, 'Yg', {}, 'density', {}, 'color', {});
+contourOverlays = struct('Xg', {}, 'Yg', {}, 'density', {}, 'level', {}, 'color', {});
 caseData = struct('caseOrder', {}, 'caseIndex', {}, 'xAll', {}, 'yAll', {}, 'displayMask', {});
 
 xPdfGrid = linspace(xLim(1), xLim(2), nPdfGridX);
@@ -254,9 +260,11 @@ for dataIdx = 1:numel(caseData)
         yGrid = linspace(yLim(1), yLim(2), nGrid);
         [Xg, Yg] = meshgrid(xGrid, yGrid);
         density = kde2d_simple(xDensity, yDensity, Xg, Yg);
+        level = contour_level_from_hdr(density, contourMassFraction);
         contourOverlays(end+1).Xg = Xg; %#ok<AGROW>
         contourOverlays(end).Yg = Yg;
         contourOverlays(end).density = density;
+        contourOverlays(end).level = level;
         contourOverlays(end).color = cmap(j,:);
     end
 
@@ -271,11 +279,8 @@ end
 
 % Draw density/cluster contours last so they sit above every marker.
 for ci = 1:numel(contourOverlays)
-    contour(axMain, contourOverlays(ci).Xg, contourOverlays(ci).Yg, ...
-        contourOverlays(ci).density, 1, ...
-        'LineColor', contourOverlays(ci).color, ...
-        'LineWidth', 2.0, ...
-        'HandleVisibility', 'off');
+    draw_largest_density_contour(axMain, contourOverlays(ci).Xg, contourOverlays(ci).Yg, ...
+        contourOverlays(ci).density, contourOverlays(ci).level, contourOverlays(ci).color, 2.0);
 end
 
 % Main axes styling
@@ -546,6 +551,112 @@ for i = 1:n
     density = density + exp(-0.5 * dx.^2);
 end
 density = density / (n * sqrt(2 * pi) * h);
+end
+
+function level = contour_level_from_hdr(density, massFraction)
+density = density(isfinite(density));
+if isempty(density)
+    level = 1;
+    return;
+end
+
+positiveDensity = density(density > 0);
+if isempty(positiveDensity)
+    level = max(density);
+    return;
+end
+
+sortedDensity = sort(positiveDensity, 'descend');
+cumulativeMass = cumsum(sortedDensity);
+targetMass = massFraction * cumulativeMass(end);
+idx = find(cumulativeMass >= targetMass, 1, 'first');
+if isempty(idx)
+    idx = numel(sortedDensity);
+end
+
+level = sortedDensity(idx);
+if ~(isfinite(level) && level > 0)
+    level = sortedDensity(1);
+end
+end
+
+function draw_largest_density_contour(ax, Xg, Yg, density, level, lineColor, lineWidth)
+if nargin < 7 || isempty(lineWidth)
+    lineWidth = 2.0;
+end
+
+if isempty(Xg) || isempty(Yg) || isempty(density) || ~isfinite(level) || level <= 0
+    return;
+end
+
+xVec = Xg(1, :);
+yVec = Yg(:, 1);
+contourMatrix = contourc(xVec, yVec, density, [level level]);
+segments = contour_matrix_to_segments(contourMatrix);
+if isempty(segments)
+    return;
+end
+
+bestIdx = 1;
+bestScore = -Inf;
+for si = 1:numel(segments)
+    xy = segments{si};
+    score = contour_component_score(xy(1, :), xy(2, :));
+    if score > bestScore
+        bestScore = score;
+        bestIdx = si;
+    end
+end
+
+xy = segments{bestIdx};
+plot(ax, xy(1, :), xy(2, :), ...
+    'Color', lineColor, ...
+    'LineWidth', lineWidth, ...
+    'HandleVisibility', 'off');
+end
+
+function segments = contour_matrix_to_segments(contourMatrix)
+segments = {};
+if isempty(contourMatrix)
+    return;
+end
+
+col = 1;
+while col < size(contourMatrix, 2)
+    nPts = round(contourMatrix(2, col));
+    startCol = col + 1;
+    endCol = col + nPts;
+    if nPts >= 2 && endCol <= size(contourMatrix, 2)
+        segments{end+1} = contourMatrix(:, startCol:endCol); %#ok<AGROW>
+    end
+    col = endCol + 1;
+end
+end
+
+function score = contour_component_score(x, y)
+x = x(:);
+y = y(:);
+valid = isfinite(x) & isfinite(y);
+x = x(valid);
+y = y(valid);
+
+if numel(x) < 2
+    score = -Inf;
+    return;
+end
+
+perimeter = sum(hypot(diff(x), diff(y)));
+if numel(x) >= 3
+    areaVal = abs(polyarea(x, y));
+else
+    areaVal = 0;
+end
+
+if areaVal > 0
+    score = areaVal;
+else
+    score = perimeter;
+end
 end
 
 function h = silverman_bw(x)

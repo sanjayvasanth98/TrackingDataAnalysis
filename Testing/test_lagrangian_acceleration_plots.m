@@ -13,7 +13,7 @@ addpath(repoRoot);
 % Option 1: point this to your plot_data_mat folder from a completed run.
 % Example:
 % matDir = "E:\March Re 90,000 inception data\Processed images\results\results 33 local\plot_data_mat";
-matDir = "E:\March Re 90,000 inception data\Processed images\results\results 34\plot_data_mat";
+matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
 
 % Option 2: or point directly to the .mat file. If this is non-empty it
 % takes priority over matDir.
@@ -44,11 +44,11 @@ plotOpts.lagrangianHeatmapImageSize_px = [1280 512];
 
 %% Plot selection
 % Set any of these to false when you only want to regenerate specific plots.
-makeAllFramePdfPlot = false;
-makeTriggerWindowPdfPlot = false;
-makePeakTriggerGrowthPlot = false;
-makeHeatmapPlots = false;
-makeSanityCheckPlots = true;
+makeAllFramePdfPlot = true;
+makeTriggerWindowPdfPlot = true;
+makePeakTriggerGrowthPlot = true;
+makeHeatmapPlots = true;
+makeSanityCheckPlots = false;
 
 %% Heatmap appearance overrides
 % Edit these top-level values for testing. They are applied after loading
@@ -58,6 +58,22 @@ makeSanityCheckPlots = true;
 %   smaller 2nd value = fewer y-bins = larger square cells
 heatmapGridSizeOverride = [12 12];
 heatmapSquareBinsOverride = true;
+heatmapXLimNormOverride = [0 0.48];
+heatmapShowActivationContoursOverride = false;
+activationOverlayEdgeMarginNormOverride = 0.01;
+heatmapColorPercentileRangeOverride = [5 95];
+heatmapActivationMarkerSizeOverride = 23;
+heatmapLegendLocationOverride = 'northwest';
+heatmapLegendFontSizeOverride = 10;
+triggerPdfLegendLocationOverride = 'southeast';
+makeTriggerPdfZoomPlotOverride = true;
+triggerPdfZoomXLimOverride = [1e-1 1];
+makeTriggerSurvivalPlotOverride = true;
+triggerSurvivalXLimOverride = [1e-1 1];
+triggerSurvivalLegendLocationOverride = 'southwest';
+allFramePdfLegendLocationOverride = 'southwest';
+peakGrowthLegendLocationOverride = 'northwest';
+peakGrowthLegendFontSizeOverride = 10;
 
 %% Load saved result .mat if available; otherwise build synthetic demo data
 [allLagAccel, lagAccelOpts, dataLabel] = load_or_make_lagrangian_data(matDir, matFile);
@@ -66,8 +82,24 @@ lagAccelOpts.makeTriggerWindowPdfPlot = makeTriggerWindowPdfPlot;
 lagAccelOpts.makePeakTriggerGrowthPlot = makePeakTriggerGrowthPlot;
 lagAccelOpts.makeHeatmapPlots = makeHeatmapPlots;
 lagAccelOpts.makeSanityCheckPlots = makeSanityCheckPlots;
+lagAccelOpts.xLimNorm = heatmapXLimNormOverride;
 lagAccelOpts.heatmapGridSize = heatmapGridSizeOverride;
 lagAccelOpts.heatmapSquareBins = heatmapSquareBinsOverride;
+lagAccelOpts.heatmapShowActivationContours = heatmapShowActivationContoursOverride;
+lagAccelOpts.activationOverlayEdgeMarginNorm = activationOverlayEdgeMarginNormOverride;
+lagAccelOpts.heatmapColorPercentileRange = heatmapColorPercentileRangeOverride;
+lagAccelOpts.heatmapActivationMarkerSize = heatmapActivationMarkerSizeOverride;
+lagAccelOpts.heatmapLegendLocation = heatmapLegendLocationOverride;
+lagAccelOpts.heatmapLegendFontSize = heatmapLegendFontSizeOverride;
+lagAccelOpts.triggerPdfLegendLocation = triggerPdfLegendLocationOverride;
+lagAccelOpts.makeTriggerPdfZoomPlot = makeTriggerPdfZoomPlotOverride;
+lagAccelOpts.triggerPdfZoomXLim = triggerPdfZoomXLimOverride;
+lagAccelOpts.makeTriggerSurvivalPlot = makeTriggerSurvivalPlotOverride;
+lagAccelOpts.triggerSurvivalXLim = triggerSurvivalXLimOverride;
+lagAccelOpts.triggerSurvivalLegendLocation = triggerSurvivalLegendLocationOverride;
+lagAccelOpts.allFramePdfLegendLocation = allFramePdfLegendLocationOverride;
+lagAccelOpts.peakGrowthLegendLocation = peakGrowthLegendLocationOverride;
+lagAccelOpts.peakGrowthLegendFontSize = peakGrowthLegendFontSizeOverride;
 plotOpts.roiData = load_or_make_lagrangian_roi(roiFile, allLagAccel, lagAccelOpts);
 
 fprintf('Using %s Lagrangian acceleration data.\n', dataLabel);
@@ -135,9 +167,9 @@ lagAccelOpts = struct();
 lagAccelOpts.throatHeight_mm = 10;
 lagAccelOpts.xLimNorm = [0 0.5];
 lagAccelOpts.yLimNorm = [0 0.12];
-lagAccelOpts.makeAllFramePdfPlot = false;
-lagAccelOpts.makeTriggerWindowPdfPlot = false;
-lagAccelOpts.makePeakTriggerGrowthPlot = false;
+lagAccelOpts.makeAllFramePdfPlot = true;
+lagAccelOpts.makeTriggerWindowPdfPlot = true;
+lagAccelOpts.makePeakTriggerGrowthPlot = true;
 lagAccelOpts.makeHeatmapPlots = true;
 lagAccelOpts.makeSanityCheckPlots = false;
 lagAccelOpts.heatmapGridSize = [20 20]; % with square bins, 2nd value sets y-bin count; x-bin count is auto

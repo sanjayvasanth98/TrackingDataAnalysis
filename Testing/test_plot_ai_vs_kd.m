@@ -8,7 +8,7 @@
 clear; clc;
 
 %% Paths
-matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
+matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs');
 if ~isfolder(outDir), mkdir(outDir); end
 

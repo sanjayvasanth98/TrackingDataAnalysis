@@ -27,6 +27,9 @@ end
 if lagAccelOpts.makeTriggerWindowPdfPlot
     plot_accel_pdf_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts, "trigger");
 end
+if isfield(lagAccelOpts, 'makeTriggerSurvivalPlot') && lagAccelOpts.makeTriggerSurvivalPlot
+    plot_trigger_survival_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts);
+end
 if lagAccelOpts.makePeakTriggerGrowthPlot
     plot_peak_trigger_vs_growth(allLagAccel, outDir, plotOpts, lagAccelOpts);
 end
@@ -47,6 +50,15 @@ opts = default_field(opts, 'xLimNorm', [0 0.5]);
 opts = default_field(opts, 'yLimNorm', [0 0.12]);
 opts = default_field(opts, 'pdfGridN', 260);
 opts = default_field(opts, 'pdfPercentileRange', [0.5 99.5]);
+opts = default_field(opts, 'allFramePdfLegendLocation', 'southoutside');
+opts = default_field(opts, 'triggerPdfLegendLocation', 'southoutside');
+opts = default_field(opts, 'makeTriggerPdfZoomPlot', false);
+opts = default_field(opts, 'triggerPdfZoomXLim', [1e-1 1]);
+opts = default_field(opts, 'makeTriggerSurvivalPlot', false);
+opts = default_field(opts, 'triggerSurvivalXLim', [1e-1 1]);
+opts = default_field(opts, 'triggerSurvivalLegendLocation', 'southwest');
+opts = default_field(opts, 'peakGrowthLegendLocation', 'northwest');
+opts = default_field(opts, 'peakGrowthLegendFontSize', 9);
 opts = default_field(opts, 'makeAllFramePdfPlot', true);
 opts = default_field(opts, 'makeTriggerWindowPdfPlot', true);
 opts = default_field(opts, 'makePeakTriggerGrowthPlot', true);
@@ -58,7 +70,13 @@ opts = default_field(opts, 'heatmapMinSamplesPerBin', 10);
 opts = default_field(opts, 'heatmapColormap', "sky");
 opts = default_field(opts, 'heatmapPreserveSpatialAspect', true);
 opts = default_field(opts, 'heatmapSquareBins', true);
+opts = default_field(opts, 'heatmapShowActivationContours', true);
+opts = default_field(opts, 'heatmapColorPercentileRange', []);
+opts = default_field(opts, 'heatmapActivationMarkerSize', 46);
+opts = default_field(opts, 'heatmapLegendLocation', 'southoutside');
+opts = default_field(opts, 'heatmapLegendFontSize', []);
 opts = default_field(opts, 'activationOverlayPerCase', 75);
+opts = default_field(opts, 'activationOverlayEdgeMarginNorm', 0);
 opts = default_field(opts, 'randomSeed', 42);
 opts = default_field(opts, 'minSpearmanN', 10);
 opts = default_field(opts, 'maxSanityTracks', 250);
@@ -133,24 +151,203 @@ for theme = reshape(plotOpts.themes, 1, [])
         if mode == "trigger"
             title(ax, sprintf('Trigger-window acceleration PDFs, Re = %g', Rei), 'FontName', fontName);
             outName = sprintf('LagrangianAccel_trigger_PDF_Re_%g_%s', Rei, char(theme));
+            legendLocation = char(opts.triggerPdfLegendLocation);
         else
             title(ax, sprintf('All-frame acceleration PDFs, Re = %g', Rei), 'FontName', fontName);
             outName = sprintf('LagrangianAccel_allframe_PDF_Re_%g_%s', Rei, char(theme));
+            legendLocation = char(opts.allFramePdfLegendLocation);
         end
         grid(ax, 'off');
         box(ax, 'on');
 
         if ~isempty(lgd)
             leg = legend(ax, lgd, cellstr(lgdTxt), ...
-                'Location', 'southoutside', 'NumColumns', 2, 'Box', 'off');
+                'Location', legendLocation, 'NumColumns', pdf_legend_num_columns(legendLocation, numel(lgdTxt)), 'Box', 'off');
         else
             leg = [];
         end
         apply_plot_theme(ax, char(theme));
         style_legend_for_theme(leg, char(theme));
         save_fig_dual_safe(f, fullfile(outDir, outName), plotOpts);
+        if mode == "trigger"
+            save_trigger_pdf_zoom_if_requested(f, ax, outDir, Rei, char(theme), plotOpts, opts);
+        end
         close_if_needed(f, plotOpts);
     end
+end
+end
+
+
+% =========================================================================
+function save_trigger_pdf_zoom_if_requested(f, ax, outDir, Rei, theme, plotOpts, opts)
+if ~isfield(opts, 'makeTriggerPdfZoomPlot') || ~opts.makeTriggerPdfZoomPlot
+    return;
+end
+if ~isfield(opts, 'triggerPdfZoomXLim') || numel(opts.triggerPdfZoomXLim) < 2
+    return;
+end
+
+zoomXLim = sort(double(opts.triggerPdfZoomXLim(1:2)));
+if ~(all(isfinite(zoomXLim)) && zoomXLim(1) > 0 && zoomXLim(2) > zoomXLim(1))
+    return;
+end
+
+origXLim = xlim(ax);
+origYLim = ylim(ax);
+origTitle = ax.Title.String;
+origTitleInterp = ax.Title.Interpreter;
+origTitleFont = ax.Title.FontName;
+leg = legend(ax);
+hasLegend = ~isempty(leg) && isgraphics(leg, 'legend');
+if hasLegend
+    origLegendVisible = leg.Visible;
+    leg.Visible = 'off';
+end
+
+xlim(ax, zoomXLim);
+set_pdf_zoom_ylim_from_visible_lines(ax, zoomXLim);
+title(ax, sprintf('Trigger-window acceleration PDFs, Re = %g, %.2g \\leq |a^*| \\leq %.2g', ...
+    Rei, zoomXLim(1), zoomXLim(2)), ...
+    'Interpreter', 'tex', 'FontName', origTitleFont);
+
+outName = sprintf('LagrangianAccel_trigger_PDF_zoom_0p1_to_1_Re_%g_%s', Rei, theme);
+save_fig_dual_safe(f, fullfile(outDir, outName), plotOpts);
+
+xlim(ax, origXLim);
+ylim(ax, origYLim);
+title(ax, origTitle, 'Interpreter', origTitleInterp, 'FontName', origTitleFont);
+if hasLegend
+    leg.Visible = origLegendVisible;
+end
+end
+
+
+% =========================================================================
+function set_pdf_zoom_ylim_from_visible_lines(ax, xLimUse)
+lineHandles = findobj(ax, 'Type', 'Line');
+yVals = nan(0, 1);
+for i = 1:numel(lineHandles)
+    x = get(lineHandles(i), 'XData');
+    y = get(lineHandles(i), 'YData');
+    x = x(:);
+    y = y(:);
+    n = min(numel(x), numel(y));
+    x = x(1:n);
+    y = y(1:n);
+    inWindow = isfinite(x) & isfinite(y) & y > 0 & x >= xLimUse(1) & x <= xLimUse(2);
+    yVals = [yVals; y(inWindow)]; %#ok<AGROW>
+end
+
+if isempty(yVals)
+    return;
+end
+yLo = min(yVals);
+yHi = max(yVals);
+if ~(isfinite(yLo) && isfinite(yHi) && yHi > yLo)
+    return;
+end
+ylim(ax, [max(yLo * 0.75, realmin), yHi * 1.35]);
+end
+
+
+% =========================================================================
+function nCols = pdf_legend_num_columns(location, nItems)
+location = lower(char(string(location)));
+if contains(location, 'outside')
+    nCols = 2;
+else
+    nCols = 1;
+end
+nCols = max(1, min(nCols, max(1, nItems)));
+end
+
+
+% =========================================================================
+function plot_trigger_survival_by_re(allLagAccel, outDir, plotOpts, opts)
+ReVals = unique([allLagAccel.Re]);
+ReVals = ReVals(isfinite(ReVals));
+if isempty(ReVals), return; end
+
+xLimUse = sort(double(opts.triggerSurvivalXLim(1:2)));
+if ~(all(isfinite(xLimUse)) && xLimUse(1) > 0 && xLimUse(2) > xLimUse(1))
+    xLimUse = [1e-1 1];
+end
+xGrid = logspace(log10(xLimUse(1)), log10(xLimUse(2)), opts.pdfGridN).';
+
+for theme = reshape(plotOpts.themes, 1, [])
+    for ri = 1:numel(ReVals)
+        Rei = ReVals(ri);
+        caseIdx = find([allLagAccel.Re] == Rei);
+        if isempty(caseIdx), continue; end
+
+        fontName = resolve_plot_font_name();
+        f = figure('Color', 'w', 'Position', [100 100 1120 760]);
+        ax = axes(f);
+        hold(ax, 'on');
+
+        cmap = scientific_line_colormap(numel(caseIdx));
+        lgd = gobjects(0, 1);
+        lgdTxt = strings(0, 1);
+
+        for j = 1:numel(caseIdx)
+            d = allLagAccel(caseIdx(j));
+            yAct = positive_values(d.activatedTriggerAstar);
+            yNon = positive_values(d.nonActivatedRandomAstar);
+            col = cmap(j, :);
+
+            if numel(yAct) >= 5
+                survAct = empirical_survival(yAct, xGrid);
+                h = plot(ax, xGrid, survAct, '-', 'Color', col, 'LineWidth', 2.4);
+                lgd(end+1,1) = h; %#ok<AGROW>
+                lgdTxt(end+1,1) = sprintf('k/d=%.4g activated', d.kD); %#ok<AGROW>
+            end
+            if numel(yNon) >= 5
+                survNon = empirical_survival(yNon, xGrid);
+                h = plot(ax, xGrid, survNon, '--', 'Color', col, 'LineWidth', 2.1);
+                lgd(end+1,1) = h; %#ok<AGROW>
+                lgdTxt(end+1,1) = sprintf('k/d=%.4g non-activated', d.kD); %#ok<AGROW>
+            end
+        end
+
+        set(ax, 'XScale', 'log', 'YScale', 'linear', 'FontName', fontName);
+        xlim(ax, xLimUse);
+        ylim(ax, [0 1]);
+        xlabel(ax, 'Threshold $A$ in $|a^*| \geq A$', 'Interpreter', 'latex');
+        ylabel(ax, '$P(|a^*| \geq A)$', 'Interpreter', 'latex');
+        title(ax, sprintf('Trigger-window acceleration survival, Re = %g', Rei), 'FontName', fontName);
+        grid(ax, 'off');
+        box(ax, 'on');
+
+        if ~isempty(lgd)
+            legendLocation = char(opts.triggerSurvivalLegendLocation);
+            leg = legend(ax, lgd, cellstr(lgdTxt), ...
+                'Location', legendLocation, ...
+                'NumColumns', pdf_legend_num_columns(legendLocation, numel(lgdTxt)), ...
+                'Box', 'off');
+        else
+            leg = [];
+        end
+
+        apply_plot_theme(ax, char(theme));
+        style_legend_for_theme(leg, char(theme));
+        outName = sprintf('LagrangianAccel_trigger_survival_Re_%g_%s', Rei, char(theme));
+        save_fig_dual_safe(f, fullfile(outDir, outName), plotOpts);
+        close_if_needed(f, plotOpts);
+    end
+end
+end
+
+
+% =========================================================================
+function p = empirical_survival(values, xGrid)
+values = positive_values(values);
+xGrid = xGrid(:);
+p = nan(size(xGrid));
+if isempty(values)
+    return;
+end
+for i = 1:numel(xGrid)
+    p(i) = mean(values >= xGrid(i));
 end
 end
 
@@ -203,7 +400,8 @@ for theme = reshape(plotOpts.themes, 1, [])
         Rei = ReVals(ri);
         caseIdx = find([allLagAccel.Re] == Rei);
         cmap = scientific_line_colormap(numel(caseIdx));
-        rhoLines = strings(0, 1);
+        insideLegendText = strings(0, 1);
+        insideLegendColors = zeros(0, 3);
         lgd = gobjects(0, 1);
         lgdTxt = strings(0, 1);
 
@@ -233,10 +431,11 @@ for theme = reshape(plotOpts.themes, 1, [])
 
             if numel(x) >= opts.minSpearmanN
                 rho = spearman_rho(x, y);
-                rhoLines(end+1,1) = sprintf('k/d=%.4g: \\rho=%.2f (n=%d)', d.kD, rho, numel(x)); %#ok<AGROW>
+                insideLegendText(end+1,1) = sprintf('k/d=%.4g: \\rho=%.2f (n=%d)', d.kD, rho, numel(x)); %#ok<AGROW>
             else
-                rhoLines(end+1,1) = sprintf('k/d=%.4g: n=%d', d.kD, numel(x)); %#ok<AGROW>
+                insideLegendText(end+1,1) = sprintf('k/d=%.4g: n=%d', d.kD, numel(x)); %#ok<AGROW>
             end
+            insideLegendColors(end+1,:) = col; %#ok<AGROW>
         end
 
         set(ax, 'XScale', 'log', 'FontName', fontName);
@@ -245,26 +444,91 @@ for theme = reshape(plotOpts.themes, 1, [])
         title(ax, sprintf('Re = %g', Rei), 'FontName', fontName);
         grid(ax, 'off');
         box(ax, 'on');
-        if ~isempty(rhoLines)
-            text(ax, 0.03, 0.97, strjoin(cellstr(rhoLines), sprintf('\n')), ...
-                'Units', 'normalized', 'VerticalAlignment', 'top', ...
-                'FontName', fontName, 'FontSize', 9, ...
-                'Color', theme_text_color(char(theme)), ...
-                'BackgroundColor', theme_background_color(char(theme)), ...
-                'Margin', 4);
-        end
         apply_plot_theme(ax, char(theme));
-
-        if ~isempty(lgd)
-            leg = legend(ax, lgd, cellstr(lgdTxt), ...
-                'Location', 'southoutside', 'NumColumns', min(2, numel(lgdTxt)), 'Box', 'off');
-        else
-            leg = [];
-        end
-        style_legend_for_theme(leg, char(theme));
+        draw_peak_growth_inside_legend(ax, insideLegendText, insideLegendColors, opts, fontName, char(theme));
     end
     save_fig_dual_safe(f, fullfile(outDir, "LagrangianAccel_peakTrigger_vs_growth_" + theme), plotOpts);
     close_if_needed(f, plotOpts);
+end
+end
+
+
+% =========================================================================
+function draw_peak_growth_inside_legend(ax, labels, colors, opts, fontName, theme)
+if isempty(labels)
+    return;
+end
+
+xLim = xlim(ax);
+yLim = ylim(ax);
+if numel(xLim) < 2 || numel(yLim) < 2
+    return;
+end
+xLim = double(xLim);
+yLim = double(yLim);
+xSpanLog = diff(log10(xLim));
+ySpan = diff(yLim);
+if ~(all(isfinite(xLim)) && all(isfinite(yLim)) && xLim(1) > 0 && xSpanLog > 0 && ySpan > 0)
+    return;
+end
+
+loc = 'northwest';
+if isfield(opts, 'peakGrowthLegendLocation') && ~isempty(opts.peakGrowthLegendLocation)
+    loc = lower(char(string(opts.peakGrowthLegendLocation)));
+end
+
+fontSize = 9;
+if isfield(opts, 'peakGrowthLegendFontSize') && ~isempty(opts.peakGrowthLegendFontSize)
+    fs = double(opts.peakGrowthLegendFontSize);
+    if isfinite(fs) && fs > 0
+        fontSize = fs;
+    end
+end
+
+isWest = any(strcmp(loc, {'northwest', 'southwest', 'west'}));
+isSouth = any(strcmp(loc, {'southwest', 'southeast', 'south'}));
+if isWest
+    xMarker = 10^(log10(xLim(1)) + 0.060 * xSpanLog);
+    xText = 10^(log10(xLim(1)) + 0.105 * xSpanLog);
+    hAlign = 'left';
+else
+    xMarker = 10^(log10(xLim(2)) - 0.22 * xSpanLog);
+    xText = 10^(log10(xLim(2)) - 0.055 * xSpanLog);
+    hAlign = 'right';
+end
+
+yStep = 0.040 * ySpan;
+if isSouth
+    yStart = yLim(1) + 0.10 * ySpan;
+    yForItem = @(i) yStart + (i - 1) * yStep;
+else
+    yStart = yLim(2) - 0.10 * ySpan;
+    yForItem = @(i) yStart - (i - 1) * yStep;
+end
+
+for i = 1:numel(labels)
+    y = yForItem(i);
+    if y < yLim(1) || y > yLim(2)
+        break;
+    end
+    scatter(ax, xMarker, y, 44, ...
+        'Marker', 'o', ...
+        'MarkerFaceColor', colors(i,:), ...
+        'MarkerEdgeColor', [0.05 0.05 0.05], ...
+        'LineWidth', 0.75, ...
+        'MarkerFaceAlpha', 0.72, ...
+        'HandleVisibility', 'off');
+    text(ax, xText, y, char(labels(i)), ...
+        'HorizontalAlignment', hAlign, ...
+        'VerticalAlignment', 'middle', ...
+        'Interpreter', 'tex', ...
+        'FontName', fontName, ...
+        'FontSize', fontSize, ...
+        'Color', theme_text_color(theme), ...
+        'BackgroundColor', theme_background_color(theme), ...
+        'Margin', 2, ...
+        'Clipping', 'on', ...
+        'HandleVisibility', 'off');
 end
 end
 
@@ -310,8 +574,12 @@ end
 % =========================================================================
 function plot_one_heatmap(caseData, Z, xCenters, yCenters, Rei, statName, outDir, plotOpts, opts, theme)
 fontName = resolve_plot_font_name();
+if ~strcmpi(fontName, 'Times New Roman')
+    fontName = 'Times New Roman';
+end
 figSize = heatmap_figure_size(plotOpts);
 f = figure('Color', 'w', 'Position', [120 120 figSize]);
+set(f, 'DefaultAxesFontName', fontName, 'DefaultTextFontName', fontName);
 ax = axes(f, 'Position', heatmap_axes_position());
 hold(ax, 'on');
 
@@ -320,6 +588,7 @@ set(hImg, 'AlphaData', isfinite(Z));
 set(ax, 'YDir', 'normal', 'Color', 'w');
 axis(ax, 'tight');
 colormap(ax, lagrangian_heat_colormap(256, opts));
+apply_heatmap_color_limits(ax, Z, opts);
 cb = colorbar(ax);
 cb.Label.String = sprintf('%s |a^*| per bin', upper(statName));
 cb.Label.Interpreter = 'tex';
@@ -336,14 +605,22 @@ cmap = scientific_line_colormap(numel(caseData));
 markers = {'o', 'd', 'p', 's', '^', 'v', 'h', '>', '<', '*'};
 lgd = gobjects(0, 1);
 lgdTxt = strings(0, 1);
+lgdColors = zeros(0, 3);
+lgdMarkers = {};
 rng(opts.randomSeed + round(Rei), 'twister');
 
+drawContours = isfield(opts, 'heatmapShowActivationContours') && opts.heatmapShowActivationContours;
+edgeMargin = activation_overlay_edge_margin(opts);
 contourOverlays = struct('Xg', {}, 'Yg', {}, 'D', {}, 'color', {});
 for j = 1:numel(caseData)
     d = caseData(j);
     xy = d.activationXYNorm;
-    valid = all(isfinite(xy), 2) & xy(:,1) >= opts.xLimNorm(1) & xy(:,1) <= opts.xLimNorm(2) & ...
-        xy(:,2) >= opts.yLimNorm(1) & xy(:,2) <= opts.yLimNorm(2);
+    xMinOverlay = opts.xLimNorm(1) + edgeMargin(1);
+    xMaxOverlay = opts.xLimNorm(2) - edgeMargin(1);
+    yMinOverlay = opts.yLimNorm(1) + edgeMargin(2);
+    yMaxOverlay = opts.yLimNorm(2) - edgeMargin(2);
+    valid = all(isfinite(xy), 2) & xy(:,1) >= xMinOverlay & xy(:,1) <= xMaxOverlay & ...
+        xy(:,2) >= yMinOverlay & xy(:,2) <= yMaxOverlay;
     xy = xy(valid, :);
     if isempty(xy)
         continue;
@@ -355,7 +632,7 @@ for j = 1:numel(caseData)
         xyPlot = xy;
     end
     marker = markers{mod(j - 1, numel(markers)) + 1};
-    h = scatter(ax, xyPlot(:,1), xyPlot(:,2), 46, ...
+    h = scatter(ax, xyPlot(:,1), xyPlot(:,2), opts.heatmapActivationMarkerSize, ...
         'Marker', marker, ...
         'MarkerFaceColor', cmap(j,:), ...
         'MarkerEdgeColor', [0.03 0.03 0.03], ...
@@ -363,8 +640,10 @@ for j = 1:numel(caseData)
         'MarkerFaceAlpha', 0.82);
     lgd(end+1,1) = h; %#ok<AGROW>
     lgdTxt(end+1,1) = sprintf('k/d=%.4g', d.kD); %#ok<AGROW>
+    lgdColors(end+1,:) = cmap(j,:); %#ok<AGROW>
+    lgdMarkers{end+1,1} = marker; %#ok<AGROW>
 
-    if size(xy, 1) >= 10
+    if drawContours && size(xy, 1) >= 10
         [Xg, Yg] = meshgrid(linspace(opts.xLimNorm(1), opts.xLimNorm(2), 90), ...
             linspace(opts.yLimNorm(1), opts.yLimNorm(2), 90));
         D = kde2d_simple(xy(:,1), xy(:,2), Xg, Yg);
@@ -375,11 +654,13 @@ for j = 1:numel(caseData)
     end
 end
 
-for ci = 1:numel(contourOverlays)
-    contour(ax, contourOverlays(ci).Xg, contourOverlays(ci).Yg, contourOverlays(ci).D, 1, ...
-        'LineColor', contourOverlays(ci).color, ...
-        'LineWidth', 2.4, ...
-        'HandleVisibility', 'off');
+if drawContours
+    for ci = 1:numel(contourOverlays)
+        contour(ax, contourOverlays(ci).Xg, contourOverlays(ci).Yg, contourOverlays(ci).D, 1, ...
+            'LineColor', contourOverlays(ci).color, ...
+            'LineWidth', 2.4, ...
+            'HandleVisibility', 'off');
+    end
 end
 
 xlim(ax, opts.xLimNorm);
@@ -387,16 +668,18 @@ ylim(ax, opts.yLimNorm);
 if opts.heatmapPreserveSpatialAspect
     pbaspect(ax, [diff(opts.xLimNorm) diff(opts.yLimNorm) 1]);
 end
-xlabel(ax, '$x/H$', 'Interpreter', 'latex');
-ylabel(ax, '$y/H$', 'Interpreter', 'latex');
-title(ax, sprintf('Lagrangian acceleration heatmap (%s), Re = %g', upper(statName), Rei), 'FontName', fontName);
+xlabel(ax, 'x/H', 'Interpreter', 'tex', 'FontName', fontName);
+ylabel(ax, 'y/H', 'Interpreter', 'tex', 'FontName', fontName);
+title(ax, sprintf('Lagrangian acceleration heatmap (%s), Re = %g', upper(statName), Rei), ...
+    'Interpreter', 'tex', 'FontName', fontName);
 set(ax, 'FontName', fontName, 'Layer', 'top');
 grid(ax, 'off');
 box(ax, 'on');
 
-if ~isempty(lgd)
-    leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', 'southoutside', ...
-        'NumColumns', min(4, numel(lgdTxt)), 'Box', 'off');
+useInlineLegend = heatmap_uses_inline_legend(opts);
+if ~isempty(lgd) && ~useInlineLegend
+    leg = legend(ax, lgd, cellstr(lgdTxt), 'Location', char(opts.heatmapLegendLocation), ...
+        'NumColumns', heatmap_legend_num_columns(opts, numel(lgdTxt)), 'Box', 'off');
 else
     leg = [];
 end
@@ -405,8 +688,167 @@ apply_plot_theme(ax, theme);
 style_heatmap_white_theme(f, ax, cb);
 style_legend_for_theme(leg, theme);
 style_legend_for_heatmap_white(leg);
+style_heatmap_legend_text(leg, opts, fontName);
+draw_heatmap_inline_legend(ax, lgdTxt, lgdColors, lgdMarkers, opts, fontName, theme);
 save_fig_dual_safe(f, fullfile(outDir, sprintf('LagrangianAccel_heatmap_%s_Re_%g_%s', statName, Rei, theme)), plotOpts);
 close_if_needed(f, plotOpts);
+end
+
+
+% =========================================================================
+function tf = heatmap_uses_inline_legend(opts)
+tf = false;
+if ~isfield(opts, 'heatmapLegendLocation') || isempty(opts.heatmapLegendLocation)
+    return;
+end
+loc = lower(char(string(opts.heatmapLegendLocation)));
+tf = any(strcmp(loc, {'northeast', 'northwest', 'upperright', 'upperleft'}));
+end
+
+
+% =========================================================================
+function nCols = heatmap_legend_num_columns(opts, nItems)
+nCols = min(4, nItems);
+if isfield(opts, 'heatmapLegendLocation') && ~isempty(opts.heatmapLegendLocation)
+    loc = lower(char(string(opts.heatmapLegendLocation)));
+    if ~contains(loc, 'outside')
+        nCols = 1;
+    end
+end
+nCols = max(1, nCols);
+end
+
+
+% =========================================================================
+function style_heatmap_legend_text(leg, opts, fontName)
+if isempty(leg) || ~isgraphics(leg)
+    return;
+end
+leg.FontName = fontName;
+if isfield(opts, 'heatmapLegendFontSize') && ~isempty(opts.heatmapLegendFontSize)
+    fs = double(opts.heatmapLegendFontSize);
+    if isfinite(fs) && fs > 0
+        leg.FontSize = fs;
+    end
+end
+end
+
+
+% =========================================================================
+function draw_heatmap_inline_legend(ax, labels, colors, markers, opts, fontName, theme)
+if ~heatmap_uses_inline_legend(opts) || isempty(labels)
+    return;
+end
+
+xLim = xlim(ax);
+yLim = ylim(ax);
+xSpan = diff(xLim);
+ySpan = diff(yLim);
+if ~(isfinite(xSpan) && isfinite(ySpan) && xSpan > 0 && ySpan > 0)
+    return;
+end
+
+fontSize = 8;
+if isfield(opts, 'heatmapLegendFontSize') && ~isempty(opts.heatmapLegendFontSize)
+    fs = double(opts.heatmapLegendFontSize);
+    if isfinite(fs) && fs > 0
+        fontSize = fs;
+    end
+end
+
+textColor = theme_text_color(theme);
+loc = lower(char(string(opts.heatmapLegendLocation)));
+if any(strcmp(loc, {'northwest', 'upperleft'}))
+    xMarker = xLim(1) + 0.035 * xSpan;
+    xText = xLim(1) + 0.070 * xSpan;
+    textAlign = 'left';
+else
+    xText = xLim(2) - 0.035 * xSpan;
+    xMarker = xLim(2) - 0.18 * xSpan;
+    textAlign = 'right';
+end
+yTop = yLim(2) - 0.10 * ySpan;
+yStep = 0.055 * ySpan;
+
+for i = 1:numel(labels)
+    y = yTop - (i - 1) * yStep;
+    if y < yLim(1)
+        break;
+    end
+    scatter(ax, xMarker, y, opts.heatmapActivationMarkerSize, ...
+        'Marker', markers{i}, ...
+        'MarkerFaceColor', colors(i,:), ...
+        'MarkerEdgeColor', [0.03 0.03 0.03], ...
+        'LineWidth', 0.8, ...
+        'HandleVisibility', 'off');
+    text(ax, xText, y, char(labels(i)), ...
+        'HorizontalAlignment', textAlign, ...
+        'VerticalAlignment', 'middle', ...
+        'Interpreter', 'tex', ...
+        'FontName', fontName, ...
+        'FontSize', fontSize, ...
+        'Color', textColor, ...
+        'Clipping', 'on', ...
+        'HandleVisibility', 'off');
+end
+end
+
+
+% =========================================================================
+function apply_heatmap_color_limits(ax, Z, opts)
+if ~isfield(opts, 'heatmapColorPercentileRange') || isempty(opts.heatmapColorPercentileRange)
+    return;
+end
+
+pRange = double(opts.heatmapColorPercentileRange(:).');
+if numel(pRange) < 2
+    return;
+end
+pRange = sort(pRange(1:2));
+pRange(1) = max(0, min(100, pRange(1)));
+pRange(2) = max(0, min(100, pRange(2)));
+if pRange(2) <= pRange(1)
+    return;
+end
+
+vals = Z(isfinite(Z));
+if numel(vals) < 2
+    return;
+end
+
+cMin = finite_prctile(vals, pRange(1));
+cMax = finite_prctile(vals, pRange(2));
+if ~(isfinite(cMin) && isfinite(cMax) && cMax > cMin)
+    cMin = min(vals);
+    cMax = max(vals);
+end
+if isfinite(cMin) && isfinite(cMax) && cMax > cMin
+    caxis(ax, [cMin cMax]);
+end
+end
+
+
+% =========================================================================
+function edgeMargin = activation_overlay_edge_margin(opts)
+edgeMargin = [0 0];
+if ~isfield(opts, 'activationOverlayEdgeMarginNorm') || isempty(opts.activationOverlayEdgeMarginNorm)
+    return;
+end
+
+rawMargin = double(opts.activationOverlayEdgeMarginNorm(:).');
+if isempty(rawMargin)
+    return;
+elseif numel(rawMargin) == 1
+    edgeMargin = [rawMargin rawMargin];
+else
+    edgeMargin = rawMargin(1:2);
+end
+
+edgeMargin(~isfinite(edgeMargin)) = 0;
+edgeMargin = max(edgeMargin, 0);
+xHalfSpan = max(diff(opts.xLimNorm) / 2, 0);
+yHalfSpan = max(diff(opts.yLimNorm) / 2, 0);
+edgeMargin = min(edgeMargin, [xHalfSpan yHalfSpan]);
 end
 
 

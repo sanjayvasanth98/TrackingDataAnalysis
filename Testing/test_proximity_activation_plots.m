@@ -13,7 +13,7 @@ addpath(repoRoot);
 % Option 1: point this to your plot_data_mat folder from a completed run.
 % Example:
 % matDir = "E:\March Re 90,000 inception data\Processed images\results\results 33 local\plot_data_mat";
-matDir = "";
+matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
 
 % Option 2: or point directly to the .mat file. If this is non-empty it
 % takes priority over matDir.
@@ -107,6 +107,7 @@ function opts = default_plot_opts()
 opts = struct();
 opts.maxGamma = 20;
 opts.extendedMaxGamma = 40;
+opts.plotMaxGamma = 20;
 opts.gammaBins = [0 2 5 10 20 40];
 opts.minPairsForTrend = 2;
 end

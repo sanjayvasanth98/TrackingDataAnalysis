@@ -200,6 +200,7 @@ plotOpts.maxActivationsPerCase = 250; % cap activation points shown per case in 
 plotOpts.makeCappedActivationInceptionPlots = true; % <---edit
 plotOpts.makeAllActivationInceptionPlots = true; % <---edit
 plotOpts.makeRandom100InceptionPlot = true; % <---edit: show 100 pooled random activation points
+plotOpts.inceptionDensityContourMassFraction = 0.50; % <---edit: single 50% HDR contour from full density cloud
 plotOpts.randomInceptionTotalPoints = 100; % <---edit: total visible points in random100_inception
 plotOpts.randomInceptionSeed = 42; % <---edit: reproducible random point selection
 plotOpts.breakupDRatioXScale = "log"; % <---edit: x scale for gamma vs d_child/d_parent
@@ -214,8 +215,8 @@ plotOpts.breakupDRatioTrendMaxBins = 12; % <---edit: binned mean trend bins
 plotOpts.breakupDRatioTrendMinCount = 5; % <---edit: skip sparse bins in mean trend
 plotOpts.breakupARMarkerSize = 30; % <---edit: gamma vs parent AR marker size
 plotOpts.breakupARMarkerAlpha = 0.40; % <---edit: gamma vs parent AR marker transparency
-plotOpts.breakupARXLim = [0, 4]; % <---edit: fixed x-window for gamma vs parent AR
-plotOpts.breakupARGammaYLim = [-0.5, 0.5]; % <---edit: fixed y-window for gamma vs parent AR
+plotOpts.breakupARXLim = []; % <---edit: auto x-window [0, max(parent AR) + 1] for gamma vs parent AR
+plotOpts.breakupARGammaYLim = [-0.6, 0.6]; % <---edit: fixed y-window for gamma vs parent AR
 plotOpts.breakupARTrendMaxBins = 12; % <---edit: binned mean trend bins for gamma vs parent AR
 plotOpts.breakupARTrendMinCount = 5; % <---edit: skip sparse bins in AR mean trend
 plotOpts.themes = enabled_plot_themes(plotOpts);
@@ -259,6 +260,7 @@ lagAccelOpts.stationaryMaxPathLength_px = 5;
 proximityActivationOpts = struct();
 proximityActivationOpts.maxGamma = 20; % main interaction-zone limit, d/Rmax
 proximityActivationOpts.extendedMaxGamma = 40; % saved/plotted supplemental range
+proximityActivationOpts.plotMaxGamma = 20; % keep standoff-response plots focused on the interaction zone
 proximityActivationOpts.gammaBins = [0 2 5 10 20 40];
 proximityActivationOpts.similarSizeRatioRange = [0.5 2.0]; % neighbor R0 / primary R0
 proximityActivationOpts.baselineFrames = 5;
@@ -413,7 +415,7 @@ else
 end
 
 %% ---- Breakup analysis options ------------------------------------------
-breakupOpts.aspectRatioMin       = 1.5;    % <---edit: parent ellipse aspect ratio threshold (lowest AR of interest; post-filtered per threshold below)
+breakupOpts.aspectRatioMin       = 0.0;    % <---edit: no upstream AR cutoff; keep all valid split parents for gamma-vs-AR plot
 breakupOpts.arThresholds         = [1.5, 2.0, 3.0, 4.0]; % <---edit: AR thresholds for breakup k/d and AR plots & .mat files
 breakupOpts.childAreaMin_px2     = 100.0;  % <---edit: min child spot area (px^2)
 breakupOpts.dRoughnessSpacing_mm = 0.384;  % <---edit: roughness spacing d (mm) for gamma normalisation

@@ -34,8 +34,10 @@ end
 function opts = apply_plot_defaults(opts)
 opts = default_field(opts, 'maxGamma', 20);
 opts = default_field(opts, 'extendedMaxGamma', 40);
+opts = default_field(opts, 'plotMaxGamma', min(opts.maxGamma, opts.extendedMaxGamma));
 opts = default_field(opts, 'gammaBins', [0 2 5 10 20 40]);
 opts = default_field(opts, 'responseYLim', []);
+opts = default_field(opts, 'probabilityYLim', []);
 opts = default_field(opts, 'rdotRatioYLim', []);
 opts = default_field(opts, 'minPairsForTrend', 3);
 end
@@ -54,6 +56,7 @@ function plot_standoff_response(pairTable, ~, outDir, plotOpts, opts)
 ReVals = unique(double(pairTable.Re));
 ReVals = ReVals(isfinite(ReVals));
 if isempty(ReVals), return; end
+xMax = resolve_plot_gamma_max(opts);
 
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
@@ -72,20 +75,28 @@ for theme = reshape(plotOpts.themes, 1, [])
 
         randomVals = double(pairTable.randomMaxAbsDeltaR_over_R0(reMask));
         randomVals = randomVals(isfinite(randomVals) & randomVals >= 0);
+        responseUpper = nan(0, 1);
         if numel(randomVals) >= 3
             medRandom = finite_prctile(randomVals, 50);
             p90Random = finite_prctile(randomVals, 90);
-            patch(ax, [0 opts.extendedMaxGamma opts.extendedMaxGamma 0], ...
+            patch(ax, [0 xMax xMax 0], ...
                 [medRandom medRandom p90Random p90Random], [0.82 0.82 0.82], ...
                 'FaceAlpha', 0.34, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-            plot(ax, [0 opts.extendedMaxGamma], [p90Random p90Random], ':', ...
+            plot(ax, [0 xMax], [p90Random p90Random], ':', ...
                 'Color', [0.35 0.35 0.35], 'LineWidth', 1.3, 'HandleVisibility', 'off');
+            responseUpper(end+1, 1) = p90Random; %#ok<AGROW>
         end
 
         for ci = 1:height(caseKeys)
             cName = string(caseKeys.Case(ci));
             kD = double(caseKeys.kD(ci));
             [xBin, yMed, yQ25, yQ75, yP90] = deformation_bin_summary(pairTable, reMask, cName, kD, opts);
+            keep = xBin <= xMax;
+            xBin = xBin(keep);
+            yMed = yMed(keep);
+            yQ25 = yQ25(keep);
+            yQ75 = yQ75(keep);
+            yP90 = yP90(keep);
             if isempty(xBin)
                 continue;
             end
@@ -103,16 +114,14 @@ for theme = reshape(plotOpts.themes, 1, [])
             lgdTxt(end+1,1) = sprintf('k/d = %.4g', kD); %#ok<AGROW>
             plot(ax, xBin, yP90, '--', 'Color', lighten_color(col, 0.25), ...
                 'LineWidth', 1.7, 'HandleVisibility', 'off');
+            responseUpper = [responseUpper; yP90(:); (yMed(:) + yPos(:))]; %#ok<AGROW>
         end
 
-        xlim(ax, [0 opts.extendedMaxGamma]);
+        xlim(ax, [0 xMax]);
         if ~isempty(opts.responseYLim) && numel(opts.responseYLim) >= 2
             ylim(ax, opts.responseYLim);
         else
-            yAuto = finite_prctile(double(pairTable.maxAbsDeltaR_over_R0(reMask)), 98);
-            if isfinite(yAuto) && yAuto > 0
-                ylim(ax, [0 1.2*yAuto]);
-            end
+            ylim(ax, resolve_linear_limits(responseUpper, 0, [0 1]));
         end
         draw_gamma_reference_lines(ax, opts);
         xlabel(ax, 'Projected standoff $\gamma=d/R_{\max}$', 'Interpreter', 'latex');
@@ -180,6 +189,7 @@ if isempty(binnedStats) || height(binnedStats) == 0
 end
 ReVals = unique(double(binnedStats.Re));
 ReVals = ReVals(isfinite(ReVals));
+xMax = resolve_plot_gamma_max(opts);
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
     [nRows, nCols] = subplot_grid(numel(ReVals));
@@ -204,6 +214,10 @@ for theme = reshape(plotOpts.themes, 1, [])
             end
             [~, ord] = sort(double(T.gammaBinCenter));
             T = T(ord, :);
+            T = T(double(T.gammaBinCenter) <= xMax, :);
+            if isempty(T) || height(T) == 0
+                continue;
+            end
             x = double(T.gammaBinCenter);
             p = 100 * double(T.secondaryActivationProbability);
             ciLow = 100 * double(T.secondaryActivationCI_low);
@@ -224,8 +238,13 @@ for theme = reshape(plotOpts.themes, 1, [])
             end
         end
 
-        xlim(ax, [0 opts.extendedMaxGamma]);
-        ylim(ax, [0 100]);
+        probUpper = collect_probability_upper(binnedStats, Rei, xMax);
+        xlim(ax, [0 xMax]);
+        if ~isempty(opts.probabilityYLim) && numel(opts.probabilityYLim) >= 2
+            ylim(ax, opts.probabilityYLim);
+        else
+            ylim(ax, resolve_linear_limits(probUpper, 0, [0 100], 25));
+        end
         draw_gamma_reference_lines(ax, opts);
         xlabel(ax, 'Projected standoff bin center, $\gamma$', 'Interpreter', 'latex');
         ylabel(ax, 'Secondary activation probability (\%)', 'Interpreter', 'latex');
@@ -251,6 +270,7 @@ function plot_radius_rate_coupling(pairTable, ~, outDir, plotOpts, opts)
 ReVals = unique(double(pairTable.Re));
 ReVals = ReVals(isfinite(ReVals));
 if isempty(ReVals), return; end
+xMax = resolve_plot_gamma_max(opts);
 
 for theme = reshape(plotOpts.themes, 1, [])
     fontName = resolve_plot_font_name();
@@ -266,11 +286,18 @@ for theme = reshape(plotOpts.themes, 1, [])
         cmap = scientific_line_colormap(height(caseKeys));
         lgd = gobjects(0, 1);
         lgdTxt = strings(0, 1);
+        ratioLower = nan(0, 1);
+        ratioUpper = nan(0, 1);
 
         for ci = 1:height(caseKeys)
             cName = string(caseKeys.Case(ci));
             kD = double(caseKeys.kD(ci));
             [xBin, yMed, yQ25, yQ75] = radius_rate_bin_summary(pairTable, reMask, cName, kD, opts);
+            keep = xBin <= xMax;
+            xBin = xBin(keep);
+            yMed = yMed(keep);
+            yQ25 = yQ25(keep);
+            yQ75 = yQ75(keep);
             if isempty(xBin)
                 continue;
             end
@@ -286,14 +313,18 @@ for theme = reshape(plotOpts.themes, 1, [])
                 'LineWidth', 2.2);
             lgd(end+1,1) = h; %#ok<AGROW>
             lgdTxt(end+1,1) = sprintf('k/d = %.4g', kD); %#ok<AGROW>
+            ratioLower = [ratioLower; yQ25(:); yMed(:) - yNeg(:)]; %#ok<AGROW>
+            ratioUpper = [ratioUpper; yQ75(:); yMed(:) + yPos(:)]; %#ok<AGROW>
         end
 
-        plot(ax, [0 opts.extendedMaxGamma], [1 1], ':', 'Color', [0.2 0.2 0.2], ...
+        plot(ax, [0 xMax], [1 1], ':', 'Color', [0.2 0.2 0.2], ...
             'LineWidth', 1.3, 'HandleVisibility', 'off');
-        xlim(ax, [0 opts.extendedMaxGamma]);
+        xlim(ax, [0 xMax]);
         set(ax, 'YScale', 'log', 'FontName', fontName);
         if ~isempty(opts.rdotRatioYLim) && numel(opts.rdotRatioYLim) >= 2
             ylim(ax, opts.rdotRatioYLim);
+        else
+            ylim(ax, resolve_log_limits(ratioLower, ratioUpper, [1e-2 1]));
         end
         draw_gamma_reference_lines(ax, opts);
         xlabel(ax, 'Projected standoff $\gamma=d/R_{\max}$', 'Interpreter', 'latex');
@@ -426,14 +457,122 @@ end
 % =========================================================================
 function draw_gamma_reference_lines(ax, opts)
 yLim = ylim(ax);
+xLim = xlim(ax);
 refs = [5 10 20];
 for i = 1:numel(refs)
-    if refs(i) > 0 && refs(i) < opts.extendedMaxGamma
+    if refs(i) > xLim(1) && refs(i) < xLim(2)
         plot(ax, [refs(i) refs(i)], yLim, ':', ...
             'Color', [0.25 0.25 0.25], 'LineWidth', 1.1, 'HandleVisibility', 'off');
     end
 end
 ylim(ax, yLim);
+end
+
+
+% =========================================================================
+function xMax = resolve_plot_gamma_max(opts)
+xMax = [];
+if isfield(opts, 'plotMaxGamma') && ~isempty(opts.plotMaxGamma)
+    xMax = double(opts.plotMaxGamma);
+elseif isfield(opts, 'maxGamma') && ~isempty(opts.maxGamma)
+    xMax = double(opts.maxGamma);
+elseif isfield(opts, 'extendedMaxGamma') && ~isempty(opts.extendedMaxGamma)
+    xMax = double(opts.extendedMaxGamma);
+end
+
+if ~isfinite(xMax) || xMax <= 0
+    xMax = 20;
+end
+end
+
+
+% =========================================================================
+function lim = resolve_linear_limits(values, lowerBound, fallback, minUpper)
+if nargin < 2 || isempty(lowerBound)
+    lowerBound = 0;
+end
+if nargin < 3 || isempty(fallback)
+    fallback = [0 1];
+end
+if nargin < 4 || isempty(minUpper)
+    minUpper = fallback(2);
+end
+
+values = values(isfinite(values));
+values = values(values >= lowerBound);
+if isempty(values)
+    lim = fallback;
+    return;
+end
+
+upper = nice_axis_upper(max(values) * 1.04);
+upper = max(upper, minUpper);
+if ~isfinite(upper) || upper <= lowerBound
+    lim = fallback;
+else
+    lim = [lowerBound upper];
+end
+end
+
+
+% =========================================================================
+function lim = resolve_log_limits(lowerVals, upperVals, fallback)
+if nargin < 3 || isempty(fallback)
+    fallback = [1e-2 1];
+end
+
+lowerVals = lowerVals(isfinite(lowerVals) & lowerVals > 0);
+upperVals = upperVals(isfinite(upperVals) & upperVals > 0);
+if isempty(lowerVals) || isempty(upperVals)
+    lim = fallback;
+    return;
+end
+
+lower = min(lowerVals) / 1.15;
+upper = max(upperVals) * 1.15;
+if ~isfinite(lower) || ~isfinite(upper) || lower <= 0 || upper <= lower
+    lim = fallback;
+else
+    lim = [lower upper];
+end
+end
+
+
+% =========================================================================
+function values = collect_probability_upper(binnedStats, Rei, xMax)
+mask = double(binnedStats.Re) == Rei & double(binnedStats.gammaBinCenter) <= xMax;
+if ~any(mask)
+    values = nan(0, 1);
+    return;
+end
+values = [ ...
+    100 * double(binnedStats.secondaryActivationProbability(mask)); ...
+    100 * double(binnedStats.secondaryActivationCI_high(mask))];
+end
+
+
+% =========================================================================
+function upper = nice_axis_upper(value)
+if ~isfinite(value) || value <= 0
+    upper = 1;
+    return;
+end
+
+scale = 10 ^ floor(log10(value));
+mantissa = value / scale;
+if mantissa <= 1
+    upper = 1 * scale;
+elseif mantissa <= 2
+    upper = 2 * scale;
+elseif mantissa <= 2.5
+    upper = 2.5 * scale;
+elseif mantissa <= 5
+    upper = 5 * scale;
+elseif mantissa <= 7.5
+    upper = 7.5 * scale;
+else
+    upper = 10 * scale;
+end
 end
 
 

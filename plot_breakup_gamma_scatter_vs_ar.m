@@ -36,10 +36,9 @@ trendMaxBins = max(trendMaxBins, 2);
 trendMinCount = round(get_opt_value(plotOpts, 'breakupARTrendMinCount', 5));
 trendMinCount = max(trendMinCount, 2);
 
-xLim = get_opt_value(plotOpts, 'breakupARXLim', [0, 4]);
-yLim = get_opt_value(plotOpts, 'breakupARGammaYLim', [-0.5, 0.5]);
-xLim = sanitize_limit_pair(xLim, [0, 4]);
-yLim = sanitize_limit_pair(yLim, [-0.5, 0.5]);
+requestedXLim = get_opt_value(plotOpts, 'breakupARXLim', []);
+yLim = get_opt_value(plotOpts, 'breakupARGammaYLim', [-0.6, 0.6]);
+yLim = sanitize_limit_pair(yLim, [-0.6, 0.6]);
 
 % ---- Collect all events with case metadata ----
 allAR    = [];
@@ -70,6 +69,8 @@ if isempty(allAR)
     warning('No finite breakup events found across all cases.');
     return;
 end
+
+xLim = resolve_ar_x_limits(requestedXLim, allAR);
 
 % ---- Unique cases for colouring ----
 casesPresent = unique(caseIdx, 'stable');
@@ -309,6 +310,25 @@ if nargin < 1 || ~isstruct(plotOpts) || ~isfield(plotOpts, fieldName) || isempty
 else
     val = plotOpts.(fieldName);
 end
+end
+
+
+% =========================================================================
+function pair = resolve_ar_x_limits(requestedPair, observedAR)
+observedAR = observedAR(isfinite(observedAR));
+
+if isempty(observedAR)
+    fallbackPair = [0, 1];
+else
+    fallbackPair = [0, max(1, max(observedAR) + 1)];
+end
+
+if nargin < 1 || isempty(requestedPair)
+    pair = fallbackPair;
+    return;
+end
+
+pair = sanitize_limit_pair(requestedPair, fallbackPair);
 end
 
 

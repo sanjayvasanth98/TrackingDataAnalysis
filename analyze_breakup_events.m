@@ -6,7 +6,8 @@ function events = analyze_breakup_events(xmlFile, pixelSize, varargin)
 %     2. Only consider tracks with NUMBER_SPLITS > 0.
 %     3. Within each split track, find split nodes: spots that appear as
 %        SPOT_SOURCE_ID in 2+ edges (one parent -> multiple children).
-%     4. Parent filter: ELLIPSE_ASPECTRATIO > aspectRatioMin (default 4).
+%     4. Parent filter: ELLIPSE_ASPECTRATIO > aspectRatioMin (default 0,
+%        i.e. no upstream AR cutoff unless requested by the caller).
 %     5. Child filter: AREA > childAreaMin_px2 (default 100 px^2).
 %        Microbubble children (<= 100 px^2) are discarded.
 %     6. Valid event: at least 2 children pass the area filter.
@@ -31,7 +32,7 @@ function events = analyze_breakup_events(xmlFile, pixelSize, varargin)
 
 p = inputParser;
 addParameter(p, 'roiData',                 []);
-addParameter(p, 'aspectRatioMin',          4.0);
+addParameter(p, 'aspectRatioMin',          0.0);
 addParameter(p, 'childAreaMin_px2',        100.0);
 addParameter(p, 'dRoughnessSpacing_mm',    0.384);
 addParameter(p, 'maxTracks',               Inf);

@@ -9,7 +9,7 @@
 clear; clc;
 
 %% Paths — edit matDir to point to your latest results run
-matDir  = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
+matDir  = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
 outDir  = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'BreakupAnalysis');
 csvOut = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'breakup_events.csv');
 if ~isfolder(outDir), mkdir(outDir); end
@@ -53,8 +53,8 @@ plotOpts.breakupDRatioTrendMaxBins = 12;
 plotOpts.breakupDRatioTrendMinCount = 5;
 plotOpts.breakupARMarkerSize = 30;
 plotOpts.breakupARMarkerAlpha = 0.40;
-plotOpts.breakupARXLim = [0, 4];
-plotOpts.breakupARGammaYLim = [-0.5, 0.5];
+plotOpts.breakupARXLim = [];
+plotOpts.breakupARGammaYLim = [-0.6, 0.6];
 plotOpts.breakupARTrendMaxBins = 12;
 plotOpts.breakupARTrendMinCount = 5;
 
