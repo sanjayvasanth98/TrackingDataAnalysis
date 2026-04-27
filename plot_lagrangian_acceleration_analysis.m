@@ -30,6 +30,9 @@ end
 if isfield(lagAccelOpts, 'makeTriggerSurvivalPlot') && lagAccelOpts.makeTriggerSurvivalPlot
     plot_trigger_survival_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts);
 end
+if isfield(lagAccelOpts, 'makeTriggerThresholdSummaryPlot') && lagAccelOpts.makeTriggerThresholdSummaryPlot
+    plot_trigger_survival_threshold_summary(allLagAccel, outDir, plotOpts, lagAccelOpts);
+end
 if lagAccelOpts.makePeakTriggerGrowthPlot
     plot_peak_trigger_vs_growth(allLagAccel, outDir, plotOpts, lagAccelOpts);
 end
@@ -57,6 +60,9 @@ opts = default_field(opts, 'triggerPdfZoomXLim', [1e-1 1]);
 opts = default_field(opts, 'makeTriggerSurvivalPlot', false);
 opts = default_field(opts, 'triggerSurvivalXLim', [1e-1 1]);
 opts = default_field(opts, 'triggerSurvivalLegendLocation', 'southwest');
+opts = default_field(opts, 'showTriggerSurvivalLegend', true);
+opts = default_field(opts, 'makeTriggerThresholdSummaryPlot', false);
+opts = default_field(opts, 'triggerSurvivalThresholds', [0.3 0.5 0.75]);
 opts = default_field(opts, 'peakGrowthLegendLocation', 'northwest');
 opts = default_field(opts, 'peakGrowthLegendFontSize', 9);
 opts = default_field(opts, 'makeAllFramePdfPlot', true);
@@ -67,10 +73,15 @@ opts = default_field(opts, 'makeSanityCheckPlots', true);
 opts = default_field(opts, 'heatmapGridSize', [20 20]);
 opts = default_field(opts, 'heatmapStats', ["median", "p90"]);
 opts = default_field(opts, 'heatmapMinSamplesPerBin', 10);
-opts = default_field(opts, 'heatmapColormap', "sky");
+opts = default_field(opts, 'heatmapColormap', "cbrewer2:YlGnBu");
+opts = default_field(opts, 'heatmapColormapByStat', default_heatmap_colormap_by_stat());
 opts = default_field(opts, 'heatmapPreserveSpatialAspect', true);
 opts = default_field(opts, 'heatmapSquareBins', true);
 opts = default_field(opts, 'heatmapShowActivationContours', true);
+opts = default_field(opts, 'heatmapShowAccelerationRidge', false);
+opts = default_field(opts, 'heatmapAccelerationRidgeStats', ["median", "mean", "p90"]);
+opts = default_field(opts, 'heatmapAccelerationRidgePercentile', 0);
+opts = default_field(opts, 'heatmapAccelerationRidgeSmoothWindow', 9);
 opts = default_field(opts, 'heatmapColorPercentileRange', []);
 opts = default_field(opts, 'heatmapActivationMarkerSize', 46);
 opts = default_field(opts, 'heatmapLegendLocation', 'southoutside');
@@ -93,6 +104,15 @@ function s = default_field(s, name, value)
 if ~isfield(s, name) || isempty(s.(name))
     s.(name) = value;
 end
+end
+
+
+% =========================================================================
+function cmapByStat = default_heatmap_colormap_by_stat()
+cmapByStat = struct();
+cmapByStat.mean = "cbrewer2:GnBu";
+cmapByStat.median = "cbrewer2:PuBu";
+cmapByStat.p90 = "cbrewer2:Blues";
 end
 
 
@@ -318,7 +338,7 @@ for theme = reshape(plotOpts.themes, 1, [])
         grid(ax, 'off');
         box(ax, 'on');
 
-        if ~isempty(lgd)
+        if opts.showTriggerSurvivalLegend && ~isempty(lgd)
             legendLocation = char(opts.triggerSurvivalLegendLocation);
             leg = legend(ax, lgd, cellstr(lgdTxt), ...
                 'Location', legendLocation, ...
@@ -331,6 +351,118 @@ for theme = reshape(plotOpts.themes, 1, [])
         apply_plot_theme(ax, char(theme));
         style_legend_for_theme(leg, char(theme));
         outName = sprintf('LagrangianAccel_trigger_survival_Re_%g_%s', Rei, char(theme));
+        save_fig_dual_safe(f, fullfile(outDir, outName), plotOpts);
+        close_if_needed(f, plotOpts);
+    end
+end
+end
+
+
+% =========================================================================
+function plot_trigger_survival_threshold_summary(allLagAccel, outDir, plotOpts, opts)
+ReVals = unique([allLagAccel.Re]);
+ReVals = ReVals(isfinite(ReVals));
+if isempty(ReVals), return; end
+
+thresholds = positive_values(opts.triggerSurvivalThresholds);
+thresholds = unique(thresholds(:).', 'stable');
+if isempty(thresholds)
+    thresholds = [0.3 0.5 0.75];
+end
+nT = numel(thresholds);
+
+for theme = reshape(plotOpts.themes, 1, [])
+    for ri = 1:numel(ReVals)
+        Rei = ReVals(ri);
+        caseIdx = find([allLagAccel.Re] == Rei);
+        if isempty(caseIdx), continue; end
+
+        [~, sortIdx] = sort([allLagAccel(caseIdx).kD]);
+        caseIdx = caseIdx(sortIdx);
+        kDVals = [allLagAccel(caseIdx).kD];
+        validKD = isfinite(kDVals) & kDVals > 0;
+        if ~any(validKD), continue; end
+        caseIdx = caseIdx(validKD);
+        kDVals = kDVals(validKD);
+
+        actP = nan(numel(caseIdx), nT);
+        nonP = nan(numel(caseIdx), nT);
+        for j = 1:numel(caseIdx)
+            d = allLagAccel(caseIdx(j));
+            yAct = positive_values(d.activatedTriggerAstar);
+            yNon = positive_values(d.nonActivatedRandomAstar);
+            for ti = 1:nT
+                if numel(yAct) >= 5
+                    actP(j, ti) = mean(yAct >= thresholds(ti));
+                end
+                if numel(yNon) >= 5
+                    nonP(j, ti) = mean(yNon >= thresholds(ti));
+                end
+            end
+        end
+
+        fontName = resolve_plot_font_name();
+        f = figure('Color', 'w', 'Position', [100 100 max(960, 320*nT) 440]);
+        tl = tiledlayout(f, 1, nT, 'TileSpacing', 'compact', 'Padding', 'compact');
+        actColor = [0.05 0.28 0.63];
+        nonColor = [0.35 0.35 0.35];
+        markerSize = 4.8;
+        xPlot = 1:numel(kDVals);
+        yUpper = max([actP(:); nonP(:)], [], 'omitnan');
+        if ~(isfinite(yUpper) && yUpper > 0)
+            yUpper = 1;
+        end
+        yUpper = min(1, max(0.15, ceil((yUpper + 0.04) * 10) / 10));
+
+        for ti = 1:nT
+            ax = nexttile(tl);
+            hold(ax, 'on');
+            hAct = plot(ax, xPlot, actP(:, ti), '-o', ...
+                'Color', actColor, ...
+                'MarkerFaceColor', actColor, ...
+                'MarkerEdgeColor', [0.05 0.05 0.05], ...
+                'LineWidth', 1.8, ...
+                'MarkerSize', markerSize);
+            hNon = plot(ax, xPlot, nonP(:, ti), '--s', ...
+                'Color', nonColor, ...
+                'MarkerFaceColor', 'w', ...
+                'MarkerEdgeColor', nonColor, ...
+                'LineWidth', 1.6, ...
+                'MarkerSize', markerSize);
+
+            set(ax, 'FontName', fontName);
+            xlim(ax, [0.6 numel(kDVals)+0.4]);
+            ylim(ax, [0 yUpper]);
+            xticks(ax, xPlot);
+            xticklabels(ax, compose('%.3g', kDVals));
+            xtickangle(ax, 0);
+            xlabel(ax, 'k/d', 'Interpreter', 'tex', 'FontSize', 12);
+            if ti == 1
+                ylabel(ax, 'P(|a*| >= A)', 'Interpreter', 'tex', 'FontSize', 12);
+            end
+            title(ax, sprintf('A = %.2g', thresholds(ti)), 'FontName', fontName, 'FontSize', 14);
+            grid(ax, 'off');
+            box(ax, 'on');
+            apply_plot_theme(ax, char(theme));
+            set(ax, 'FontSize', 10, 'LineWidth', 1.0);
+            ax.XLabel.FontSize = 12;
+            if isgraphics(ax.YLabel), ax.YLabel.FontSize = 12; end
+            if isgraphics(ax.Title), ax.Title.FontSize = 14; end
+
+            if ti == 1
+                leg = legend(ax, [hAct hNon], {'activated', 'non-activated'}, ...
+                    'Location', 'northoutside', ...
+                    'Orientation', 'horizontal', ...
+                    'Box', 'off');
+                style_legend_for_theme(leg, char(theme));
+                leg.FontSize = 10;
+            end
+        end
+
+        title(tl, sprintf('Trigger-window survival probability, Re = %g', Rei), ...
+            'FontName', fontName, ...
+            'FontSize', 16);
+        outName = sprintf('LagrangianAccel_trigger_survival_threshold_summary_Re_%g_%s', Rei, char(theme));
         save_fig_dual_safe(f, fullfile(outDir, outName), plotOpts);
         close_if_needed(f, plotOpts);
     end
@@ -587,7 +719,7 @@ hImg = imagesc(ax, xCenters, yCenters, Z);
 set(hImg, 'AlphaData', isfinite(Z));
 set(ax, 'YDir', 'normal', 'Color', 'w');
 axis(ax, 'tight');
-colormap(ax, lagrangian_heat_colormap(256, opts));
+colormap(ax, lagrangian_heat_colormap(256, opts, statName));
 apply_heatmap_color_limits(ax, Z, opts);
 cb = colorbar(ax);
 cb.Label.String = sprintf('%s |a^*| per bin', upper(statName));
@@ -663,6 +795,8 @@ if drawContours
     end
 end
 
+draw_acceleration_ridge_overlay(ax, Z, xCenters, yCenters, statName, opts, fontName);
+
 xlim(ax, opts.xLimNorm);
 ylim(ax, opts.yLimNorm);
 if opts.heatmapPreserveSpatialAspect
@@ -729,6 +863,113 @@ if isfield(opts, 'heatmapLegendFontSize') && ~isempty(opts.heatmapLegendFontSize
     fs = double(opts.heatmapLegendFontSize);
     if isfinite(fs) && fs > 0
         leg.FontSize = fs;
+    end
+end
+end
+
+
+% =========================================================================
+function draw_acceleration_ridge_overlay(ax, Z, xCenters, yCenters, statName, opts, fontName)
+if ~isfield(opts, 'heatmapShowAccelerationRidge') || ~opts.heatmapShowAccelerationRidge
+    return;
+end
+if isempty(Z) || isempty(xCenters) || isempty(yCenters)
+    return;
+end
+
+ridgeStats = string(opts.heatmapAccelerationRidgeStats);
+if ~any(strcmpi(string(statName), ridgeStats))
+    return;
+end
+
+zFinite = Z(isfinite(Z));
+if numel(zFinite) < 3
+    return;
+end
+
+ridgePct = double(opts.heatmapAccelerationRidgePercentile);
+if ~(isfinite(ridgePct) && ridgePct >= 0 && ridgePct <= 100)
+    ridgePct = 0;
+end
+ridgeThreshold = finite_prctile(zFinite, ridgePct);
+
+xLine = xCenters(:);
+yLine = nan(size(xLine));
+for ix = 1:numel(xCenters)
+    col = Z(:, ix);
+    valid = isfinite(col);
+    if ~any(valid)
+        continue;
+    end
+    validRows = find(valid);
+    [maxVal, localIdx] = max(col(valid));
+    if isfinite(maxVal) && (ridgePct <= 0 || maxVal >= ridgeThreshold)
+        yLine(ix) = yCenters(validRows(localIdx));
+    end
+end
+
+[xLine, yLine] = interpolate_ridge_full_span(xLine, yLine);
+validLine = isfinite(xLine) & isfinite(yLine);
+if nnz(validLine) < 3
+    return;
+end
+
+smoothWindow = max(1, round(double(opts.heatmapAccelerationRidgeSmoothWindow)));
+if smoothWindow > 1
+    yLine(validLine) = moving_nan_mean(yLine(validLine), smoothWindow);
+end
+
+validLine = isfinite(xLine) & isfinite(yLine);
+if nnz(validLine) < 3
+    return;
+end
+
+xDense = linspace(min(xLine(validLine)), max(xLine(validLine)), max(160, 8 * nnz(validLine)));
+yDense = interp1(xLine(validLine), yLine(validLine), xDense, 'pchip');
+validDense = isfinite(xDense) & isfinite(yDense);
+if nnz(validDense) < 3
+    return;
+end
+
+plot(ax, xDense(validDense), yDense(validDense), '--', ...
+    'Color', [0.03 0.03 0.03], ...
+    'LineWidth', 2.0, ...
+    'HandleVisibility', 'off');
+end
+
+
+% =========================================================================
+function [xFull, yFull] = interpolate_ridge_full_span(xLine, yLine)
+xFull = xLine(:);
+yFull = yLine(:);
+valid = isfinite(xFull) & isfinite(yFull);
+if nnz(valid) < 3
+    return;
+end
+firstIdx = find(valid, 1, 'first');
+lastIdx = find(valid, 1, 'last');
+spanIdx = firstIdx:lastIdx;
+spanValid = valid(spanIdx);
+if nnz(spanValid) < 3
+    return;
+end
+yFull(spanIdx) = interp1(xFull(spanIdx(spanValid)), yFull(spanIdx(spanValid)), ...
+    xFull(spanIdx), 'pchip');
+end
+
+
+% =========================================================================
+function ySmooth = moving_nan_mean(y, windowSize)
+y = y(:);
+ySmooth = y;
+halfWindow = floor(windowSize / 2);
+for i = 1:numel(y)
+    lo = max(1, i - halfWindow);
+    hi = min(numel(y), i + halfWindow);
+    vals = y(lo:hi);
+    vals = vals(isfinite(vals));
+    if ~isempty(vals)
+        ySmooth(i) = mean(vals);
     end
 end
 end
@@ -876,10 +1117,13 @@ for ix = 1:nx
         if numel(vals) < opts.heatmapMinSamplesPerBin
             continue;
         end
-        if strcmpi(statName, 'p90')
-            Z(iy, ix) = finite_prctile(vals, 90);
-        else
-            Z(iy, ix) = median(vals);
+        switch lower(char(statName))
+            case 'mean'
+                Z(iy, ix) = mean(vals);
+            case 'p90'
+                Z(iy, ix) = finite_prctile(vals, 90);
+            otherwise
+                Z(iy, ix) = median(vals);
         end
     end
 end
@@ -1270,18 +1514,49 @@ end
 
 
 % =========================================================================
-function cmap = lagrangian_heat_colormap(n, opts)
+function cmap = lagrangian_heat_colormap(n, opts, statName)
 mapName = "sky";
 if isfield(opts, 'heatmapColormap') && ~isempty(opts.heatmapColormap)
     mapName = string(opts.heatmapColormap);
 end
+if nargin >= 3 && isfield(opts, 'heatmapColormapByStat') && isstruct(opts.heatmapColormapByStat)
+    statField = matlab.lang.makeValidName(lower(char(string(statName))));
+    if isfield(opts.heatmapColormapByStat, statField) && ~isempty(opts.heatmapColormapByStat.(statField))
+        mapName = string(opts.heatmapColormapByStat.(statField));
+    end
+end
 
-switch lower(char(mapName))
+mapKey = lower(char(mapName));
+if startsWith(mapKey, 'cbrewer2:') || startsWith(mapKey, 'brewer2:')
+    parts = split(string(mapName), ':');
+    cmap = colorbrewer2_seq_colormap(char(parts(end)), n);
+    return;
+end
+
+switch mapKey
     case 'abyss'
         cmap = abyss_colormap_compat(n);
         return;
     case 'sky'
         cmap = sky_colormap_compat(n);
+        return;
+    case 'ylorrd'
+        cmap = colorbrewer2_seq_colormap('YlOrRd', n);
+        return;
+    case 'ylgnbu'
+        cmap = colorbrewer2_seq_colormap('YlGnBu', n);
+        return;
+    case 'orrd'
+        cmap = colorbrewer2_seq_colormap('OrRd', n);
+        return;
+    case 'gnbu'
+        cmap = colorbrewer2_seq_colormap('GnBu', n);
+        return;
+    case 'pubu'
+        cmap = colorbrewer2_seq_colormap('PuBu', n);
+        return;
+    case 'blues'
+        cmap = colorbrewer2_seq_colormap('Blues', n);
         return;
 end
 
@@ -1290,6 +1565,131 @@ try
 catch
     cmap = scientific_heat_colormap(n);
 end
+end
+
+
+% =========================================================================
+function cmap = colorbrewer2_seq_colormap(mapName, n)
+if nargin < 2 || isempty(n)
+    n = 256;
+end
+
+ensure_cbrewer2_on_path();
+try
+    cmap = cbrewer2('seq', char(mapName), n, 'pchip', 'rgb');
+    cmap = normalize_colormap_rgb(cmap);
+    return;
+catch
+end
+
+try
+    cmap = cbrewer('seq', char(mapName), n, 'pchip');
+    cmap = normalize_colormap_rgb(cmap);
+    return;
+catch
+end
+
+switch lower(char(mapName))
+    case 'gnbu'
+        anchors = [ ...
+            247 252 240
+            224 243 219
+            204 235 197
+            168 221 181
+            123 204 196
+             78 179 211
+             43 140 190
+              8 104 172
+              8  64 129] / 255;
+    case 'pubu'
+        anchors = [ ...
+            255 247 251
+            236 231 242
+            208 209 230
+            166 189 219
+            116 169 207
+             54 144 192
+              5 112 176
+              4  90 141
+              2  56  88] / 255;
+    case 'blues'
+        anchors = [ ...
+            247 251 255
+            222 235 247
+            198 219 239
+            158 202 225
+            107 174 214
+             66 146 198
+             33 113 181
+              8  81 156
+              8  48 107] / 255;
+    case 'ylgnbu'
+        anchors = [ ...
+            255 255 217
+            237 248 177
+            199 233 180
+            127 205 187
+             65 182 196
+             29 145 192
+             34  94 168
+             37  52 148
+              8  29  88] / 255;
+    case 'orrd'
+        anchors = [ ...
+            255 247 236
+            254 232 200
+            253 212 158
+            253 187 132
+            252 141  89
+            239 101  72
+            215  48  31
+            179   0   0
+            127   0   0] / 255;
+    otherwise % YlOrRd
+        anchors = [ ...
+            255 255 204
+            255 237 160
+            254 217 118
+            254 178  76
+            253 141  60
+            252  78  42
+            227  26  28
+            189   0  38
+            128   0  38] / 255;
+end
+
+x = linspace(0, 1, size(anchors, 1));
+xi = linspace(0, 1, n);
+cmap = interp1(x, anchors, xi, 'pchip');
+cmap = normalize_colormap_rgb(cmap);
+end
+
+
+% =========================================================================
+function ensure_cbrewer2_on_path()
+if exist('cbrewer2', 'file') == 2
+    return;
+end
+
+thisDir = fileparts(mfilename('fullpath'));
+cbrewer2Dir = fullfile(thisDir, 'external', 'cbrewer2', 'cbrewer2');
+if isfolder(cbrewer2Dir)
+    addpath(cbrewer2Dir);
+end
+end
+
+
+% =========================================================================
+function cmap = normalize_colormap_rgb(cmap)
+cmap = double(cmap);
+if isempty(cmap) || size(cmap, 2) ~= 3
+    cmap = scientific_heat_colormap(256);
+    return;
+end
+if max(cmap(:), [], 'omitnan') > 1
+    cmap = cmap / 255;
+end
+cmap = max(0, min(1, cmap));
 end
 
 

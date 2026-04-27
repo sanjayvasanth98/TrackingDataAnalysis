@@ -8,6 +8,10 @@ clear; clc;
 
 repoRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(repoRoot);
+cbrewer2Dir = fullfile(repoRoot, 'external', 'cbrewer2', 'cbrewer2');
+if isfolder(cbrewer2Dir)
+    addpath(cbrewer2Dir);
+end
 
 %% Paths
 % Option 1: point this to your plot_data_mat folder from a completed run.
@@ -57,9 +61,19 @@ makeSanityCheckPlots = false;
 %   larger 2nd value = more y-bins = smaller square cells
 %   smaller 2nd value = fewer y-bins = larger square cells
 heatmapGridSizeOverride = [12 12];
+heatmapStatsOverride = ["median", "mean", "p90"];
 heatmapSquareBinsOverride = true;
 heatmapXLimNormOverride = [0 0.48];
 heatmapShowActivationContoursOverride = false;
+heatmapShowAccelerationRidgeOverride = true;
+heatmapAccelerationRidgeStatsOverride = ["median", "mean", "p90"];
+heatmapAccelerationRidgePercentileOverride = 0;
+heatmapAccelerationRidgeSmoothWindowOverride = 9;
+heatmapColormapOverride = "cbrewer2:YlGnBu";
+heatmapColormapByStatOverride = struct( ...
+    'mean', "cbrewer2:GnBu", ...
+    'median', "cbrewer2:PuBu", ...
+    'p90', "cbrewer2:Blues");
 activationOverlayEdgeMarginNormOverride = 0.01;
 heatmapColorPercentileRangeOverride = [5 95];
 heatmapActivationMarkerSizeOverride = 23;
@@ -71,6 +85,9 @@ triggerPdfZoomXLimOverride = [1e-1 1];
 makeTriggerSurvivalPlotOverride = true;
 triggerSurvivalXLimOverride = [1e-1 1];
 triggerSurvivalLegendLocationOverride = 'southwest';
+showTriggerSurvivalLegendOverride = false;
+makeTriggerThresholdSummaryPlotOverride = true;
+triggerSurvivalThresholdsOverride = [0.3 0.5 0.75];
 allFramePdfLegendLocationOverride = 'southwest';
 peakGrowthLegendLocationOverride = 'northwest';
 peakGrowthLegendFontSizeOverride = 10;
@@ -84,8 +101,15 @@ lagAccelOpts.makeHeatmapPlots = makeHeatmapPlots;
 lagAccelOpts.makeSanityCheckPlots = makeSanityCheckPlots;
 lagAccelOpts.xLimNorm = heatmapXLimNormOverride;
 lagAccelOpts.heatmapGridSize = heatmapGridSizeOverride;
+lagAccelOpts.heatmapStats = heatmapStatsOverride;
 lagAccelOpts.heatmapSquareBins = heatmapSquareBinsOverride;
 lagAccelOpts.heatmapShowActivationContours = heatmapShowActivationContoursOverride;
+lagAccelOpts.heatmapShowAccelerationRidge = heatmapShowAccelerationRidgeOverride;
+lagAccelOpts.heatmapAccelerationRidgeStats = heatmapAccelerationRidgeStatsOverride;
+lagAccelOpts.heatmapAccelerationRidgePercentile = heatmapAccelerationRidgePercentileOverride;
+lagAccelOpts.heatmapAccelerationRidgeSmoothWindow = heatmapAccelerationRidgeSmoothWindowOverride;
+lagAccelOpts.heatmapColormap = heatmapColormapOverride;
+lagAccelOpts.heatmapColormapByStat = heatmapColormapByStatOverride;
 lagAccelOpts.activationOverlayEdgeMarginNorm = activationOverlayEdgeMarginNormOverride;
 lagAccelOpts.heatmapColorPercentileRange = heatmapColorPercentileRangeOverride;
 lagAccelOpts.heatmapActivationMarkerSize = heatmapActivationMarkerSizeOverride;
@@ -97,6 +121,9 @@ lagAccelOpts.triggerPdfZoomXLim = triggerPdfZoomXLimOverride;
 lagAccelOpts.makeTriggerSurvivalPlot = makeTriggerSurvivalPlotOverride;
 lagAccelOpts.triggerSurvivalXLim = triggerSurvivalXLimOverride;
 lagAccelOpts.triggerSurvivalLegendLocation = triggerSurvivalLegendLocationOverride;
+lagAccelOpts.showTriggerSurvivalLegend = showTriggerSurvivalLegendOverride;
+lagAccelOpts.makeTriggerThresholdSummaryPlot = makeTriggerThresholdSummaryPlotOverride;
+lagAccelOpts.triggerSurvivalThresholds = triggerSurvivalThresholdsOverride;
 lagAccelOpts.allFramePdfLegendLocation = allFramePdfLegendLocationOverride;
 lagAccelOpts.peakGrowthLegendLocation = peakGrowthLegendLocationOverride;
 lagAccelOpts.peakGrowthLegendFontSize = peakGrowthLegendFontSizeOverride;
@@ -174,7 +201,7 @@ lagAccelOpts.makeHeatmapPlots = true;
 lagAccelOpts.makeSanityCheckPlots = false;
 lagAccelOpts.heatmapGridSize = [20 20]; % with square bins, 2nd value sets y-bin count; x-bin count is auto
 lagAccelOpts.heatmapStats = ["median", "p90"];
-lagAccelOpts.heatmapColormap = "sky";
+lagAccelOpts.heatmapColormap = "cbrewer2:YlGnBu";
 lagAccelOpts.heatmapPreserveSpatialAspect = true;
 lagAccelOpts.heatmapSquareBins = true;
 lagAccelOpts.heatmapMinSamplesPerBin = 2;
@@ -436,7 +463,7 @@ summary.nonActivatedRandomP90Astar = prctile_local(d.nonActivatedRandomAstar, 90
 summary.stationaryP95Astar = prctile_local(d.stationaryAstar, 95);
 summary.sgWindowFrames = 7;
 summary.sgPolyOrder = 3;
-summary.triggerWindowFrames = 5;
+summary.triggerWindowFrames = 3;
 summary.trackPopulation = "strictPrimary";
 end
 

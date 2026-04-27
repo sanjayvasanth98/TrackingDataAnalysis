@@ -221,8 +221,8 @@ plotOpts.themes = enabled_plot_themes(plotOpts);
 lagAccelOpts = struct();
 lagAccelOpts.sgWindowFrames = 7; % <---edit: Savitzky-Golay local polynomial window
 lagAccelOpts.sgPolyOrder = 3; % <---edit: local polynomial order for smoothing/derivatives
-lagAccelOpts.triggerWindowFrames = 5; % <---edit: frames immediately before activation
-lagAccelOpts.minTriggerSamples = 5; % <---edit: require complete trigger/random windows
+lagAccelOpts.triggerWindowFrames = 3; % <---edit: frames immediately before activation
+lagAccelOpts.minTriggerSamples = 3; % <---edit: require complete trigger/random windows
 lagAccelOpts.minTrackFrames = 12; % <---edit: skip short tracks before differentiating
 lagAccelOpts.requireConsecutiveFrames = true; % <---edit: avoid frame-gap derivative artifacts
 lagAccelOpts.maxAllowedFrameGap = 1;
@@ -238,7 +238,11 @@ lagAccelOpts.fallbackURef_m_s = 13.32;
 lagAccelOpts.fallbackDiameter_m = 100e-6;
 lagAccelOpts.heatmapGridSize = [20 20]; % with square bins, 2nd value sets y-bin count; x-bin count is auto
 lagAccelOpts.heatmapStats = ["median", "p90"];
-lagAccelOpts.heatmapColormap = "sky"; % <---edit: Lagrangian heatmap colormap
+lagAccelOpts.heatmapColormap = "cbrewer2:YlGnBu"; % <---edit: Lagrangian heatmap colormap
+lagAccelOpts.heatmapColormapByStat = struct( ...
+    'mean', "cbrewer2:GnBu", ...
+    'median', "cbrewer2:PuBu", ...
+    'p90', "cbrewer2:Blues");
 lagAccelOpts.heatmapPreserveSpatialAspect = true; % keep x/H and y/H geometry honest
 lagAccelOpts.heatmapSquareBins = true; % use y-bin count above and auto x-bins for square cells
 lagAccelOpts.heatmapMinSamplesPerBin = 10;

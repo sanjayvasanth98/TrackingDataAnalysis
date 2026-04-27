@@ -203,7 +203,7 @@ if mod(opts.sgWindowFrames, 2) == 0
 end
 opts = default_field(opts, 'sgPolyOrder', 3);
 opts.sgPolyOrder = max(1, min(round(opts.sgPolyOrder), opts.sgWindowFrames - 1));
-opts = default_field(opts, 'triggerWindowFrames', 5);
+opts = default_field(opts, 'triggerWindowFrames', 3);
 opts.triggerWindowFrames = max(1, round(opts.triggerWindowFrames));
 opts = default_field(opts, 'minTriggerSamples', opts.triggerWindowFrames);
 opts = default_field(opts, 'minTrackFrames', max(opts.sgWindowFrames + 2, opts.triggerWindowFrames + opts.sgWindowFrames));
