@@ -352,6 +352,8 @@ metrics = pack_metrics();
         microTrackIdsFinite = microRescueTrackIds(isfinite(microRescueTrackIds));
         nMicroRescueTracks = numel(unique(microTrackIdsFinite));
         nMicroRescueActivationEvents = size(microRescueActivationEvent_xy, 1);
+        totalActivationEvents = strictActivationEventsTotal + nMicroRescueActivationEvents;
+        A_over_I_absolute = ratio_or_nan(totalActivationEvents, nStrictPrimaryTracks);
 
         nInjectedStrict = gateStats.nInjected;
         nActivatedStrict = gateStats.nActivated;
@@ -391,6 +393,7 @@ metrics = pack_metrics();
         outMetrics.A_over_I = A_over_I;
         outMetrics.A_over_I_ci_low = A_over_I_ci_low;
         outMetrics.A_over_I_ci_high = A_over_I_ci_high;
+        outMetrics.A_over_I_absolute = A_over_I_absolute;
 
         % Strict-primary authoritative arrays.
         outMetrics.strictPrimaryTrackIds = strictPrimaryTrackIds;
@@ -428,6 +431,7 @@ metrics = pack_metrics();
         outMetrics.activationEvent_trackId = strictActivationEventTrackIds;
         outMetrics.tau_values = strictTau_values;
         outMetrics.tau_mean = mean(strictTau_values, 'omitnan');
+        outMetrics.tau_median = median_omitnan_local(strictTau_values);
         outMetrics.tau_std = std(strictTau_values, 0, 'omitnan');
         outMetrics.activatedUpstreamVelocity_m_s = strictActivatedVelocity_m_s;
         outMetrics.activatedUpstreamVelocity_mean_m_s = mean(strictActivatedVelocity_m_s, 'omitnan');
@@ -497,6 +501,24 @@ metrics = pack_metrics();
         outMetrics.flowOpts = flowOpts;
         outMetrics.activationOpts = activationOpts;
     end
+end
+
+function r = ratio_or_nan(numVal, denVal)
+if isfinite(numVal) && isfinite(denVal) && denVal > 0
+    r = numVal / denVal;
+else
+    r = NaN;
+end
+end
+
+function m = median_omitnan_local(x)
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    m = NaN;
+else
+    m = median(x);
+end
 end
 
 function tpl = make_prep_template()

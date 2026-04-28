@@ -58,7 +58,7 @@ if ~istable(tbl)
     return;
 end
 varNames = tbl.Properties.VariableNames;
-customNames = {'leftMovingActivated_pct', 'AE_leftMoving_pct'};
+customNames = {'leftMovingActivated_pct', 'AE_leftMoving_pct', 'A_over_I_absolute'};
 tf = any(ismember(varNames, customNames));
 end
 
@@ -70,6 +70,8 @@ for c = 1:numel(headerNames)
             headerNames{c} = 'leftMovingActivated %';
         case 'AE_leftMoving_pct'
             headerNames{c} = 'AE_leftmoving %';
+        case 'A_over_I_absolute'
+            headerNames{c} = 'A/I_absolute';
     end
 end
 end

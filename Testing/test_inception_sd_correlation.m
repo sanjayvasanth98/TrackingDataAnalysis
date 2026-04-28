@@ -412,6 +412,7 @@ ylabel(cb, 'SD intensity (0-255)');
 set(ax, 'Position', [0.065 0.17 0.82 0.72]);
 set(cb, 'Units', 'normalized', 'Position', [0.905 0.17 0.018 0.72]);
 style_publication_axes(ax);
+style_publication_colorbar(cb);
 
 outFile = fullfile(outDir, sprintf('Inception_SD_correlation_%s.png', token));
 save_figure_png_local(f, outFile);
@@ -706,6 +707,7 @@ cb1 = colorbar(ax1);
 set(ax1, 'Position', [0.075 0.17 0.33 0.72]);
 set(cb1, 'Units', 'normalized', 'Position', [0.415 0.17 0.018 0.72]);
 style_publication_axes(ax1);
+style_publication_colorbar(cb1);
 
 ax2 = axes(f, 'Position', [0.555 0.17 0.33 0.72]);
 imagesc(ax2, sdFracs, actFracs, meanDice);
@@ -722,6 +724,7 @@ cb2 = colorbar(ax2);
 set(ax2, 'Position', [0.555 0.17 0.33 0.72]);
 set(cb2, 'Units', 'normalized', 'Position', [0.895 0.17 0.018 0.72]);
 style_publication_axes(ax2);
+style_publication_colorbar(cb2);
 
 save_figure_png_local(f, fullfile(outDir, 'Threshold_sensitivity_mean_overlap.png'));
 if ~opts.keepFiguresOpen
@@ -1001,10 +1004,28 @@ set(ax, ...
     'FontName', fontName, ...
     'FontSize', 10, ...
     'LineWidth', 0.85, ...
-    'TickDir', 'out', ...
+    'TickDir', 'in', ...
     'Layer', 'top', ...
     'Box', 'on');
 grid(ax, 'off');
+end
+
+function style_publication_colorbar(cb)
+fontName = 'Arial';
+if exist('resolve_plot_font_name', 'file') == 2
+    try
+        fontName = resolve_plot_font_name();
+    catch
+        fontName = 'Arial';
+    end
+end
+set(cb, ...
+    'FontName', fontName, ...
+    'FontSize', 10, ...
+    'LineWidth', 0.85);
+if isprop(cb, 'TickDirection')
+    set(cb, 'TickDirection', 'in');
+end
 end
 
 function sdFile = resolve_sd_tiff_file(caseName, sdTiffByCase, sdTiffDirs, files, opts)

@@ -408,7 +408,13 @@ for theme = reshape(plotOpts.themes, 1, [])
         nonColor = [0.35 0.35 0.35];
         markerSize = 4.8;
         xPlot = 1:numel(kDVals);
-        yUpper = max([actP(:); nonP(:)], [], 'omitnan');
+        yFinite = [actP(:); nonP(:)];
+        yFinite = yFinite(isfinite(yFinite));
+        if isempty(yFinite)
+            yUpper = NaN;
+        else
+            yUpper = max(yFinite);
+        end
         if ~(isfinite(yUpper) && yUpper > 0)
             yUpper = 1;
         end
@@ -1686,7 +1692,12 @@ if isempty(cmap) || size(cmap, 2) ~= 3
     cmap = scientific_heat_colormap(256);
     return;
 end
-if max(cmap(:), [], 'omitnan') > 1
+cmapFinite = cmap(isfinite(cmap));
+if isempty(cmapFinite)
+    cmap = scientific_heat_colormap(256);
+    return;
+end
+if max(cmapFinite) > 1
     cmap = cmap / 255;
 end
 cmap = max(0, min(1, cmap));
