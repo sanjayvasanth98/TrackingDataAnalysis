@@ -37,7 +37,12 @@ if lagAccelOpts.makePeakTriggerGrowthPlot
     plot_peak_trigger_vs_growth(allLagAccel, outDir, plotOpts, lagAccelOpts);
 end
 if lagAccelOpts.makeHeatmapPlots
-    plot_accel_heatmaps_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts);
+    if lagAccelOpts.makePooledHeatmapPlots
+        plot_accel_heatmaps_by_re(allLagAccel, outDir, plotOpts, lagAccelOpts);
+    end
+    if lagAccelOpts.makeCaseHeatmapPlots
+        plot_accel_heatmaps_by_case(allLagAccel, outDir, plotOpts, lagAccelOpts);
+    end
 end
 if lagAccelOpts.makeSanityCheckPlots
     plot_accel_sanity_checks(allLagAccel, fullfile(outDir, "SanityChecks"), plotOpts, lagAccelOpts);
@@ -69,6 +74,8 @@ opts = default_field(opts, 'makeAllFramePdfPlot', true);
 opts = default_field(opts, 'makeTriggerWindowPdfPlot', true);
 opts = default_field(opts, 'makePeakTriggerGrowthPlot', true);
 opts = default_field(opts, 'makeHeatmapPlots', true);
+opts = default_field(opts, 'makePooledHeatmapPlots', true);
+opts = default_field(opts, 'makeCaseHeatmapPlots', false);
 opts = default_field(opts, 'makeSanityCheckPlots', true);
 opts = default_field(opts, 'heatmapGridSize', [20 20]);
 opts = default_field(opts, 'heatmapStats', ["median", "p90"]);
@@ -86,7 +93,7 @@ opts = default_field(opts, 'heatmapColorPercentileRange', []);
 opts = default_field(opts, 'heatmapActivationMarkerSize', 46);
 opts = default_field(opts, 'heatmapLegendLocation', 'southoutside');
 opts = default_field(opts, 'heatmapLegendFontSize', []);
-opts = default_field(opts, 'activationOverlayPerCase', 75);
+opts = default_field(opts, 'activationOverlayPerCase', 75); % plot-only cap; use Inf to draw every available non-wall marker
 opts = default_field(opts, 'activationOverlayEdgeMarginNorm', 0);
 opts = default_field(opts, 'randomSeed', 42);
 opts = default_field(opts, 'minSpearmanN', 10);
@@ -710,7 +717,52 @@ end
 
 
 % =========================================================================
-function plot_one_heatmap(caseData, Z, xCenters, yCenters, Rei, statName, outDir, plotOpts, opts, theme)
+function plot_accel_heatmaps_by_case(allLagAccel, outDir, plotOpts, opts)
+stats = string(opts.heatmapStats);
+caseOutDir = fullfile(outDir, "Heatmaps_by_case");
+if ~isfolder(caseOutDir), mkdir(caseOutDir); end
+
+for theme = reshape(plotOpts.themes, 1, [])
+    for ci = 1:numel(allLagAccel)
+        d = allLagAccel(ci);
+        if ~isfield(d, 'sampleXNorm') || ~isfield(d, 'sampleYNorm') || ~isfield(d, 'sampleAstar')
+            continue;
+        end
+
+        x = d.sampleXNorm(:);
+        y = d.sampleYNorm(:);
+        a = d.sampleAstar(:);
+        valid = isfinite(x) & isfinite(y) & isfinite(a) & a >= 0 & ...
+            x >= opts.xLimNorm(1) & x <= opts.xLimNorm(2) & ...
+            y >= opts.yLimNorm(1) & y <= opts.yLimNorm(2);
+        x = x(valid); y = y(valid); a = a(valid);
+        if isempty(a)
+            continue;
+        end
+
+        for si = 1:numel(stats)
+            statName = lower(char(stats(si)));
+            [Z, xCenters, yCenters] = binned_stat_2d(x, y, a, opts, statName);
+            caseTag = sprintf('%s_Re_%g_kD_%s', ...
+                sanitize_case_token(d.caseName), d.Re, numeric_token(d.kD));
+            titleLabel = sprintf('%s, Re = %g, k/d = %.4g', ...
+                char(string(d.caseName)), d.Re, d.kD);
+            plot_one_heatmap(d, Z, xCenters, yCenters, d.Re, statName, ...
+                caseOutDir, plotOpts, opts, char(theme), caseTag, titleLabel);
+        end
+    end
+end
+end
+
+
+% =========================================================================
+function plot_one_heatmap(caseData, Z, xCenters, yCenters, Rei, statName, outDir, plotOpts, opts, theme, outputTag, titleLabel)
+if nargin < 11 || isempty(outputTag)
+    outputTag = sprintf('Re_%g', Rei);
+end
+if nargin < 12 || isempty(titleLabel)
+    titleLabel = sprintf('Re = %g', Rei);
+end
 fontName = resolve_plot_font_name();
 if ~strcmpi(fontName, 'Times New Roman')
     fontName = 'Times New Roman';
@@ -732,9 +784,9 @@ cb.Label.String = sprintf('%s |a^*| per bin', upper(statName));
 cb.Label.Interpreter = 'tex';
 cb.FontName = fontName;
 
+yExtent_mm = heatmap_y_extent_mm(caseData, opts);
 hasROI = isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData);
 if hasROI
-    yExtent_mm = heatmap_y_extent_mm(caseData, opts);
     draw_lagrangian_wall_patch(ax, plotOpts.roiData, yExtent_mm, opts.throatHeight_mm, ...
         opts.xLimNorm, opts.yLimNorm, true);
 end
@@ -752,39 +804,55 @@ edgeMargin = activation_overlay_edge_margin(opts);
 contourOverlays = struct('Xg', {}, 'Yg', {}, 'D', {}, 'color', {});
 for j = 1:numel(caseData)
     d = caseData(j);
-    xy = d.activationXYNorm;
+    if ~isfield(d, 'activationXYNorm') || isempty(d.activationXYNorm)
+        continue;
+    end
+    xyAll = d.activationXYNorm;
+    xyAll = xyAll(all(isfinite(xyAll), 2), :);
+    if hasROI
+        xyAll = exclude_wall_activation_points(xyAll, plotOpts.roiData, yExtent_mm, opts.throatHeight_mm);
+    end
+    if isempty(xyAll)
+        continue;
+    end
+
+    nOverlay = activation_overlay_count(opts.activationOverlayPerCase, size(xyAll, 1));
+    if size(xyAll, 1) > nOverlay
+        idx = sort(randperm(size(xyAll, 1), nOverlay));
+        xyPlot = xyAll(idx, :);
+    else
+        xyPlot = xyAll;
+    end
+
     xMinOverlay = opts.xLimNorm(1) + edgeMargin(1);
     xMaxOverlay = opts.xLimNorm(2) - edgeMargin(1);
     yMinOverlay = opts.yLimNorm(1) + edgeMargin(2);
     yMaxOverlay = opts.yLimNorm(2) - edgeMargin(2);
-    valid = all(isfinite(xy), 2) & xy(:,1) >= xMinOverlay & xy(:,1) <= xMaxOverlay & ...
-        xy(:,2) >= yMinOverlay & xy(:,2) <= yMaxOverlay;
-    xy = xy(valid, :);
-    if isempty(xy)
-        continue;
-    end
-    if size(xy, 1) > opts.activationOverlayPerCase
-        idx = sort(randperm(size(xy, 1), opts.activationOverlayPerCase));
-        xyPlot = xy(idx, :);
-    else
-        xyPlot = xy;
-    end
-    marker = markers{mod(j - 1, numel(markers)) + 1};
-    h = scatter(ax, xyPlot(:,1), xyPlot(:,2), opts.heatmapActivationMarkerSize, ...
-        'Marker', marker, ...
-        'MarkerFaceColor', cmap(j,:), ...
-        'MarkerEdgeColor', [0.03 0.03 0.03], ...
-        'LineWidth', 0.8, ...
-        'MarkerFaceAlpha', 0.82);
-    lgd(end+1,1) = h; %#ok<AGROW>
-    lgdTxt(end+1,1) = sprintf('k/d=%.4g', d.kD); %#ok<AGROW>
-    lgdColors(end+1,:) = cmap(j,:); %#ok<AGROW>
-    lgdMarkers{end+1,1} = marker; %#ok<AGROW>
+    visible = xyPlot(:,1) >= xMinOverlay & xyPlot(:,1) <= xMaxOverlay & ...
+        xyPlot(:,2) >= yMinOverlay & xyPlot(:,2) <= yMaxOverlay;
+    xyPlot = xyPlot(visible, :);
+    xyWindow = xyAll(xyAll(:,1) >= xMinOverlay & xyAll(:,1) <= xMaxOverlay & ...
+        xyAll(:,2) >= yMinOverlay & xyAll(:,2) <= yMaxOverlay, :);
 
-    if drawContours && size(xy, 1) >= 10
+    marker = markers{mod(j - 1, numel(markers)) + 1};
+    if ~isempty(xyPlot)
+        h = scatter(ax, xyPlot(:,1), xyPlot(:,2), opts.heatmapActivationMarkerSize, ...
+            'Marker', marker, ...
+            'MarkerFaceColor', cmap(j,:), ...
+            'MarkerEdgeColor', [0.03 0.03 0.03], ...
+            'LineWidth', 0.8, ...
+            'MarkerFaceAlpha', 0.82, ...
+            'Clipping', 'on');
+        lgd(end+1,1) = h; %#ok<AGROW>
+        lgdTxt(end+1,1) = sprintf('k/d=%.4g', d.kD); %#ok<AGROW>
+        lgdColors(end+1,:) = cmap(j,:); %#ok<AGROW>
+        lgdMarkers{end+1,1} = marker; %#ok<AGROW>
+    end
+
+    if drawContours && size(xyWindow, 1) >= 10
         [Xg, Yg] = meshgrid(linspace(opts.xLimNorm(1), opts.xLimNorm(2), 90), ...
             linspace(opts.yLimNorm(1), opts.yLimNorm(2), 90));
-        D = kde2d_simple(xy(:,1), xy(:,2), Xg, Yg);
+        D = kde2d_simple(xyWindow(:,1), xyWindow(:,2), Xg, Yg);
         contourOverlays(end+1).Xg = Xg; %#ok<AGROW>
         contourOverlays(end).Yg = Yg;
         contourOverlays(end).D = D;
@@ -810,7 +878,7 @@ if opts.heatmapPreserveSpatialAspect
 end
 xlabel(ax, 'x/H', 'Interpreter', 'tex', 'FontName', fontName);
 ylabel(ax, 'y/H', 'Interpreter', 'tex', 'FontName', fontName);
-title(ax, sprintf('Lagrangian acceleration heatmap (%s), Re = %g', upper(statName), Rei), ...
+title(ax, sprintf('Lagrangian acceleration heatmap (%s), %s', upper(statName), char(string(titleLabel))), ...
     'Interpreter', 'tex', 'FontName', fontName);
 set(ax, 'FontName', fontName, 'Layer', 'top');
 grid(ax, 'off');
@@ -830,7 +898,8 @@ style_legend_for_theme(leg, theme);
 style_legend_for_heatmap_white(leg);
 style_heatmap_legend_text(leg, opts, fontName);
 draw_heatmap_inline_legend(ax, lgdTxt, lgdColors, lgdMarkers, opts, fontName, theme);
-save_fig_dual_safe(f, fullfile(outDir, sprintf('LagrangianAccel_heatmap_%s_Re_%g_%s', statName, Rei, theme)), plotOpts);
+save_fig_dual_safe(f, fullfile(outDir, sprintf('LagrangianAccel_heatmap_%s_%s_%s', ...
+    statName, char(string(outputTag)), theme)), plotOpts);
 close_if_needed(f, plotOpts);
 end
 
@@ -1100,6 +1169,17 @@ end
 
 
 % =========================================================================
+function nOverlay = activation_overlay_count(rawLimit, nAvailable)
+nAvailable = max(0, floor(double(nAvailable)));
+if isempty(rawLimit) || any(~isfinite(double(rawLimit(:))))
+    nOverlay = nAvailable;
+    return;
+end
+nOverlay = max(0, min(nAvailable, round(double(rawLimit(1)))));
+end
+
+
+% =========================================================================
 function [Z, xCenters, yCenters] = binned_stat_2d(x, y, a, opts, statName)
 [nx, ny] = heatmap_bin_counts(opts);
 xEdges = linspace(opts.xLimNorm(1), opts.xLimNorm(2), nx + 1);
@@ -1243,8 +1323,9 @@ for theme = reshape(plotOpts.themes, 1, [])
     hold(ax, 'on');
     cmap = scientific_line_colormap(nPlotTracks);
 
-    if isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData)
-        yExtent_mm = heatmap_y_extent_mm(d, opts);
+    yExtent_mm = heatmap_y_extent_mm(d, opts);
+    hasROI = isfield(plotOpts, 'roiData') && isstruct(plotOpts.roiData);
+    if hasROI
         draw_lagrangian_wall_patch(ax, plotOpts.roiData, yExtent_mm, opts.throatHeight_mm, ...
             opts.xLimNorm, opts.yLimNorm, true);
     end
@@ -1273,8 +1354,15 @@ for theme = reshape(plotOpts.themes, 1, [])
             'Color', col, ...
             'LineWidth', 2.4, ...
             'HandleVisibility', 'off');
-        if all(isfinite(tr.activationXYNorm))
-            scatter(ax, tr.activationXYNorm(1), tr.activationXYNorm(2), 70, ...
+        if ~isfield(tr, 'activationXYNorm') || isempty(tr.activationXYNorm)
+            continue;
+        end
+        xyAct = tr.activationXYNorm;
+        if hasROI
+            xyAct = exclude_wall_activation_points(xyAct, plotOpts.roiData, yExtent_mm, opts.throatHeight_mm);
+        end
+        if ~isempty(xyAct) && all(isfinite(xyAct))
+            scatter(ax, xyAct(1), xyAct(2), 70, ...
                 'Marker', '*', 'MarkerFaceColor', col, 'MarkerEdgeColor', [0 0 0], ...
                 'HandleVisibility', 'off');
         end
@@ -1800,6 +1888,39 @@ end
 
 
 % =========================================================================
+function xyOut = exclude_wall_activation_points(xyIn, roiData, yExtent_mm, throatHeight_mm)
+xyOut = xyIn;
+if isempty(xyIn) || size(xyIn, 2) < 2 || ...
+        ~isfield(roiData, 'wallMask') || ~isfield(roiData, 'maskPixelSize')
+    return;
+end
+
+wallMask = logical(roiData.wallMask);
+ps = double(roiData.maskPixelSize);
+if isempty(wallMask) || ~(isfinite(ps) && ps > 0) || ...
+        ~(isfinite(yExtent_mm) && yExtent_mm > 0) || ...
+        ~(isfinite(throatHeight_mm) && throatHeight_mm > 0)
+    return;
+end
+
+x_mm = xyIn(:,1) * throatHeight_mm;
+yFromWall_mm = xyIn(:,2) * throatHeight_mm;
+cols = round(x_mm / ps);
+rows = round((yExtent_mm - yFromWall_mm) / ps);
+
+inBounds = rows >= 1 & rows <= size(wallMask, 1) & ...
+    cols >= 1 & cols <= size(wallMask, 2);
+inWall = false(size(xyIn, 1), 1);
+if any(inBounds)
+    idx = sub2ind(size(wallMask), rows(inBounds), cols(inBounds));
+    inWall(inBounds) = wallMask(idx);
+end
+
+xyOut = xyIn(~inWall, :);
+end
+
+
+% =========================================================================
 function draw_lagrangian_wall_patch(ax, roiData, yExtent_mm, throatHeight_mm, xLimNorm, yLimNorm, doNormalize)
 if nargin < 7
     doNormalize = true;
@@ -1950,4 +2071,18 @@ token = regexprep(token, '_+$', '');
 if isempty(token)
     token = 'case';
 end
+end
+
+
+% =========================================================================
+function token = numeric_token(value)
+if ~(isnumeric(value) && isscalar(value) && isfinite(value))
+    token = 'NaN';
+    return;
+end
+token = sprintf('%.6g', value);
+token = strrep(token, '-', 'm');
+token = strrep(token, '+', '');
+token = strrep(token, '.', 'p');
+token = regexprep(token, '[^A-Za-z0-9]+', '_');
 end

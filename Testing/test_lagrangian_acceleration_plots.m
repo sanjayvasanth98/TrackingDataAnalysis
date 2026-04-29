@@ -48,9 +48,9 @@ plotOpts.lagrangianHeatmapImageSize_px = [1280 512];
 
 %% Plot selection
 % Set any of these to false when you only want to regenerate specific plots.
-makeAllFramePdfPlot = true;
-makeTriggerWindowPdfPlot = true;
-makePeakTriggerGrowthPlot = true;
+makeAllFramePdfPlot = false;
+makeTriggerWindowPdfPlot = false;
+makePeakTriggerGrowthPlot = false;
 makeHeatmapPlots = true;
 makeSanityCheckPlots = false;
 
@@ -61,12 +61,15 @@ makeSanityCheckPlots = false;
 %   larger 2nd value = more y-bins = smaller square cells
 %   smaller 2nd value = fewer y-bins = larger square cells
 heatmapGridSizeOverride = [12 12];
-heatmapStatsOverride = ["median", "mean", "p90"];
+heatmapStatsOverride = "mean";
+makePooledHeatmapPlotsOverride = false;
+makeCaseHeatmapPlotsOverride = true;
+heatmapMinSamplesPerBinOverride = 8;
 heatmapSquareBinsOverride = true;
 heatmapXLimNormOverride = [0 0.48];
 heatmapShowActivationContoursOverride = false;
 heatmapShowAccelerationRidgeOverride = true;
-heatmapAccelerationRidgeStatsOverride = ["median", "mean", "p90"];
+heatmapAccelerationRidgeStatsOverride = "mean";
 heatmapAccelerationRidgePercentileOverride = 0;
 heatmapAccelerationRidgeSmoothWindowOverride = 9;
 heatmapColormapOverride = "cbrewer2:YlGnBu";
@@ -74,19 +77,20 @@ heatmapColormapByStatOverride = struct( ...
     'mean', "cbrewer2:GnBu", ...
     'median', "cbrewer2:PuBu", ...
     'p90', "cbrewer2:Blues");
-activationOverlayEdgeMarginNormOverride = 0.01;
+activationOverlayEdgeMarginNormOverride = 0;
 heatmapColorPercentileRangeOverride = [5 95];
 heatmapActivationMarkerSizeOverride = 23;
+activationOverlayPerCaseOverride = 250; % set Inf to plot every available non-wall activation marker
 heatmapLegendLocationOverride = 'northwest';
 heatmapLegendFontSizeOverride = 10;
 triggerPdfLegendLocationOverride = 'southeast';
 makeTriggerPdfZoomPlotOverride = true;
 triggerPdfZoomXLimOverride = [1e-1 1];
-makeTriggerSurvivalPlotOverride = true;
+makeTriggerSurvivalPlotOverride = false;
 triggerSurvivalXLimOverride = [1e-1 1];
 triggerSurvivalLegendLocationOverride = 'southwest';
 showTriggerSurvivalLegendOverride = false;
-makeTriggerThresholdSummaryPlotOverride = true;
+makeTriggerThresholdSummaryPlotOverride = false;
 triggerSurvivalThresholdsOverride = [0.3 0.5 0.75];
 allFramePdfLegendLocationOverride = 'southwest';
 peakGrowthLegendLocationOverride = 'northwest';
@@ -99,9 +103,12 @@ lagAccelOpts.makeTriggerWindowPdfPlot = makeTriggerWindowPdfPlot;
 lagAccelOpts.makePeakTriggerGrowthPlot = makePeakTriggerGrowthPlot;
 lagAccelOpts.makeHeatmapPlots = makeHeatmapPlots;
 lagAccelOpts.makeSanityCheckPlots = makeSanityCheckPlots;
+lagAccelOpts.makePooledHeatmapPlots = makePooledHeatmapPlotsOverride;
+lagAccelOpts.makeCaseHeatmapPlots = makeCaseHeatmapPlotsOverride;
 lagAccelOpts.xLimNorm = heatmapXLimNormOverride;
 lagAccelOpts.heatmapGridSize = heatmapGridSizeOverride;
 lagAccelOpts.heatmapStats = heatmapStatsOverride;
+lagAccelOpts.heatmapMinSamplesPerBin = heatmapMinSamplesPerBinOverride;
 lagAccelOpts.heatmapSquareBins = heatmapSquareBinsOverride;
 lagAccelOpts.heatmapShowActivationContours = heatmapShowActivationContoursOverride;
 lagAccelOpts.heatmapShowAccelerationRidge = heatmapShowAccelerationRidgeOverride;
@@ -113,6 +120,7 @@ lagAccelOpts.heatmapColormapByStat = heatmapColormapByStatOverride;
 lagAccelOpts.activationOverlayEdgeMarginNorm = activationOverlayEdgeMarginNormOverride;
 lagAccelOpts.heatmapColorPercentileRange = heatmapColorPercentileRangeOverride;
 lagAccelOpts.heatmapActivationMarkerSize = heatmapActivationMarkerSizeOverride;
+lagAccelOpts.activationOverlayPerCase = activationOverlayPerCaseOverride;
 lagAccelOpts.heatmapLegendLocation = heatmapLegendLocationOverride;
 lagAccelOpts.heatmapLegendFontSize = heatmapLegendFontSizeOverride;
 lagAccelOpts.triggerPdfLegendLocation = triggerPdfLegendLocationOverride;
@@ -205,7 +213,7 @@ lagAccelOpts.heatmapColormap = "cbrewer2:YlGnBu";
 lagAccelOpts.heatmapPreserveSpatialAspect = true;
 lagAccelOpts.heatmapSquareBins = true;
 lagAccelOpts.heatmapMinSamplesPerBin = 2;
-lagAccelOpts.activationOverlayPerCase = 75;
+lagAccelOpts.activationOverlayPerCase = 250;
 lagAccelOpts.randomSeed = 42;
 lagAccelOpts.minSpearmanN = 8;
 lagAccelOpts.maxSanityTracks = 250;
