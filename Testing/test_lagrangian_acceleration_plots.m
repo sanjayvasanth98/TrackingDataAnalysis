@@ -8,6 +8,7 @@ clear; clc;
 
 repoRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(repoRoot);
+addpath(fileparts(mfilename('fullpath')));
 cbrewer2Dir = fullfile(repoRoot, 'external', 'cbrewer2', 'cbrewer2');
 if isfolder(cbrewer2Dir)
     addpath(cbrewer2Dir);
@@ -17,7 +18,7 @@ end
 % Option 1: point this to your plot_data_mat folder from a completed run.
 % Example:
 % matDir = "E:\March Re 90,000 inception data\Processed images\results\results 33 local\plot_data_mat";
-matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
+matDir = test_plotmat_location("lagrangian_acceleration_by_case.mat");
 
 % Option 2: or point directly to the .mat file. If this is non-empty it
 % takes priority over matDir.

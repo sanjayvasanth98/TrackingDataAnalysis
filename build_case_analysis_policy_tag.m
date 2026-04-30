@@ -2,7 +2,7 @@ function policyTag = build_case_analysis_policy_tag(basePolicyTag, convergenceFr
 %BUILD_CASE_ANALYSIS_POLICY_TAG Combine analysis settings into one cache key.
 
 parts = strings(0, 1);
-parts(end+1, 1) = "caseCheckpointVersion=3";
+parts(end+1, 1) = "caseCheckpointVersion=4";
 parts(end+1, 1) = "base=" + string(basePolicyTag);
 parts(end+1, 1) = "convergenceFrameStep=" + string(convergenceFrameStep);
 

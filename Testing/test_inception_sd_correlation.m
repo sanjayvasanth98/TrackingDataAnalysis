@@ -16,8 +16,9 @@ clear; clc;
 %% Paths
 repoRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(repoRoot);
+addpath(fileparts(mfilename('fullpath')));
 
-matDirCandidates = ["C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)"];
+matDir = test_plotmat_location("inception_locations_by_case.mat");
 
 sdTiffDirCandidates = [ "E:\March Re 90,000 inception data\plots\Standard deviation plots\STD_Smoothtiff.tif", ...
     "E:\March Re 90,000 inception data\plots\Standard deviation plots\STD_P10S100.tif", ...
@@ -70,11 +71,6 @@ opts.allowTokenOnlyTiffFallback = false; % set true only if SD TIFF names lack S
 set(0, 'DefaultFigureVisible', 'on');
 
 %% Load activation locations
-matDir = first_existing_folder(matDirCandidates);
-if strlength(matDir) < 1
-    error('Could not find a plot_data_mat folder. Edit matDirCandidates in this test script.');
-end
-
 matFile = fullfile(matDir, "inception_locations_by_case.mat");
 if ~isfile(matFile)
     error('Missing inception location MAT file: %s', matFile);

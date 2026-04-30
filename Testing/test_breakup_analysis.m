@@ -8,13 +8,14 @@
 
 clear; clc;
 
-%% Paths — edit matDir to point to your latest results run
-matDir  = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+
+%% Paths
+matDir  = test_plotmat_location("breakup_analysis_by_case.mat");
 outDir  = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'BreakupAnalysis');
 csvOut = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'breakup_events.csv');
 if ~isfolder(outDir), mkdir(outDir); end
-
-addpath(fileparts(fileparts(mfilename('fullpath'))));
 
 %% Load allBreakup
 S = load(fullfile(matDir, "breakup_analysis_by_case.mat"), 'allBreakup');

@@ -11,13 +11,14 @@
 
 clear; clc;
 
-%% Paths — edit matDir to point to your latest results run
-matDir   = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+
+%% Paths
+matDir   = test_plotmat_location("collapse_analysis_by_case.mat");
 outDir   = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'CollapseAnalysis');
 csvOut   = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'collapse_analysis.csv');
 if ~isfolder(outDir), mkdir(outDir); end
-
-addpath(fileparts(fileparts(mfilename('fullpath'))));
 
 %% Load allCollapse
 S = load(fullfile(matDir, "collapse_analysis_by_case.mat"), 'allCollapse');

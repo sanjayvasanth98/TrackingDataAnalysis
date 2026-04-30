@@ -124,6 +124,10 @@ for ti = 1:numel(out.trajectories)
         trackResult.activationFrame = get_scalar_field(cat, 'activationFrame', NaN);
     end
     trackResult.growthRatio = compute_growth_ratio(raw.area_px2);
+    trackResult.d0_m = initial_equiv_diameter_m(raw.area_px2, caseDef.pixelSize);
+    trackResult.tau_s = track_residence_time_s(raw, trackResult.activationIndex);
+    trackResult.tau_star = trackResult.tau_s * lagData.U_ref_m_s / (opts.throatHeight_mm / 1000);
+    trackResult.upstreamVelocity_m_s = track_upstream_velocity_m_s(raw, opts);
     trackResult.allAstar = aStar(validAccel);
     trackResult.rawAllAstar = rawAStar(validRawAccel);
     trackResult.xNorm = smoothX_m(validAccel) * 1000 ./ opts.throatHeight_mm;
@@ -286,6 +290,10 @@ tr = struct( ...
     'nTriggerSamples', 0, ...
     'nRandomWindowSamples', 0, ...
     'growthRatio', NaN, ...
+    'd0_m', NaN, ...
+    'tau_s', NaN, ...
+    'tau_star', NaN, ...
+    'upstreamVelocity_m_s', NaN, ...
     'peakTriggerAstar', NaN, ...
     'allAstar', nan(0,1), ...
     'rawAllAstar', nan(0,1), ...
@@ -655,6 +663,67 @@ maxArea = max(areaVals);
 if isfinite(birthArea) && birthArea > 0 && isfinite(maxArea) && maxArea >= birthArea
     ratio = sqrt(maxArea / birthArea);
 end
+end
+
+
+% =========================================================================
+function d0_m = initial_equiv_diameter_m(areaVals, pixelSize_mm)
+d0_m = NaN;
+areaVals = areaVals(:);
+areaVals = areaVals(isfinite(areaVals) & areaVals > 0);
+if isempty(areaVals) || ~(isfinite(pixelSize_mm) && pixelSize_mm > 0)
+    return;
+end
+d0_m = sqrt(4 * areaVals(1) / pi) * pixelSize_mm / 1000;
+end
+
+
+% =========================================================================
+function tau_s = track_residence_time_s(raw, activationIndex)
+tau_s = NaN;
+if raw.n < 2 || isempty(raw.t_s) || ~isfinite(raw.t_s(1))
+    return;
+end
+
+if isfinite(activationIndex)
+    idx = round(activationIndex);
+    if idx >= 1 && idx <= raw.n && isfinite(raw.t_s(idx))
+        tau_s = raw.t_s(idx) - raw.t_s(1);
+        return;
+    end
+end
+
+if isfinite(raw.t_s(end))
+    tau_s = raw.t_s(end) - raw.t_s(1);
+end
+end
+
+
+% =========================================================================
+function u_m_s = track_upstream_velocity_m_s(raw, opts)
+u_m_s = NaN;
+if raw.n < 2
+    return;
+end
+
+dt = diff(raw.t_s);
+validDt = isfinite(dt) & dt > 0;
+if ~any(validDt)
+    return;
+end
+
+dx = diff(raw.x_m);
+if strcmpi(opts.bulkDirection, 'right_to_left')
+    uStep = dx ./ dt;
+else
+    uStep = -dx ./ dt;
+end
+uStep = uStep(validDt & isfinite(uStep) & uStep > 0);
+if isempty(uStep)
+    speedStep = hypot(diff(raw.x_m), diff(raw.y_m)) ./ dt;
+    uStep = speedStep(validDt & isfinite(speedStep) & speedStep > 0);
+end
+u_m_s = finite_median(uStep);
 end
 
 

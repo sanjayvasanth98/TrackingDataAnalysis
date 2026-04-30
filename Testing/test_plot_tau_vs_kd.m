@@ -7,12 +7,13 @@
 
 clear; clc;
 
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+
 %% Paths
-matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
+matDir = test_plotmat_location("activation_summary_by_case.mat");
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs');
 if ~isfolder(outDir), mkdir(outDir); end
-
-addpath(fileparts(fileparts(mfilename('fullpath'))));
 
 %% Load data
 S = load(fullfile(matDir, "activation_summary_by_case.mat"), 'summaryRows');

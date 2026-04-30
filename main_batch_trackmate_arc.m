@@ -930,7 +930,7 @@ for i = 1:numel(cases)
 
     if useAnalysisCheckpoints
         casePayload = struct();
-        casePayload.checkpointVersion = 2;
+        casePayload.checkpointVersion = 4;
         casePayload.caseName = string(cases(i).name);
         casePayload.Re = cases(i).Re;
         casePayload.kD = cases(i).kD;

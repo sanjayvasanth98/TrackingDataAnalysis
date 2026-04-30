@@ -8,12 +8,13 @@
 
 clear; clc;
 
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+
 %% Paths
-matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
+matDir = test_plotmat_location("inception_locations_by_case.mat");
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'InceptionLocations');
 if ~isfolder(outDir), mkdir(outDir); end
-
-addpath(fileparts(fileparts(mfilename('fullpath'))));
 
 %% Load data
 S = load(fullfile(matDir, "inception_locations_by_case.mat"), 'allLoc');

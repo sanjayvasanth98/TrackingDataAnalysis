@@ -9,12 +9,13 @@
 
 clear; clc;
 
-%% Paths - edit matDir to point to your latest results run
-matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+
+%% Paths
+matDir = test_plotmat_location("activation_summary_by_case.mat");
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'TauVelocityColormap');
 if ~isfolder(outDir), mkdir(outDir); end
-
-addpath(fileparts(fileparts(mfilename('fullpath'))));
 
 %% Load activation summary data
 summaryFile = fullfile(matDir, "activation_summary_by_case.mat");

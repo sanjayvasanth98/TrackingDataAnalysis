@@ -9,12 +9,13 @@
 
 clear; clc;
 
-%% Paths — edit matDir to point to your latest results run
-matDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat";
+addpath(fileparts(mfilename('fullpath')));
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+
+%% Paths
+matDir = test_plotmat_location("growth_collapse_rate_by_case.mat");
 outDir = fullfile(fileparts(mfilename('fullpath')), 'test_outputs', 'GrowthCollapseRate');
 if ~isfolder(outDir), mkdir(outDir); end
-
-addpath(fileparts(fileparts(mfilename('fullpath'))));
 
 %% Load growth/collapse data
 S = load(fullfile(matDir, "growth_collapse_rate_by_case.mat"));
