@@ -22,6 +22,13 @@ matDir = test_plotmat_location("activation_summary_by_case.mat");
 % If non-empty, this takes priority over matDir.
 matFile = "";
 
+% Option 3: use convergence rows to compare all cases at the same analyzed
+% frame count. Leave commonFrameTarget = NaN to use the largest frame count
+% available for every case.
+useConvergenceCommonFrames = true;
+convergenceCsv = "E:\March Re 90,000 inception data\Processed images\results\results 35\convergence_summary_all_cases.csv";
+commonFrameTarget = NaN;
+
 outDir = fullfile(fileparts(mfilename('fullpath')), ...
     'test_outputs', 'LeftMovingTracksVsKD');
 if ~isfolder(outDir), mkdir(outDir); end
@@ -40,7 +47,19 @@ countField = "nLeftMovingTracks";
 countErrorMode = "sqrtPoisson"; % "sqrtPoisson" uses +/- sqrt(N); "none" hides error bars
 
 %% Load data
-summaryRows = load_activation_summary_rows(matDir, matFile);
+if useConvergenceCommonFrames
+    [summaryRows, selectedFrameCount, convergenceCsv] = load_common_frame_convergence_rows( ...
+        convergenceCsv, commonFrameTarget, countField);
+    outputTag = sprintf('common_%dframes', round(selectedFrameCount));
+    plotOpts.leftMovingTitleSuffix = sprintf(' (%d cumulative frames)', round(selectedFrameCount));
+    plotOpts.leftMovingOutSuffix = "_" + string(outputTag);
+else
+    summaryRows = load_activation_summary_rows(matDir, matFile);
+    selectedFrameCount = NaN;
+    outputTag = 'final_summary';
+    plotOpts.leftMovingTitleSuffix = "";
+    plotOpts.leftMovingOutSuffix = "";
+end
 requiredCols = {'Case', 'Re', 'kD', char(countField)};
 missingCols = requiredCols(~ismember(requiredCols, summaryRows.Properties.VariableNames));
 if ~isempty(missingCols)
@@ -49,15 +68,20 @@ end
 
 summaryRows = sortrows(summaryRows, {'Re', 'kD'});
 fprintf('Loaded %d cases for left-moving track count plot.\n', height(summaryRows));
-disp(summaryRows(:, requiredCols));
+displayCols = requiredCols;
+if ismember('CumulativeFramesUsed', summaryRows.Properties.VariableNames)
+    displayCols = [{'CumulativeFramesUsed'}, displayCols];
+end
+disp(summaryRows(:, displayCols));
 
-plotData = summaryRows(:, requiredCols);
+plotData = summaryRows(:, displayCols);
 [errLow, errHigh] = count_error_bars(plotData.(char(countField)), countErrorMode);
 plotData.nLeftMovingTracks_err_low = errLow;
 plotData.nLeftMovingTracks_err_high = errHigh;
-save(fullfile(outDir, 'left_moving_tracks_vs_kd_plot_data.mat'), ...
-    'plotData', 'countField', 'countErrorMode');
-write_table_csv_compat(plotData, fullfile(outDir, 'left_moving_tracks_vs_kd_plot_data.csv'));
+save(fullfile(outDir, "left_moving_tracks_vs_kd_" + string(outputTag) + "_plot_data.mat"), ...
+    'plotData', 'countField', 'countErrorMode', 'selectedFrameCount', 'convergenceCsv');
+write_table_csv_compat(plotData, fullfile(outDir, ...
+    "left_moving_tracks_vs_kd_" + string(outputTag) + "_plot_data.csv"));
 
 %% Generate plot
 fprintf('\nGenerating left-moving tracks vs k/d plot...\n');
@@ -89,6 +113,122 @@ if ~istable(summaryRows)
     error('summaryRows in %s is not a MATLAB table.', matFile);
 end
 fprintf('Loaded: %s\n', matFile);
+end
+
+
+% =========================================================================
+function [summaryRows, selectedFrameCount, convergenceCsv] = load_common_frame_convergence_rows( ...
+    convergenceCsv, commonFrameTarget, countField)
+convergenceCsv = resolve_existing_file(convergenceCsv);
+if ~isfile(convergenceCsv)
+    error(['Could not find convergence CSV:\n  %s\n' ...
+        'Set convergenceCsv to convergence_summary_all_cases.csv, or set ' ...
+        'useConvergenceCommonFrames = false to use the final MAT summary.'], convergenceCsv);
+end
+
+T = read_csv_table_compat(convergenceCsv);
+requiredCols = {'Case', 'Re', 'kD', 'CumulativeFramesUsed', char(countField)};
+missingCols = requiredCols(~ismember(requiredCols, T.Properties.VariableNames));
+if ~isempty(missingCols)
+    error('Convergence CSV is missing required column(s): %s', strjoin(missingCols, ', '));
+end
+
+if isfinite(commonFrameTarget) && commonFrameTarget > 0
+    selectedFrameCount = double(commonFrameTarget);
+else
+    selectedFrameCount = largest_common_frame_count(T);
+end
+
+frameVals = double(T.CumulativeFramesUsed);
+summaryRows = T(abs(frameVals - selectedFrameCount) < 0.5, :);
+summaryRows = one_row_per_case(summaryRows);
+summaryRows = sortrows(summaryRows, {'Re', 'kD'});
+
+expectedCases = unique(string(T.Case));
+selectedCases = unique(string(summaryRows.Case));
+missingCases = setdiff(expectedCases, selectedCases);
+if ~isempty(missingCases)
+    error(['Frame target %.0f is not available for every case. Missing: %s\n' ...
+        'Use commonFrameTarget = NaN for automatic largest-common-frame selection.'], ...
+        selectedFrameCount, strjoin(cellstr(missingCases), ', '));
+end
+
+fprintf('Loaded convergence CSV: %s\n', convergenceCsv);
+fprintf('Using common cumulative frame count: %.0f frames\n', selectedFrameCount);
+end
+
+
+% =========================================================================
+function selectedFrameCount = largest_common_frame_count(T)
+caseVals = unique(string(T.Case));
+frameVals = unique(double(T.CumulativeFramesUsed));
+frameVals = frameVals(isfinite(frameVals) & frameVals > 0);
+frameVals = sort(frameVals(:), 'descend');
+
+selectedFrameCount = NaN;
+for i = 1:numel(frameVals)
+    f = frameVals(i);
+    hasEveryCase = true;
+    for c = 1:numel(caseVals)
+        caseMask = strcmp(string(T.Case), caseVals(c));
+        frameMask = abs(double(T.CumulativeFramesUsed) - f) < 0.5;
+        if ~any(caseMask & frameMask)
+            hasEveryCase = false;
+            break;
+        end
+    end
+    if hasEveryCase
+        selectedFrameCount = f;
+        break;
+    end
+end
+
+if ~isfinite(selectedFrameCount)
+    error('No common cumulative frame count was found across all cases.');
+end
+end
+
+
+% =========================================================================
+function T = one_row_per_case(T)
+if isempty(T) || height(T) <= 1
+    return;
+end
+
+[~, order] = sortrows(T, {'Re', 'kD', 'Case'});
+T = T(order, :);
+[~, firstIdx] = unique(string(T.Case), 'stable');
+T = T(firstIdx, :);
+end
+
+
+% =========================================================================
+function T = read_csv_table_compat(csvFile)
+try
+    T = readtable(csvFile, 'VariableNamingRule', 'preserve');
+catch
+    T = readtable(csvFile);
+end
+end
+
+
+% =========================================================================
+function outFile = resolve_existing_file(inFile)
+outFile = string(inFile);
+if isfile(outFile)
+    return;
+end
+
+% Convenience for running the same script under WSL/Linux when a Windows
+% E:\... path is configured.
+if strlength(outFile) >= 3 && extractBetween(outFile, 2, 3) == ":\"
+    driveLetter = lower(extractBefore(outFile, 2));
+    tailPath = extractAfter(outFile, 3);
+    altFile = "/mnt/" + driveLetter + "/" + replace(tailPath, "\", "/");
+    if isfile(altFile)
+        outFile = altFile;
+    end
+end
 end
 
 
@@ -162,7 +302,11 @@ for theme = reshape(plotOpts.themes, 1, [])
 
     xlabel(ax, '$k/d$', 'Interpreter', 'latex');
     ylabel(ax, 'Number of left-moving tracks', 'Interpreter', 'latex');
-    title(ax, 'Left-moving track count vs roughness', 'FontName', fontName);
+    titleText = "Left-moving track count vs roughness";
+    if isfield(plotOpts, 'leftMovingTitleSuffix') && strlength(string(plotOpts.leftMovingTitleSuffix)) > 0
+        titleText = titleText + string(plotOpts.leftMovingTitleSuffix);
+    end
+    title(ax, char(titleText), 'FontName', fontName);
     set(ax, 'FontName', fontName, 'YScale', 'linear');
     grid(ax, 'off');
     box(ax, 'on');
@@ -182,7 +326,11 @@ for theme = reshape(plotOpts.themes, 1, [])
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
 
-    outBase = fullfile(outDir, "LeftMovingTracks_vs_kD_by_Re_" + theme);
+    outSuffix = "";
+    if isfield(plotOpts, 'leftMovingOutSuffix')
+        outSuffix = string(plotOpts.leftMovingOutSuffix);
+    end
+    outBase = fullfile(outDir, "LeftMovingTracks_vs_kD_by_Re" + outSuffix + "_" + theme);
     save_fig_dual_safe(f, outBase, plotOpts);
     if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
         close(f);

@@ -64,6 +64,7 @@ opts = default_field(opts, 'makeTriggerPdfZoomPlot', false);
 opts = default_field(opts, 'triggerPdfZoomXLim', [1e-1 1]);
 opts = default_field(opts, 'makeTriggerSurvivalPlot', false);
 opts = default_field(opts, 'triggerSurvivalXLim', [1e-1 1]);
+opts = default_field(opts, 'triggerSurvivalXScale', 'linear');
 opts = default_field(opts, 'triggerSurvivalLegendLocation', 'southwest');
 opts = default_field(opts, 'showTriggerSurvivalLegend', true);
 opts = default_field(opts, 'makeTriggerThresholdSummaryPlot', false);
@@ -296,10 +297,18 @@ ReVals = ReVals(isfinite(ReVals));
 if isempty(ReVals), return; end
 
 xLimUse = sort(double(opts.triggerSurvivalXLim(1:2)));
-if ~(all(isfinite(xLimUse)) && xLimUse(1) > 0 && xLimUse(2) > xLimUse(1))
+xScaleMode = resolve_trigger_survival_x_scale(opts);
+if ~(all(isfinite(xLimUse)) && xLimUse(2) > xLimUse(1))
     xLimUse = [1e-1 1];
 end
-xGrid = logspace(log10(xLimUse(1)), log10(xLimUse(2)), opts.pdfGridN).';
+if xScaleMode == "log" && xLimUse(1) <= 0
+    xLimUse = [1e-1, max(1, xLimUse(2))];
+end
+if xScaleMode == "log"
+    xGrid = logspace(log10(xLimUse(1)), log10(xLimUse(2)), opts.pdfGridN).';
+else
+    xGrid = linspace(xLimUse(1), xLimUse(2), opts.pdfGridN).';
+end
 
 for theme = reshape(plotOpts.themes, 1, [])
     for ri = 1:numel(ReVals)
@@ -336,7 +345,7 @@ for theme = reshape(plotOpts.themes, 1, [])
             end
         end
 
-        set(ax, 'XScale', 'log', 'YScale', 'linear', 'FontName', fontName);
+        set(ax, 'XScale', char(xScaleMode), 'YScale', 'linear', 'FontName', fontName);
         xlim(ax, xLimUse);
         ylim(ax, [0 1]);
         xlabel(ax, 'Threshold $A$ in $|a^*| \geq A$', 'Interpreter', 'latex');
@@ -361,6 +370,19 @@ for theme = reshape(plotOpts.themes, 1, [])
         save_fig_dual_safe(f, fullfile(outDir, outName), plotOpts);
         close_if_needed(f, plotOpts);
     end
+end
+end
+
+
+% =========================================================================
+function xScaleMode = resolve_trigger_survival_x_scale(opts)
+xScaleMode = "linear";
+if isfield(opts, 'triggerSurvivalXScale') && ~isempty(opts.triggerSurvivalXScale)
+    xScaleMode = lower(string(opts.triggerSurvivalXScale));
+end
+if ~(xScaleMode == "linear" || xScaleMode == "log")
+    warning('Unknown triggerSurvivalXScale="%s"; using linear.', char(xScaleMode));
+    xScaleMode = "linear";
 end
 end
 

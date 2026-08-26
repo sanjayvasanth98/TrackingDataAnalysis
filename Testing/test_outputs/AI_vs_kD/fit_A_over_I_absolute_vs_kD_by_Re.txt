@@ -1,0 +1,8 @@
+Fit model by Re for A_over_I_absolute: log10(A/I) = a + b*(k/d)
+
+Re = 95000
+a = 0.15248424
+b = -0.054566502
+R2 = 0.097854
+A/I = 1.4206407 * 10^(-0.054566502 * (k/d))
+

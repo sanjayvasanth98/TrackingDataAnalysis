@@ -3,6 +3,9 @@ function plot_ai_vs_kdh_re(summaryTable, figDir, fitTxtFile, plotOpts)
 if nargin < 4 || ~isfield(plotOpts, 'themes') || isempty(plotOpts.themes)
     plotOpts.themes = "normal";
 end
+yScaleMode = resolve_ai_y_scale(plotOpts);
+metricField = resolve_ai_metric_field(summaryTable, plotOpts);
+outputStem = resolve_ai_output_stem(plotOpts);
 
 ReVals = unique(summaryTable.Re(:));
 if isempty(ReVals)
@@ -15,13 +18,13 @@ fid = fopen(fitTxtFile, 'w');
 if fid < 0
     warning('Could not open fit text file: %s', fitTxtFile);
 else
-    fprintf(fid, 'Fit model by Re: log10(A/I) = a + b*(k/d)\n\n');
+    fprintf(fid, 'Fit model by Re for %s: log10(A/I) = a + b*(k/d)\n\n', char(metricField));
     for r = 1:numel(ReVals)
         Rei = ReVals(r);
         sub = summaryTable(summaryTable.Re == Rei, :);
         sub = sortrows(sub, 'kD');
         x = sub.kD(:);
-        y = sub.A_over_I(:);
+        y = sub.(char(metricField))(:);
         valid = isfinite(x) & isfinite(y) & (y > 0);
         x = x(valid);
         y = y(valid);
@@ -64,9 +67,8 @@ for theme = reshape(plotOpts.themes, 1, [])
         sub = sortrows(sub, 'kD');
 
         x = sub.kD(:);
-        y = sub.A_over_I(:);
-        ciLow = sub.A_over_I_ci_low(:);
-        ciHigh = sub.A_over_I_ci_high(:);
+        y = sub.(char(metricField))(:);
+        [ciLow, ciHigh] = ai_metric_confidence_bounds(sub, metricField, y);
         col = cmap(r, :);
         markerStyle = markerStyles{mod(r - 1, numel(markerStyles)) + 1};
 
@@ -119,7 +121,10 @@ for theme = reshape(plotOpts.themes, 1, [])
     xlabel(ax, '$k/d$', 'Interpreter', 'latex');
     ylabel(ax, '$A/I$', 'Interpreter', 'latex');
     title(ax, 'Activation/Injection vs k/d', 'FontName', fontName, 'FontSize', 12);
-    set(ax, 'YScale', 'linear');
+    set(ax, 'YScale', char(yScaleMode));
+    if yScaleMode == "log"
+        set(ax, 'YMinorTick', 'on');
+    end
     grid(ax, 'off');
     box(ax, 'on');
 
@@ -132,7 +137,11 @@ for theme = reshape(plotOpts.themes, 1, [])
     apply_plot_theme(ax, char(theme));
     style_legend_for_theme(leg, char(theme));
 
-    outBase = fullfile(figDir, "AI_vs_kD_by_Re_" + theme);
+    outSuffix = "";
+    if yScaleMode == "log"
+        outSuffix = "_logY";
+    end
+    outBase = fullfile(figDir, outputStem + outSuffix + "_" + theme);
     save_fig_dual_safe(f, outBase, plotOpts);
     if ~isfield(plotOpts, 'keepFiguresOpen') || ~plotOpts.keepFiguresOpen
         close(f);
@@ -140,6 +149,59 @@ for theme = reshape(plotOpts.themes, 1, [])
 end
 
 fprintf('Saved fit info: %s\n', fitTxtFile);
+end
+
+function metricField = resolve_ai_metric_field(summaryTable, plotOpts)
+metricField = "A_over_I";
+if isfield(plotOpts, 'aiMetricField') && ~isempty(plotOpts.aiMetricField)
+    metricField = string(plotOpts.aiMetricField);
+end
+if ~ismember(char(metricField), summaryTable.Properties.VariableNames)
+    error('Summary table is missing A/I metric field "%s".', char(metricField));
+end
+end
+
+function outputStem = resolve_ai_output_stem(plotOpts)
+outputStem = "AI_vs_kD_by_Re";
+if isfield(plotOpts, 'aiMetricOutputStem') && ~isempty(plotOpts.aiMetricOutputStem)
+    outputStem = string(plotOpts.aiMetricOutputStem);
+end
+end
+
+function [ciLow, ciHigh] = ai_metric_confidence_bounds(sub, metricField, y)
+y = double(y(:));
+ciLow = y;
+ciHigh = y;
+
+ciLowField = char(metricField + "_ci_low");
+ciHighField = char(metricField + "_ci_high");
+if ismember(ciLowField, sub.Properties.VariableNames) && ...
+        ismember(ciHighField, sub.Properties.VariableNames)
+    ciLow = double(sub.(ciLowField)(:));
+    ciHigh = double(sub.(ciHighField)(:));
+    return;
+end
+
+if metricField == "A_over_I_absolute" && ...
+        ismember('AE_total', sub.Properties.VariableNames) && ...
+        ismember('nLeftMovingTracks', sub.Properties.VariableNames)
+    nDen = double(sub.nLeftMovingTracks(:));
+    nEvents = double(sub.AE_total(:));
+    sigma = sqrt(max(nEvents, 0)) ./ max(nDen, 1);
+    ciLow = max(0, y - sigma);
+    ciHigh = y + sigma;
+end
+end
+
+function yScaleMode = resolve_ai_y_scale(plotOpts)
+yScaleMode = "linear";
+if isfield(plotOpts, 'aiVsKDYScale') && ~isempty(plotOpts.aiVsKDYScale)
+    yScaleMode = lower(string(plotOpts.aiVsKDYScale));
+end
+if ~(yScaleMode == "linear" || yScaleMode == "log")
+    warning('Unknown plotOpts.aiVsKDYScale="%s"; using linear.', char(yScaleMode));
+    yScaleMode = "linear";
+end
 end
 
 function style_legend_for_theme(leg, theme)

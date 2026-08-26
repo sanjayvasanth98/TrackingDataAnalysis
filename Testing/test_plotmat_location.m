@@ -14,7 +14,7 @@ end
 matFileName = string(matFileName);
 
 % ---- EDIT THIS PATH WHEN YOU WANT ALL TEST PLOTS TO USE A NEW RUN -------
-manualMatDir = "C:\Users\kbsanjayvasanth\Downloads\plot_data_mat (1)";
+manualMatDir = "E:\March Re 90,000 inception data\Processed images\results\results 35\plot_data_mat (2)";
 
 candidateDirs = strings(0, 1);
 candidateDirs(end+1, 1) = manualMatDir;

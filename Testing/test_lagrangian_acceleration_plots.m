@@ -49,11 +49,11 @@ plotOpts.lagrangianHeatmapImageSize_px = [1280 512];
 
 %% Plot selection
 % Set any of these to false when you only want to regenerate specific plots.
-makeAllFramePdfPlot = false;
-makeTriggerWindowPdfPlot = false;
-makePeakTriggerGrowthPlot = false;
+makeAllFramePdfPlot = true;
+makeTriggerWindowPdfPlot = true;
+makePeakTriggerGrowthPlot = true;
 makeHeatmapPlots = true;
-makeSanityCheckPlots = false;
+makeSanityCheckPlots = true;
 
 %% Heatmap appearance overrides
 % Edit these top-level values for testing. They are applied after loading
@@ -87,11 +87,12 @@ heatmapLegendFontSizeOverride = 10;
 triggerPdfLegendLocationOverride = 'southeast';
 makeTriggerPdfZoomPlotOverride = true;
 triggerPdfZoomXLimOverride = [1e-1 1];
-makeTriggerSurvivalPlotOverride = false;
+makeTriggerSurvivalPlotOverride = true;
 triggerSurvivalXLimOverride = [1e-1 1];
-triggerSurvivalLegendLocationOverride = 'southwest';
-showTriggerSurvivalLegendOverride = false;
-makeTriggerThresholdSummaryPlotOverride = false;
+triggerSurvivalXScaleOverride = 'linear';
+triggerSurvivalLegendLocationOverride = 'northeast';
+showTriggerSurvivalLegendOverride = true;
+makeTriggerThresholdSummaryPlotOverride = true;
 triggerSurvivalThresholdsOverride = [0.3 0.5 0.75];
 allFramePdfLegendLocationOverride = 'southwest';
 peakGrowthLegendLocationOverride = 'northwest';
@@ -129,6 +130,7 @@ lagAccelOpts.makeTriggerPdfZoomPlot = makeTriggerPdfZoomPlotOverride;
 lagAccelOpts.triggerPdfZoomXLim = triggerPdfZoomXLimOverride;
 lagAccelOpts.makeTriggerSurvivalPlot = makeTriggerSurvivalPlotOverride;
 lagAccelOpts.triggerSurvivalXLim = triggerSurvivalXLimOverride;
+lagAccelOpts.triggerSurvivalXScale = triggerSurvivalXScaleOverride;
 lagAccelOpts.triggerSurvivalLegendLocation = triggerSurvivalLegendLocationOverride;
 lagAccelOpts.showTriggerSurvivalLegend = showTriggerSurvivalLegendOverride;
 lagAccelOpts.makeTriggerThresholdSummaryPlot = makeTriggerThresholdSummaryPlotOverride;
