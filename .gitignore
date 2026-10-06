@@ -7,6 +7,8 @@
 *.tif
 *.tiff
 *.[Pp][Nn][Gg]
+*.[Cc][Ss][Vv]
+*.[Tt][Xx][Tt]
 
 # ── MATLAB binary / workspace files ──────────────────────────
 *.mat
