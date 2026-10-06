@@ -1,6 +1,9 @@
 # ── TrackMate outputs ────────────────────────────────────────
 *.xml
 
+# ── Local testing scripts and outputs ────────────────────────
+/Testing/
+
 # ── Video input files (large) ────────────────────────────────
 *.avi
 *.mp4
