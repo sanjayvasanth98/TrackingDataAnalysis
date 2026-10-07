@@ -27,3 +27,6 @@ desktop.ini
 
 #images
 .png
+
+# ── Test outputs ─────────────────────────────────────────────
+Testing/test_outputs/
