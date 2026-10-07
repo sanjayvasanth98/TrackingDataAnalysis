@@ -1,17 +1,11 @@
 # ── TrackMate outputs ────────────────────────────────────────
 *.xml
 
-# ── Local testing scripts and outputs ────────────────────────
-/Testing/
-
 # ── Video input files (large) ────────────────────────────────
 *.avi
 *.mp4
 *.tif
 *.tiff
-*.[Pp][Nn][Gg]
-*.[Cc][Ss][Vv]
-*.[Tt][Xx][Tt]
 
 # ── MATLAB binary / workspace files ──────────────────────────
 *.mat
@@ -30,3 +24,6 @@ desktop.ini
 
 # ── Tool/system files ────────────────────────────────────────
 .codex
+
+#images
+.png
